@@ -1,16 +1,8 @@
-//! Public API, orchestration, locking, progress, and cancellation
-//! (Spec §2, §5.1).
+//! Public API: create, open, ingest, extract, replace, delete, verify
+//! (Spec §2, §5.1). Nothing here needs a terminal or a prompt (A-1).
 //!
-//! **This is the surface both frontends drive** (A-1, A-4). Nothing here needs
-//! a terminal, a prompt, or a process boundary, which is the property that
-//! separates this rebuild from an original whose logic could not be exercised
-//! without a pseudo-terminal.
-//!
-//! Not here yet, and scheduled rather than forgotten: compaction (FR-23, FR-24)
-//! and reconciliation of orphaned packs at open (FR-32) are Phase 4; NFC
-//! normalisation of names (§4.6) is Phase 5, so comparison here is exact on the
-//! stored form; crash injection at every fsync boundary (Spec §9) is Phase 4,
-//! which is what proves the ordering established here survives interruption.
+//! Not built yet: compaction and orphaned-pack cleanup (Phase 4), NFC name
+//! normalisation (Phase 5) — so name comparison here is exact on stored bytes.
 
 mod limits;
 mod lock;
@@ -50,42 +42,29 @@ pub struct FolderOutcome {
     pub skipped: Vec<Skipped>,
 }
 
-/// An open vault.
-///
-/// **An instance value, not a singleton** (A-7). Nothing here is process
-/// global, so the single-vault limit stays a product decision rather than a
-/// structural one, and supporting several open vaults later is a caller-side
-/// change.
+/// An open vault. Holds no process-global state, so several can be open at
+/// once (A-7).
 pub struct Vault {
     dir: PathBuf,
     header: Header,
-    /// **The master key is not held.** It is consumed at open to derive the
-    /// subkeys and then dropped and zeroised. Nothing an open vault does needs
-    /// it: content keys come from the entry-wrap subkey, and a password change
-    /// re-unwraps from the header on disk, which is what it must verify against
-    /// anyway. Keeping it resident would extend the lifetime of the one key
-    /// that opens everything, for no operation (HC-2, Spec §3.1).
+    // The master key is deliberately not kept. It is consumed at open to derive
+    // these two subkeys and then zeroised; a password change re-unwraps it from
+    // the header on disk, which it has to read anyway.
     index_key: IndexKey,
     entry_wrap_key: EntryWrapKey,
     document: IndexDocument,
     pack_cap: u64,
     limits: Limits,
-    /// Held for the vault's lifetime; released by `Drop` (FR-26).
     lock: VaultLock,
 }
 
 impl Vault {
-    /// Creates a vault at `dir`.
-    ///
-    /// `pack_cap` is a parameter rather than a constant so that multi-pack
-    /// behaviour — spanning, and the damage locality of S-4 — is testable
-    /// without gigabytes of fixture.
+    /// Creates a vault at `dir`. `pack_cap` is a parameter so multi-pack
+    /// behaviour is testable without gigabytes of fixture.
     ///
     /// # Errors
     ///
-    /// [`Error::Io`] if the directory cannot be written, [`Error::VaultInUse`]
-    /// if something already holds the directory open, or a cryptographic
-    /// failure during setup.
+    /// [`Error::Io`], [`Error::VaultInUse`], or a cryptographic failure.
     pub fn create(
         dir: &Path,
         password: &Password,
@@ -130,13 +109,10 @@ impl Vault {
         Ok(vault)
     }
 
-    /// Opens a vault.
+    /// Opens a vault, decrypting the whole index into memory (FR-6).
     ///
-    /// **The whole index is decrypted here and held in memory** (FR-6), and no
-    /// pack file is touched: the work at open is a function of entry count
-    /// alone, which is S-2. Verification is never triggered at open (FR-33) —
-    /// it reads the entire vault, and doing that on every open would make the
-    /// product unusable at the sizes it exists for.
+    /// Touches no pack file, so open cost follows entry count and not vault
+    /// size (S-2). Never verifies content — that reads everything (FR-33).
     ///
     /// # Errors
     ///
@@ -166,12 +142,10 @@ impl Vault {
         ))
     }
 
-    /// Closes the vault, releasing its lock and destroying its keys (FR-3).
+    /// Closes the vault, releasing its lock and zeroising its keys (FR-3).
     ///
-    /// **Consuming, not a flag.** A locked vault that remained reachable as a
-    /// value would be a vault whose keys are one bug away from being used
-    /// again; taking `self` makes the guarantee structural. Zeroisation happens
-    /// in the key types' `Drop` (HC-2).
+    /// Takes `self` rather than setting a flag, so a closed vault is not
+    /// reachable as a value.
     pub fn lock(self) {
         drop(self);
     }
@@ -184,10 +158,8 @@ impl Vault {
         pack_cap: u64,
         lock: VaultLock,
     ) -> Self {
-        // A document written before `next_entry_id` existed, or one whose
-        // counter somehow lags its entries, is repaired upward and never
-        // downward. Identifiers are bound into nonces (§3.2, §3.3); a counter
-        // that went backwards would reissue one.
+        // Repaired upward, never downward: identifiers are bound into nonces,
+        // so a counter that went backwards would reissue one.
         let highest = document.entries.iter().map(|e| e.id.get()).max();
         let floor = highest.map_or(1, |h| h + 1);
         document.next_entry_id = document.next_entry_id.max(floor).max(1);
@@ -229,9 +201,8 @@ impl Vault {
 
     /// The entry at one full path — folder and name together (FR-13, §4.6).
     ///
-    /// **Identity is the full path.** Two entries sharing a name in different
-    /// folders are unrelated, and matching on name alone would let an ingest
-    /// into one folder silently overwrite a file in another.
+    /// Identity is the full path: matching on name alone would let an ingest
+    /// into one folder overwrite a file in another.
     #[must_use]
     pub fn find(&self, folder: &str, name: &str) -> Option<&Entry> {
         self.document
@@ -240,14 +211,13 @@ impl Vault {
             .find(|e| e.folder == folder && e.name == name)
     }
 
-    /// The vault's totals (FR-8), read rather than computed (FR-22).
+    /// The vault's totals, read rather than computed (FR-8, FR-22).
     #[must_use]
     pub fn statistics(&self) -> Statistics {
         self.document.statistics
     }
 
-    /// The index generation, which is the external-modification detector
-    /// (FR-27).
+    /// The index generation — the external-modification detector (FR-27).
     #[must_use]
     pub fn generation(&self) -> u64 {
         self.document.generation
@@ -259,15 +229,9 @@ impl Vault {
         &self.header
     }
 
-    /// Recomputes the statistics from the index and the packs on disk.
-    ///
-    /// **An oracle and a diagnostic, never the source of
-    /// [`statistics`](Self::statistics).** FR-22 requires the totals to be
-    /// maintained incrementally and never scanned; this exists so the
-    /// incremental path has something independent to be checked against.
-    /// Incremental accounting is the classic place for slow divergence, and a
-    /// total that drifts by one delete in a hundred is invisible until a user
-    /// runs compaction on a figure that was wrong.
+    /// Recomputes the statistics by scanning. A test oracle and a diagnostic,
+    /// never the source of [`statistics`](Self::statistics) — FR-22 requires
+    /// those to be incremental. This is what they get checked against.
     ///
     /// # Errors
     ///
@@ -291,13 +255,9 @@ impl Vault {
 
     // -- writes ------------------------------------------------------------
 
-    /// Checks everything that must be true before any write.
-    ///
-    /// **FR-27 lives here.** The generation counter is a detector only if
-    /// something consults it before writing, and this is the one place every
-    /// write passes through. A vault in a sync folder gaining a write from
-    /// another machine is an expected condition, not an anomaly; winning
-    /// silently would discard it.
+    /// The one place every write passes through, so FR-27's check lives here:
+    /// the generation counter only detects anything if something reads it
+    /// before writing.
     fn begin_write(&self) -> Result<()> {
         if self.lock.access() == Access::ReadOnly {
             return Err(Error::ReadOnly);
@@ -313,12 +273,9 @@ impl Vault {
         Ok(())
     }
 
-    /// Streams one source into the packs, producing an entry that nothing yet
-    /// references.
-    ///
-    /// **Nothing here advances a generation**, which is what makes FR-12 and
-    /// FR-14 true at once: on any failure or cancellation the packs are rolled
-    /// back and the index never learned of the attempt.
+    /// Streams one source into the packs, producing an entry nothing yet
+    /// references. Advances no generation, so a failure or cancellation rolls
+    /// the packs back and the index never learned of the attempt.
     #[allow(clippy::too_many_arguments)]
     fn stage(
         &self,
@@ -342,12 +299,9 @@ impl Vault {
         let mut stop: Option<Error> = None;
 
         let outcome = {
-            // The hook is the only seam progress, cancellation, and the size
-            // limit need. The limit is checked here rather than from the
-            // source's stated length because a limit read from file metadata
-            // is a limit on files, not on content: a growing file, a pipe, or
-            // any `Read` that is not a file would pass it and then write past
-            // the bound (FR-15, C-2).
+            // The size limit is checked here rather than from the source's
+            // stated length: metadata is a limit on files, not on content, and
+            // every non-file source would slip past it (FR-15, C-2).
             let mut hook = |done: u64| -> std::result::Result<(), CryptoError> {
                 if done > max_file_size {
                     stop = Some(Error::LimitExceeded {
@@ -400,17 +354,15 @@ impl Vault {
 
     /// Stores one source's content under the given name and folder.
     ///
-    /// **Ordering is what makes FR-12 true.** Content is written and fsynced
-    /// before the index generation that references it advances, and success is
-    /// reported only after the index write returns. A crash between the two
-    /// leaves pack bytes that no index references — garbage, reclaimed by the
-    /// reconciliation of Phase 4 — and never an index entry pointing at bytes
-    /// that were not durable.
+    /// Content is written and fsynced before the index generation that names it
+    /// advances, and success is reported only after the index write returns
+    /// (FR-12). A crash between the two leaves unreferenced pack bytes, never
+    /// an index entry pointing at bytes that were not durable.
     ///
     /// # Errors
     ///
-    /// [`Error::LimitExceeded`] naming the limit and the actual value,
-    /// [`Error::Cancelled`], [`Error::ChangedOnDisk`], or [`Error::Io`].
+    /// [`Error::LimitExceeded`], [`Error::Cancelled`], [`Error::ChangedOnDisk`],
+    /// or [`Error::Io`].
     pub fn add(
         &mut self,
         name: &str,
@@ -442,11 +394,9 @@ impl Vault {
         Ok(id)
     }
 
-    /// Stores one file from the filesystem.
-    ///
-    /// **The source is opened read-only and left exactly as it was** (FR-9).
-    /// Nothing in `veil-core` deletes or modifies a file outside a vault, so an
-    /// interrupted or failed ingest cannot lose data.
+    /// Stores one file from the filesystem. The source is opened read-only and
+    /// left as it was; nothing here deletes or modifies a file outside a vault
+    /// (FR-9).
     ///
     /// # Errors
     ///
@@ -472,21 +422,17 @@ impl Vault {
     /// Stores every regular file beneath `root` (FR-10, FR-11).
     ///
     /// Each file records its path relative to `root` as folder metadata.
-    /// Symbolic links are not followed and are returned as skipped — omitting
-    /// them silently would produce a vault the user believes is complete.
+    /// Symbolic links are not followed and are returned as skipped, so a caller
+    /// can say what was left out (FR-11).
     ///
-    /// **Progress is counted in entries, not bytes.** A folder ingest is one
-    /// operation to the person watching it, and forwarding each file's byte
-    /// counter would send the figure back to zero at every file — a bar that
-    /// restarts is worse than no bar. A caller that wants byte-level progress
-    /// for one file drives [`add_path`](Self::add_path) itself, which is the
-    /// same choice §4.8 makes for verification and for the same reason.
+    /// Progress counts entries, not bytes — forwarding each file's byte counter
+    /// would reset the figure to zero at every file. For byte-level progress on
+    /// one file, drive [`add_path`](Self::add_path).
     ///
     /// # Errors
     ///
-    /// As [`add`](Self::add). A failure partway leaves the entries already
-    /// committed in place; each file is its own transaction, so a folder ingest
-    /// that stops has stored a prefix of the folder rather than nothing.
+    /// As [`add`](Self::add). Each file is its own transaction, so a failure
+    /// partway leaves the files already stored in place.
     pub fn add_folder(
         &mut self,
         root: &Path,
@@ -521,12 +467,9 @@ impl Vault {
 
     /// Replaces the entry at one full path with new content (FR-13).
     ///
-    /// **There is never a moment with zero intact versions** (HC-4). The new
-    /// content is written and durable first; then one generation step
-    /// simultaneously points the path at the new entry and marks the old
-    /// entry's extents reclaimable. Two steps — remove then add — would create
-    /// exactly the window this forbids, and it would be invisible to every test
-    /// that does not fail between them.
+    /// New content is written and made durable first, then **one** generation
+    /// step both points the path at it and marks the old extents reclaimable.
+    /// Remove-then-add would leave a window with zero intact versions (HC-4).
     ///
     /// # Errors
     ///
@@ -557,8 +500,8 @@ impl Vault {
         let id = EntryId::new(self.document.next_entry_id);
         let (entry, ciphertext_len) = self.stage(id, name, folder, src, None, progress, cancel)?;
 
-        // From here on nothing can fail before the single index write, which is
-        // what makes this one generation step rather than two.
+        // Nothing below can fail before the single index write. That is what
+        // keeps this one generation step rather than two.
         let old = self.document.entries.swap_remove(position);
         let old_stored: u64 = old.extents.iter().map(|x| x.length).sum();
 
@@ -574,12 +517,10 @@ impl Vault {
 
     /// Removes an entry from the index (FR-21).
     ///
-    /// **The stored bytes remain until compaction, and this is not an
-    /// oversight.** They are counted into reclaimable bytes so the figure the
-    /// user is shown says so (FR-8, FR-29). Anyone tempted to truncate here
-    /// should note that packs are shared between entries and append-only: the
-    /// bytes cannot be removed without rewriting the pack, which is exactly
-    /// what compaction is (FR-23).
+    /// The stored bytes stay until compaction and are counted into reclaimable
+    /// bytes so the reported figures say so (FR-8, FR-29). They cannot be
+    /// removed here: packs are shared and append-only, so removing them means
+    /// rewriting the pack, which is compaction (FR-23).
     ///
     /// # Errors
     ///
@@ -601,19 +542,17 @@ impl Vault {
         self.document.statistics.entry_count -= 1;
         self.document.statistics.logical_bytes -= removed.size;
         self.document.statistics.reclaimable_bytes += stored;
-        // `next_entry_id` is deliberately untouched. Reissuing a deleted
+        // `next_entry_id` is deliberately untouched: reissuing a deleted
         // entry's identifier would let its wrapped key decrypt under a live
-        // entry's nonce (§3.2, §3.3).
+        // entry's nonce.
         self.commit()
     }
 
     /// Changes the vault's password (FR-4).
     ///
-    /// **Only the master key's wrapping changes.** No content, no index, and no
-    /// entry key is touched, which is why FR-4's completion time is independent
-    /// of vault size — the property is structural rather than measured. The old
-    /// password is verified before anything is written, because verifying
-    /// afterwards would destroy a vault on a typo.
+    /// Only the master key's wrapping changes — no content, no index, no entry
+    /// key — so the time it takes does not depend on vault size. The old
+    /// password is verified before anything is written.
     ///
     /// # Errors
     ///
@@ -629,17 +568,15 @@ impl Vault {
             return Err(Error::ReadOnly);
         }
 
-        // Verified against what is on disk, not against what is in memory: the
-        // question FR-4 asks is whether the caller knows the password that
-        // currently opens this vault.
+        // Verified against what is on disk, not what is in memory: the question
+        // is whether the caller knows the password that opens this vault now.
         let bytes = std::fs::read(self.dir.join(HEADER_FILE))?;
         let (_, master) = unlock(&bytes, old)?;
 
         let mut kdf_salt = [0u8; SALT_LEN];
         let mut wrap_nonce = [0u8; WRAP_NONCE_LEN];
-        // A fresh salt and a fresh nonce. Reusing either would make two
-        // passwords' wrappings relatable, and a reused nonce under a
-        // rederivable key is a break rather than a weakness.
+        // Fresh salt and nonce. A reused nonce under a rederivable key is a
+        // break, not a weakness.
         fill_random(&mut kdf_salt)?;
         fill_random(&mut wrap_nonce)?;
 
@@ -661,17 +598,12 @@ impl Vault {
         Ok(())
     }
 
-    /// Re-reads the index from disk, adopting whatever an external writer left
-    /// (FR-27).
+    /// Re-reads the index from disk, adopting an external writer's change
+    /// (FR-27). The way forward after [`Error::ChangedOnDisk`], without asking
+    /// for the password again.
     ///
-    /// **The other half of FR-27.** Detecting the change and refusing to write
-    /// over it is only useful if there is a way forward, and requiring the
-    /// password again to get one would make "offer to reload" a re-open in
-    /// disguise. The subkeys are already held, so this costs one index read.
-    ///
-    /// Anything the caller had staged against the old view is stale afterwards
-    /// — including entry identifiers, which is why this returns nothing and the
-    /// caller re-reads [`entries`](Self::entries).
+    /// Entry identifiers held from before are stale afterwards; re-read
+    /// [`entries`](Self::entries).
     ///
     /// # Errors
     ///
@@ -694,11 +626,9 @@ impl Vault {
 
     /// Writes one entry's content to `dst`, verified.
     ///
-    /// Nothing reaches `dst` before it has authenticated, and the content hash
-    /// is compared after the final chunk (FR-17). Writing to a `Write` rather
-    /// than to a path is what makes S-1 structural and is a direct correction:
-    /// the original Veil chose the destination itself and wrote into the
-    /// working directory over the user's original.
+    /// Nothing reaches `dst` before it authenticates, and the content hash is
+    /// compared after the final chunk (FR-17). Takes a `Write` rather than a
+    /// path, so no destination is ever chosen in here.
     ///
     /// # Errors
     ///
@@ -720,14 +650,9 @@ impl Vault {
         self.read_entry(entry, dst, progress, cancel)
     }
 
-    /// Extracts one entry to a path, removing the partial output on failure.
-    ///
-    /// **This wrapper belongs in the core, not in each frontend.** FR-17 says
-    /// incomplete output must be removed rather than left looking like a valid
-    /// file, and only whoever created the file can remove it —
-    /// [`extract`](Self::extract) deliberately cannot, because it never learns
-    /// a path. Implementing the removal twice, once per frontend, is how the
-    /// two frontends come to differ, which A-4 forbids.
+    /// Extracts one entry to a path, removing the partial output on failure
+    /// (FR-17). Lives here rather than in each frontend so the removal is
+    /// written once.
     ///
     /// # Errors
     ///
@@ -747,10 +672,9 @@ impl Vault {
         drop(file);
 
         if outcome.is_err() {
-            // A truncated plaintext left on disk is indistinguishable from a
-            // short file, which is precisely what HC-3 forbids. If the removal
-            // itself fails there is nothing further to be done, and the
-            // original failure is the one the caller needs.
+            // A truncated plaintext on disk is indistinguishable from a short
+            // file. If the removal itself fails, the original error is still
+            // the one the caller needs.
             let _ = std::fs::remove_file(dst_path);
         }
         outcome
@@ -807,10 +731,9 @@ impl Vault {
                 what: Damaged::ContentHash,
                 affected: vec![id],
             }),
-            // An I/O failure reaching an entry's extents usually means a pack
-            // is gone. §4.5 calls that total damage to *that pack*, not a
-            // broken vault, and S-4 wants the pack named — so the pack is
-            // named rather than folded into "content is damaged".
+            // An I/O failure reaching the extents usually means a pack is
+            // gone. Name the pack rather than folding it into "content is
+            // damaged" (S-4).
             Err(CryptoError::Io) => {
                 let missing = entry
                     .extents
@@ -833,19 +756,15 @@ impl Vault {
 
     /// Verifies every entry, writing nothing (FR-33, §4.8).
     ///
-    /// **Reuses the extraction path with the output discarded**, which is the
-    /// whole design of §4.8: a verification routine that re-implements the read
-    /// path verifies its own re-implementation. Reuse is what makes
-    /// "verification passed" mean "extraction will succeed".
-    ///
-    /// Failure is per entry. A failing entry is recorded and verification
-    /// continues, so one damaged pack yields a complete list of what it cost
-    /// rather than stopping at the first casualty (S-4).
+    /// Reuses the extraction path with the output discarded, so "verification
+    /// passed" means "extraction will succeed". Failure is per entry:
+    /// verification continues and returns every failure, so one damaged pack
+    /// yields a full list of what it cost (S-4).
     ///
     /// # Errors
     ///
-    /// Never for a damaged entry — that is a verdict, not an error. Only if the
-    /// report itself cannot be produced.
+    /// Never for a damaged entry — that is a verdict. Only if the report itself
+    /// cannot be produced.
     pub fn verify(&self, progress: &mut impl Progress, cancel: &Cancel) -> Result<Report> {
         let total = Some(self.document.entries.len() as u64);
         let mut report = Report {
@@ -859,9 +778,7 @@ impl Vault {
                 break;
             }
 
-            // Progress is per entry rather than per byte, because the Design
-            // Guideline's estimate is in time and entry counts are what a user
-            // can hold in their head (§4.8).
+            // Per entry rather than per byte (§4.8).
             let outcome =
                 match self.read_entry(entry, &mut std::io::sink(), &mut NoProgress, &Cancel::new())
                 {
@@ -886,10 +803,8 @@ impl Vault {
 
 /// Writes the header, replacing any existing one.
 ///
-/// Written beside and renamed over, so a failure partway leaves the previous
-/// header intact rather than a half-written one (HC-4). The header is the one
-/// file whose loss costs the whole vault, and it is small enough that the extra
-/// file costs nothing.
+/// Written beside and renamed over: a failure partway leaves the previous
+/// header intact rather than a half-written one (HC-4).
 fn write_header(dir: &Path, header: &Header) -> Result<()> {
     let final_path = dir.join(HEADER_FILE);
     let staging = dir.join(format!("{HEADER_FILE}.new"));

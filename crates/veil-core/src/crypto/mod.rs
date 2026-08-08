@@ -1,11 +1,9 @@
 //! Key derivation, key hierarchy, streaming AEAD, and zeroisation (Spec §3).
 //!
-//! This module depends on no sibling module, so that splitting it into a
-//! separate crate for independent audit stays a mechanical move (Spec §1).
-//! It carries its own error type for the same reason; the conversion into the
-//! crate taxonomy lives in `error`, pointing the dependency the other way.
-//! Phase 0 to-do item P0.1.d enforces the rule with a check rather than with
-//! intent, and test case T0.4 is the check.
+//! Depends on no sibling module, so splitting it into its own crate for audit
+//! stays a mechanical move. It carries its own error type for the same reason;
+//! the conversion into the crate taxonomy lives in `error`. Test T0.4 enforces
+//! this rather than trusting intent.
 
 mod error;
 mod kdf;

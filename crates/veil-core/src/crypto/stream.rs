@@ -72,20 +72,15 @@ pub fn generate_nonce_prefix() -> [u8; NONCE_PREFIX_LEN] {
     bytes
 }
 
-/// Associated data bound to every chunk of one entry.
-///
-/// The entry's identity, so a chunk cannot be transplanted from one entry to
-/// another — the substitution case named in HC-3. STREAM already binds chunk
-/// position, so position needs no help here.
+/// Bound to every chunk: the entry's identity, so a chunk cannot be
+/// transplanted between entries (HC-3). STREAM already binds position.
 fn associated_data(entry_id: u64) -> [u8; 8] {
     entry_id.to_le_bytes()
 }
 
-/// Reads up to `buf.len()` bytes, returning short only at end of input.
-///
-/// `Read::read` may return fewer bytes than asked for at any time. Treating a
-/// short read as end of input would split a chunk and produce ciphertext that
-/// only this build could read back.
+/// Reads up to `buf.len()` bytes, short only at end of input. Treating any
+/// short read as EOF would split a chunk and produce ciphertext only this build
+/// could read back.
 fn read_fully(src: &mut impl Read, buf: &mut [u8]) -> Result<usize, CryptoError> {
     let mut filled = 0;
     while filled < buf.len() {
@@ -99,13 +94,9 @@ fn read_fully(src: &mut impl Read, buf: &mut [u8]) -> Result<usize, CryptoError>
     Ok(filled)
 }
 
-/// Called after each chunk is committed, with the cumulative plaintext byte
-/// count.
-///
-/// Returning an error stops the operation at that boundary. This is the only
-/// seam progress reporting and cooperative cancellation need (A-3), and it is
-/// stated as a plain callback so that `crypto` keeps depending on no sibling
-/// module: the meaning of stopping belongs to the caller, not here.
+/// Called after each chunk with the cumulative plaintext byte count. Returning
+/// an error stops the operation at that boundary — the one seam progress and
+/// cancellation need (A-3). What stopping *means* belongs to the caller.
 pub type ChunkHook<'a> = &'a mut dyn FnMut(u64) -> Result<(), CryptoError>;
 
 /// Encrypts `src` into `dst`, hashing the plaintext as it goes.
@@ -125,11 +116,8 @@ pub fn encrypt(
 
 /// Encrypts as [`encrypt`] does, calling `on_chunk` at every chunk boundary.
 ///
-/// **Cancellation latency is bounded by the lookahead, not by one chunk.**
-/// Knowing which chunk is last requires reading the next one first, so a hook
-/// that stops at the boundary after chunk *n* has caused chunk *n+1* to be
-/// read. That is a constant of at most one extra chunk, and it is stated here
-/// rather than left for a caller to discover from a test.
+/// Stopping costs up to one extra chunk of reading: knowing which chunk is last
+/// requires reading the next one first.
 ///
 /// # Errors
 ///
@@ -159,9 +147,9 @@ pub fn encrypt_watched(
     let mut current_len = read_fully(src, &mut current)?;
 
     loop {
-        // Whether this is the final chunk cannot be known until the next read
-        // returns nothing. STREAM tags the last chunk differently, and getting
-        // that wrong is precisely the defect being fixed.
+        // The final chunk is only known once the next read returns nothing.
+        // STREAM tags the last chunk differently, and getting that wrong is
+        // the defect this rebuild exists to fix.
         let next_len = if current_len < CHUNK_LEN {
             0
         } else {
@@ -185,9 +173,8 @@ pub fn encrypt_watched(
                 .map_err(|_| CryptoError::Authentication)?;
             dst.write_all(&sealed).map_err(|_| CryptoError::Io)?;
             ciphertext_len += sealed.len() as u64;
-            // The final chunk is reported too. A file small enough to fit in
-            // one chunk reaches the hook only here, and a limit that never saw
-            // it would not be a limit (FR-15).
+            // Reported for the last chunk too: a single-chunk file reaches
+            // the hook only here, and a limit that missed it is no limit.
             on_chunk(plaintext_len)?;
             break;
         }
@@ -274,8 +261,8 @@ pub fn decrypt_watched(
 
     let mut current_len = read_fully(src, &mut current)?;
     if current_len == 0 {
-        // Not even a tag. An entry always has a final chunk, so an empty
-        // stream is a truncation, not an empty file.
+        // Not even a tag. Every entry has a final chunk, so an empty stream
+        // is truncation, not an empty file.
         return Err(CryptoError::Authentication);
     }
 
@@ -291,9 +278,9 @@ pub fn decrypt_watched(
             aad: &aad,
         };
 
-        // A chunk removed from the end turns what was encrypted with
-        // `encrypt_next` into what is decrypted with `decrypt_last`, and the
-        // tags do not match. That is the truncation case failing.
+        // Truncation fails here: a removed final chunk turns something
+        // encrypted with `encrypt_next` into a `decrypt_last`, and the tags
+        // disagree.
         if next_len == 0 {
             let Some(last) = stream.take() else {
                 return Err(CryptoError::Authentication);

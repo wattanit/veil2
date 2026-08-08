@@ -1,22 +1,13 @@
 //! Pack files and extents (Spec §4.5; S-3, S-4, A-5, FR-25).
 //!
-//! Packs are append-only and capped. The cap is what satisfies three
-//! requirements at once:
+//! Append-only and capped. The cap buys three things: a change dirties one pack
+//! plus the index, so sync transfers bytes proportional to the change (S-3);
+//! damage costs only the entries with extents in that pack, and extents make
+//! those entries enumerable (S-4); and compaction rewrites one pack at a time,
+//! so it needs about one pack of working space (FR-25).
 //!
-//! - **S-3** — adding a file dirties one pack plus the index, so incremental
-//!   backup and file-sync transfer bytes proportional to the change rather
-//!   than to the vault.
-//! - **S-4** — a damaged region costs only the entries with extents in that
-//!   pack, and because extents map packs to entries, those entries are
-//!   *enumerable*. Attribution is half the requirement: S-4 rejects one bad
-//!   sector losing everything, and equally rejects one bad sector being
-//!   indistinguishable from total loss.
-//! - **FR-25** — compaction rewrites one pack at a time and therefore needs
-//!   about one pack of working space regardless of vault size.
-//!
-//! The cap is a parameter rather than a constant. A multi-pack test that needs
-//! gigabytes of fixture gets marked ignored within a month, and the
-//! requirements it covers are among the most consequential in the format.
+//! The cap is a parameter, not a constant — a multi-pack test needing gigabytes
+//! of fixture gets marked ignored and stops running.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -25,10 +16,8 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::index::{Entry, EntryId, Extent};
 
-/// Default maximum bytes in one pack file.
-///
-/// Initial; tunable. Smaller improves sync granularity (S-3) and damage
-/// locality (S-4); larger reduces file count and per-pack overhead.
+/// Default maximum bytes in one pack file. Initial; tunable. Smaller improves
+/// sync granularity (S-3) and damage locality (S-4).
 pub const DEFAULT_PACK_CAP: u64 = 1024 * 1024 * 1024;
 
 /// Directory holding pack files, relative to the vault.
@@ -64,13 +53,9 @@ pub fn existing_pack_ids(vault_dir: &Path) -> Result<Vec<u32>> {
     Ok(ids)
 }
 
-/// Total bytes held by every pack file on disk.
-///
-/// **A diagnostic and a test oracle, not a source for the statistics of
-/// FR-22.** FR-22 requires the totals to be maintained incrementally and never
-/// scanned; this function is the independent measurement those totals are
-/// checked against, which is the only way an incremental counter's slow
-/// divergence is ever caught.
+/// Total bytes held by every pack file on disk. A diagnostic and a test oracle,
+/// never a source for the statistics of FR-22 — those are incremental, and this
+/// is what they get checked against.
 ///
 /// # Errors
 ///
@@ -83,10 +68,8 @@ pub fn total_pack_bytes(vault_dir: &Path) -> Result<u64> {
     Ok(total)
 }
 
-/// Every entry with at least one extent in the given pack (S-4).
-///
-/// This is the attribution S-4 requires: a partial failure presented as a list
-/// of unreadable files rather than as a failure of the vault.
+/// Every entry with at least one extent in the given pack — the attribution
+/// S-4 requires (a list of unreadable files, not a failed vault).
 #[must_use]
 pub fn entries_in_pack(entries: &[Entry], pack_id: u32) -> Vec<EntryId> {
     entries
@@ -96,11 +79,8 @@ pub fn entries_in_pack(entries: &[Entry], pack_id: u32) -> Vec<EntryId> {
         .collect()
 }
 
-/// An append-only sink that rolls over to a new pack at the cap, recording
-/// where everything landed.
-///
-/// Implements [`Write`], so content encryption streams straight into it and
-/// neither layer needs to know about the other's chunking.
+/// An append-only sink that rolls over at the cap, recording where everything
+/// landed. Implements [`Write`], so encryption streams straight into it.
 pub struct PackSink<'a> {
     vault_dir: &'a Path,
     cap: u64,
@@ -150,12 +130,7 @@ impl<'a> PackSink<'a> {
     }
 
     /// Finishes the sink, fsyncing the pack before anything may refer to it.
-    ///
-    /// **Ordering is what makes FR-12 true.** Pack data is durable before the
-    /// index generation that references it advances, so a crash between the
-    /// two leaves pack bytes that no index references — reclaimed later as
-    /// garbage — and never an index entry pointing at bytes that were not
-    /// durable.
+    /// This is the ordering FR-12 depends on.
     ///
     /// # Errors
     ///
@@ -168,25 +143,17 @@ impl<'a> PackSink<'a> {
     }
 
     /// Abandons everything this sink wrote, returning the packs to the state
-    /// they were in when it opened.
+    /// they were in when it opened, so a cancelled ingest leaves no bytes
+    /// behind (FR-14).
     ///
-    /// **Why truncate rather than leave the bytes as garbage.** §4.7 requires a
-    /// cancelled ingest to leave a vault indistinguishable from one where the
-    /// operation never started, and §4.5's reconciliation (FR-32, Phase 4)
-    /// reclaims orphans only at the next open. Between those two facts sits a
-    /// vault whose statistics disagree with its packs. Undoing the write here
-    /// is safe because packs are append-only and the vault's exclusive lock
-    /// means nobody else appended in the meantime — so the only bytes above the
-    /// starting offset are this sink's own.
-    ///
-    /// Reconciliation is still needed: a *crash* leaves orphans that no
-    /// rollback ran for. This narrows the window rather than closing it.
+    /// Safe because packs are append-only and the vault holds an exclusive
+    /// lock: the only bytes above the starting offset are this sink's own.
+    /// A *crash* still leaves orphans that no rollback ran for — that is what
+    /// reconciliation is for (FR-32).
     ///
     /// # Errors
     ///
-    /// [`Error::Io`] if a pack cannot be truncated or removed. The caller is
-    /// already on a failure path; a failure here means the packs hold bytes the
-    /// index does not reference, which Phase 4's reconciliation removes.
+    /// [`Error::Io`] if a pack cannot be truncated or removed.
     pub fn rollback(mut self) -> Result<()> {
         if let Some(file) = self.file.take() {
             drop(file);
@@ -232,8 +199,7 @@ impl<'a> PackSink<'a> {
 
     fn roll_over(&mut self) -> std::io::Result<()> {
         if let Some(file) = self.file.take() {
-            // The pack being left behind must be durable before anything is
-            // written into its successor.
+            // Durable before anything is written into its successor.
             file.sync_all()?;
         }
         self.pack_id += 1;
@@ -242,7 +208,7 @@ impl<'a> PackSink<'a> {
     }
 
     fn record(&mut self, length: u64) {
-        // Consecutive writes into one pack are one extent, not many.
+        // Consecutive writes into one pack merge into one extent.
         if let Some(last) = self.extents.last_mut()
             && last.pack_id == self.pack_id
             && last.offset + last.length == self.offset
@@ -288,11 +254,8 @@ impl Write for PackSink<'_> {
     }
 }
 
-/// A reader over one entry's extents, in order.
-///
-/// Reads seek directly to each extent, so one entry is readable without
-/// touching unrelated data (A-5) — the door held open for the mount deferral,
-/// and the basis of the product's first motivation.
+/// A reader over one entry's extents, in order. Seeks directly to each extent,
+/// so one entry is readable without touching unrelated data (A-5).
 pub struct PackSource<'a> {
     vault_dir: &'a Path,
     extents: Vec<Extent>,
@@ -345,9 +308,8 @@ impl Read for PackSource<'_> {
             };
             let read = file.read(&mut buf[..want])?;
             if read == 0 {
-                // The extent claims more than the pack holds: the pack was
-                // truncated. Reported as short here, and caught as an
-                // authentication failure by the layer above (HC-3).
+                // The extent claims more than the pack holds — a truncated
+                // pack. Caught as an authentication failure above (HC-3).
                 self.index += 1;
                 self.consumed = 0;
                 self.file = None;
@@ -359,10 +321,8 @@ impl Read for PackSource<'_> {
     }
 }
 
-/// Converts an I/O failure while touching a pack into a damage report for it.
-///
-/// The pack id is the attribution S-4 needs, and only the caller that knows
-/// which pack it was reaching for can supply it.
+/// A damage report naming one pack. Only the caller that knows which pack it
+/// was reaching for can supply the id (S-4).
 #[must_use]
 pub fn damaged_pack(pack_id: u32, affected: Vec<EntryId>) -> Error {
     Error::Corrupt {

@@ -1,20 +1,12 @@
-//! Typed error taxonomy (Technical Specification §6).
+//! Typed error taxonomy (Spec §6).
 //!
-//! Two prohibitions govern this module, and they are different rules:
+//! No variant carries plaintext, content, key material, or the password (HC-2)
+//! — enforced by not giving any variant a field that could hold one. Entry
+//! *identity* is fine and necessary: FR-33 and S-4 need failing entries named.
 //!
-//! - **No error, `Display`, or `Debug` output contains plaintext, file
-//!   content, key material, or the password** (HC-2). Enforced by giving no
-//!   variant a field that could carry one.
-//! - **Logging never records entry names, folder metadata, or content**
-//!   (HC-1). That is the logging guard's rule, not this module's.
-//!
-//! Errors therefore *may* carry entry identity, and must: FR-33 and S-4
-//! require failing entries to be named, and an error that cannot say which
-//! entry failed cannot satisfy them.
-//!
-//! `anyhow` is not used here. The original Veil converted every failure into
-//! one string-carrying variant, which is why a wrong password and a corrupted
-//! vault were indistinguishable to callers — the condition FR-2 forbids.
+//! No `anyhow`. The original Veil flattened every failure into one
+//! string-carrying variant, which is why a wrong password and a corrupt vault
+//! were indistinguishable to callers.
 
 use crate::index::EntryId;
 
@@ -39,10 +31,9 @@ impl core::fmt::Display for Limit {
     }
 }
 
-/// Which part of a vault was found damaged.
-///
-/// Damage is attributed to a component so that a partial failure is presented
-/// as a list of unreadable files rather than as a failure of the vault (S-4).
+/// Which part of a vault was found damaged. Attributed to a component so a
+/// partial failure reads as a list of unreadable files, not a failed vault
+/// (S-4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Damaged {
     /// The plaintext header (§4.2).
@@ -76,31 +67,24 @@ impl core::fmt::Display for Damaged {
     }
 }
 
-/// Every way a vault operation can fail.
-///
-/// Each variant carries the state fact the Design Guideline's three-part
-/// message needs (§4.2): what happened, what state things are in, and enough
-/// for the caller to say what can be done.
+/// Every way a vault operation can fail. Each variant carries what happened
+/// and what state things are left in.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// The password did not unwrap the master key, and the header is
-    /// otherwise well formed (FR-2).
-    ///
-    /// Distinct from every corruption variant so that a user with a typo is
-    /// not sent to look for a damaged file.
+    /// The password did not unwrap the master key, and the header is otherwise
+    /// well formed (FR-2). Distinct from corruption, so a typo does not send
+    /// the user looking for a damaged file.
     #[error("that password does not open this vault; the vault itself is intact")]
     WrongPassword,
 
-    /// The target is not a Veil vault at all (FR-2, §4.2).
-    ///
-    /// Reported before any key derivation is attempted, and never as damage.
+    /// Not a Veil vault at all — reported before any key derivation, and never
+    /// as damage (FR-2).
     #[error("this is not a Veil vault")]
     NotAVault,
 
-    /// The vault's format is newer than this release understands (FR-5).
-    ///
-    /// Refusing is correct: guessing at an unknown format risks HC-3.
+    /// The format is newer than this release understands (FR-5). Guessing at an
+    /// unknown format risks HC-3.
     #[error(
         "this vault needs format version {required}; this release understands \
          up to {supported}. The vault is unchanged"
@@ -126,10 +110,8 @@ pub enum Error {
     },
 
     /// Stored data was altered, truncated, reordered, or substituted (HC-3).
-    ///
-    /// `affected` carries every entry the damage costs, not the first (S-4).
-    /// An empty `affected` means the damage is to a component that belongs to
-    /// no single entry, such as the header.
+    /// `affected` lists every entry it costs, not the first (S-4); empty means
+    /// the damage belongs to no single entry, such as the header.
     #[error("{what} is damaged; {} entr{} affected", affected.len(), if affected.len() == 1 { "y" } else { "ies" })]
     Corrupt {
         /// Which component was found damaged.
@@ -142,20 +124,16 @@ pub enum Error {
     #[error("this vault is already open somewhere else; nothing has been changed")]
     VaultInUse,
 
-    /// The vault changed on disk since it was opened (FR-27).
-    ///
-    /// The write was refused rather than applied over the change.
+    /// The vault changed on disk since it was opened; the write was refused
+    /// rather than applied over the change (FR-27).
     #[error("this vault changed on disk since it was opened; the change was not overwritten")]
     ChangedOnDisk,
 
     /// The vault opened read-only and a write was attempted (§4.5, §4.8).
     ///
-    /// Not an I/O failure, and the difference is what the message must carry:
-    /// nothing is wrong. Both §4.5 and §4.8 require a read-only vault to open —
-    /// refusing would turn an interrupted compaction on a drive that later
-    /// became write-protected into permanent data loss (HC-4), and would make
-    /// the operation that diagnoses a failing drive the one operation a failing
-    /// drive cannot run.
+    /// Not an I/O failure — nothing is wrong. Read-only vaults must open, or a
+    /// write-protected drive would make an interrupted compaction permanent
+    /// (HC-4) and verification impossible on the drive that needs it most.
     #[error("this vault is open read-only and cannot be changed; nothing has been altered")]
     ReadOnly,
 
@@ -163,9 +141,8 @@ pub enum Error {
     #[error("the vault's storage is no longer reachable; the operation stopped where it was")]
     StorageUnavailable,
 
-    /// The operation would exceed a configured limit (FR-15).
-    ///
-    /// Carries both numbers the message must name.
+    /// The operation would exceed a configured limit, and carries both numbers
+    /// the message has to name (FR-15).
     #[error("the {limit} limit is {allowed}; this would make it {actual}. Nothing was added")]
     LimitExceeded {
         /// Which limit.
@@ -176,10 +153,8 @@ pub enum Error {
         actual: u64,
     },
 
-    /// The caller cancelled the operation (FR-14, FR-19).
-    ///
-    /// `rolled_back` states what the cancellation left behind, which is the
-    /// state fact the message must carry.
+    /// The caller cancelled. `rolled_back` says what it left behind
+    /// (FR-14, FR-19).
     #[error(
         "cancelled{}",
         if *rolled_back { "; the vault is as it was before this started" }
@@ -190,21 +165,17 @@ pub enum Error {
         rolled_back: bool,
     },
 
-    /// A whole-vault verification found failing entries (FR-33, S-4).
-    ///
-    /// Carries every failing entry, not just the first. Veil2 stores no
-    /// redundancy, so this reports what is already lost and repairs nothing.
+    /// Verification found failing entries — every one, not the first
+    /// (FR-33, S-4). Veil2 stores no redundancy, so this reports loss rather
+    /// than repairing it.
     #[error("{} entr{} failed verification and cannot be recovered", entries.len(), if entries.len() == 1 { "y" } else { "ies" })]
     VerificationFailed {
         /// Every entry that failed.
         entries: Vec<EntryId>,
     },
 
-    /// An underlying I/O failure.
-    ///
-    /// Carries the kind only. A path is deliberately not carried: an ingest
-    /// source path is a fact about the user's machine that no error needs, and
-    /// the caller that supplied the path is the layer that can name it.
+    /// An underlying I/O failure, kind only. No path: the caller supplied it
+    /// and is the layer that can name it.
     #[error("a storage operation failed ({kind})")]
     Io {
         /// The kind of I/O failure.
@@ -232,10 +203,8 @@ impl From<crate::format::HeaderError> for Error {
             },
             H::Superseded { version } => Self::FormatSuperseded {
                 version,
-                // No format version has been superseded yet, and support is
-                // not withdrawn while the migration path of Requirements §2.2
-                // remains unbuilt. This arm exists so the taxonomy is complete,
-                // not because it is reachable.
+                // Nothing has been superseded yet. This arm exists so the
+                // taxonomy is complete, not because it is reachable.
                 last_supported_by: env!("CARGO_PKG_VERSION"),
             },
             H::Damaged => Self::Corrupt {
@@ -250,10 +219,9 @@ impl From<crate::crypto::CryptoError> for Error {
     fn from(e: crate::crypto::CryptoError) -> Self {
         use crate::crypto::CryptoError as C;
         match e {
-            // Authentication failure alone does not say whether the password
-            // was wrong or the data was altered. Every caller that can tell
-            // the difference classifies it before converting; this arm is the
-            // conservative default for callers that cannot.
+            // Authentication failure alone cannot say whether the password was
+            // wrong or the data altered. Callers that can tell classify it
+            // before converting; this is the default for those that cannot.
             C::Authentication => Self::WrongPassword,
             C::Derivation | C::ParametersOutOfRange => Self::Corrupt {
                 what: Damaged::Header,
@@ -266,11 +234,9 @@ impl From<crate::crypto::CryptoError> for Error {
             C::Io => Self::Io {
                 kind: std::io::ErrorKind::Other,
             },
-            // The crypto layer does not know why a caller's hook stopped it.
-            // Every caller that uses a hook records its own reason and restores
-            // it before converting; this arm is the conservative default for a
-            // caller that does not, and cancellation is the only reading that
-            // does not overstate what happened.
+            // The crypto layer does not know why a hook stopped it. Callers
+            // record their own reason and restore it; cancellation is the only
+            // default reading that does not overstate what happened.
             C::Stopped => Self::Cancelled { rolled_back: false },
         }
     }

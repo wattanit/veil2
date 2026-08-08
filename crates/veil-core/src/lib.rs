@@ -1,11 +1,9 @@
 //! Veil2 core: vault format, cryptography, storage, and the vault API.
 //!
-//! This library has no interactive input or output and assumes neither a
-//! terminal nor a graphical shell (A-1). Credentials are passed in as
-//! parameters; nothing here prompts. The command-line and graphical
-//! applications are peer consumers holding presentation logic only (A-4).
+//! No interactive input or output, and no assumption of a terminal or a
+//! graphical shell (A-1). Credentials are parameters; nothing here prompts.
 //!
-//! Module ownership follows Technical Specification §1.
+//! For a walk-through, run `cargo run -p veil-core --example demo`.
 
 #![forbid(unsafe_code)]
 

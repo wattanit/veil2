@@ -1,20 +1,13 @@
 //! Double-buffered atomic index persistence (Spec §4.4; HC-4, FR-27).
 //!
-//! Two slots, `index.a` and `index.b`, each self-authenticating and carrying
-//! its generation. A write serialises the whole index, encrypts it, writes it
-//! to **the slot holding the older generation**, and fsyncs. A read takes the
-//! slot with the highest generation that authenticates.
+//! Two slots. A write goes to the slot holding the *older* generation and
+//! fsyncs; a read takes the highest generation that authenticates. No rename —
+//! rename atomicity varies by platform while "the older slot is expendable"
+//! holds everywhere, so a crash mid-write only damages the expendable one.
 //!
-//! **No rename is involved**, because rename atomicity varies across platforms
-//! and filesystems while "the older slot is expendable" holds everywhere. A
-//! crash mid-write damages only the expendable slot, and the previous
-//! generation remains intact and openable (HC-4).
-//!
-//! The generation appears twice: in the slot's plaintext preamble, so a reader
-//! can order two slots without decrypting either, and inside the encrypted
-//! document. The preamble is bound as associated data, so a preamble that
-//! disagrees with the document does not authenticate — an attacker cannot make
-//! a stale slot look current.
+//! The generation appears in the plaintext preamble, so slots can be ordered
+//! without decrypting, and inside the document. The preamble is bound as
+//! associated data, so a stale slot cannot be made to look current.
 
 use std::fs;
 use std::io::Write;
@@ -96,10 +89,8 @@ fn decrypt_slot(path: &Path, key: &IndexKey) -> Option<IndexDocument> {
     Some(document)
 }
 
-/// Reads the index, taking the highest generation that authenticates.
-///
-/// Falls back to the other slot rather than failing, which is where "the older
-/// slot is expendable" is cashed in (HC-4).
+/// Reads the index, taking the highest generation that authenticates, falling
+/// back to the other slot rather than failing (HC-4).
 ///
 /// # Errors
 ///
@@ -128,10 +119,8 @@ pub fn read(vault_dir: &Path, key: &IndexKey) -> Result<IndexDocument> {
 }
 
 /// Writes the index to the slot holding the older generation, and fsyncs.
-///
-/// The caller has already advanced `document.generation`; this function does
-/// not touch it, so that "one generation per committed mutation" stays a
-/// property of the caller's transaction rather than of the writer.
+/// Does not touch `document.generation` — one generation per committed mutation
+/// is the caller's transaction to keep, not the writer's.
 ///
 /// # Errors
 ///
@@ -140,9 +129,8 @@ pub fn write(vault_dir: &Path, key: &IndexKey, document: &IndexDocument) -> Resu
     let paths = slot_paths(vault_dir);
     let states: Vec<SlotState> = paths.iter().map(|p| peek(p)).collect();
 
-    // The expendable slot: absent, unreadable, or holding the older
-    // generation. Writing over the current one would put both generations at
-    // risk in a single crash, which is the whole thing this design avoids.
+    // The expendable slot: absent, unreadable, or older. Writing over the
+    // current one would risk both generations in a single crash.
     let target = if states[0].generation.is_none() {
         &paths[0]
     } else if states[1].generation.is_none() {

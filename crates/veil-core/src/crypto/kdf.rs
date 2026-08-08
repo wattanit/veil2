@@ -1,30 +1,22 @@
 //! Argon2id key-encryption key derivation (Spec §3.1, §4.2; HC-5, HC-6, C-3).
 //!
-//! **There is no default parameter set in this module, and that is the point.**
-//! Every derivation reads its cost parameters and salt from the values it is
-//! handed, which come from the vault's header. Code that reads recorded
-//! parameters and also has constants within reach will eventually use the
-//! constants, and the day it does, every vault written under different
-//! settings becomes unopenable — the HC-5 failure the original Veil was one
-//! edit away from, having hardcoded its Argon2 constants.
+//! Derivation reads its cost parameters and salt from the values handed to it,
+//! which come from the vault's header. **Nothing here is reachable as a
+//! fallback**: code with constants in reach eventually uses them, and the day
+//! it does, every vault written under other settings stops opening.
 //!
-//! Two parameter sets are named: [`KdfParams::for_tests`], which a release
-//! build cannot reach, and [`KdfParams::for_new_vaults`], which is what a
-//! *creation* uses. Neither is reachable from the derivation path, and that is
-//! the distinction that matters — a value chosen when a vault is made is not a
-//! fallback for opening one.
+//! Two sets are named — [`KdfParams::for_tests`] (unreachable in release) and
+//! [`KdfParams::for_new_vaults`] — and both are for *creating* a vault, never
+//! for opening one.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 
 use super::error::CryptoError;
 use super::keys::{KEY_LEN, Kek, Password};
 
-/// Identifies the key-derivation function a vault records.
-///
-/// Stored in the header as a number so that it need not be Argon2id forever
-/// (Spec §4.2). An unrecognised value is refused by name rather than falling
-/// back to a default — a fallback here would derive a key with settings the
-/// vault never agreed to.
+/// The key-derivation function a vault records. A number in the header so it
+/// need not be Argon2id forever; an unknown value is refused by name, never
+/// defaulted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KdfAlgorithm {
@@ -51,10 +43,8 @@ impl KdfAlgorithm {
     }
 }
 
-/// The cost parameters a vault records so that it stays openable (HC-5).
-///
-/// Held as a value read from a header. Constructing one from anything else is
-/// creating a new vault's parameters, which happens in exactly one place.
+/// The cost parameters a vault records so it stays openable (HC-5). Normally
+/// read from a header; constructing one otherwise means creating a vault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KdfParams {
     /// Memory cost, in kibibytes.
@@ -66,13 +56,9 @@ pub struct KdfParams {
 }
 
 impl KdfParams {
-    /// Bounds on what this build will run.
-    ///
-    /// These are not a policy about strength — they are the range within which
-    /// the derivation is known to complete rather than exhaust memory or run
-    /// unboundedly. A header carrying values outside them is damaged, not
-    /// merely unusual, which is what lets a caller tell tampering from a wrong
-    /// password.
+    /// The range in which derivation is known to complete rather than exhaust
+    /// memory. Not a strength policy. Values outside it mean a damaged header,
+    /// not an unusual one.
     const MIN_M_COST: u32 = 8;
     const MAX_M_COST: u32 = 4 * 1024 * 1024;
     const MIN_T_COST: u32 = 1;
@@ -80,12 +66,8 @@ impl KdfParams {
     const MIN_P_COST: u32 = 1;
     const MAX_P_COST: u32 = 64;
 
-    /// Cheap parameters for tests.
-    ///
-    /// Compiled out of release builds. A vault created with these is a weak
-    /// vault, and HC-5 means the parameters live in it permanently — so a leak
-    /// here is not a slow build, it is a vault that stays weak for its whole
-    /// life.
+    /// Cheap parameters for tests, compiled out of release builds. A vault
+    /// created with these stays weak for life — the parameters live in it.
     #[cfg(any(test, debug_assertions))]
     #[must_use]
     pub const fn for_tests() -> Self {
@@ -98,17 +80,13 @@ impl KdfParams {
 
     /// The parameters a newly created vault records (C-3, Spec §11.1).
     ///
-    /// **These have not been measured, and the Specification says so.** They
-    /// are the estimate of Spec §11.1 — chosen to approach C-3's one-second
-    /// budget while staying feasible on a modest machine — accepted by the
-    /// owner as a working value until there is low-spec hardware to tune on. A
-    /// vault that cannot be opened on a small laptop is a worse failure than a
-    /// slow derivation on a fast one, so if either number moves it is likely
-    /// this one, downward.
+    /// **Unmeasured.** An estimate aimed at C-3's one-second budget, kept as a
+    /// working value until there is low-spec hardware to tune on. If a number
+    /// moves it is likely the memory cost, downward — a vault that will not
+    /// open on a small laptop is worse than a slow derivation on a fast one.
     ///
-    /// **Changing it orphans nothing** (HC-5). It is used at creation only;
-    /// opening a vault derives from what that vault recorded, and this constant
-    /// is unreachable from that path. A caller is free to pass something else.
+    /// Changing it orphans nothing: it is used at creation only, and opening
+    /// derives from what the vault recorded (HC-5).
     #[must_use]
     pub const fn for_new_vaults() -> Self {
         Self {
@@ -132,10 +110,7 @@ impl KdfParams {
 }
 
 /// Derives the key-encryption key from a password and a vault's recorded
-/// parameters.
-///
-/// Every input other than the password comes from the header. Nothing is
-/// defaulted, and nothing is inferred.
+/// parameters. Every other input comes from the header; nothing is defaulted.
 ///
 /// # Errors
 ///

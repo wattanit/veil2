@@ -1,12 +1,10 @@
 //! The vault header (Spec §4.2; HC-5, FR-5, FR-30).
 //!
-//! Plaintext, fixed size, and authenticated as associated data by the
-//! master-key unwrap (§3.1). It holds only what a reader needs before it has a
-//! key.
+//! Plaintext, fixed size, authenticated as associated data by the master-key
+//! unwrap (§3.1). Holds only what a reader needs before it has a key.
 //!
-//! **Byte order is little-endian, everywhere, stated once here.** HC-8 makes a
-//! vault portable across platforms, and a header whose interpretation depends
-//! on the writing machine's endianness is not.
+//! Little-endian everywhere, stated once here: a header whose meaning depends
+//! on the writing machine's endianness is not portable (HC-8).
 
 use crate::crypto::{KdfAlgorithm, KdfParams, WRAP_NONCE_LEN, WRAPPED_KEY_LEN};
 
@@ -16,12 +14,9 @@ pub const MAGIC: [u8; 8] = *b"VEIL2\0\0\0";
 /// The format version this release writes.
 pub const CURRENT_FORMAT_VERSION: u16 = 1;
 
-/// The oldest format version this release still reads.
-///
-/// Support is not withdrawn while the migration path of Requirements §2.2
-/// remains unbuilt: a release may not refuse a vault it can still read,
-/// because there is no other route by which the user's data could be
-/// recovered.
+/// The oldest format version this release still reads. Support is never
+/// withdrawn while there is no migration path — a release may not refuse a
+/// vault it can still read.
 pub const OLDEST_SUPPORTED_FORMAT_VERSION: u16 = 1;
 
 /// Length of the salt fed to key derivation.
@@ -39,19 +34,15 @@ const OFF_SALT: usize = 30;
 const OFF_WRAP_NONCE: usize = 62;
 const OFF_CHECKSUM: usize = 86;
 
-/// Every header byte preceding the wrapped master key.
-///
-/// This span is the associated data of the master-key unwrap, which is what
-/// authenticates the whole header without a separate MAC (§3.1).
+/// Every header byte before the wrapped master key — the associated data of the
+/// unwrap, which authenticates the whole header without a separate MAC.
 pub const HEADER_PREFIX_LEN: usize = 90;
 
 /// Total size of the header on disk.
 pub const HEADER_LEN: usize = HEADER_PREFIX_LEN + WRAPPED_KEY_LEN;
 
-/// What went wrong reading a header.
-///
-/// The three outcomes are kept apart because they send a user to three
-/// different places (FR-2, FR-5, FR-30).
+/// What went wrong reading a header. Kept apart because each sends the user
+/// somewhere different (FR-2, FR-5, FR-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeaderError {
     /// The bytes are not a Veil vault at all: wrong magic, or too short.
@@ -68,9 +59,8 @@ pub enum HeaderError {
         /// Version the vault uses.
         version: u16,
     },
-    /// A Veil vault whose header is damaged.
-    ///
-    /// Reported when the header's own checksum does not match its contents.
+    /// A Veil vault whose header is damaged — its own checksum does not match
+    /// its contents.
     Damaged,
 }
 

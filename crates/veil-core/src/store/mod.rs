@@ -1,7 +1,5 @@
-//! Pack files, extent allocation, space accounting, and compaction (Spec §4.5).
-//!
-//! Compaction and reconciliation are Phase 4; this module carries pack write
-//! and read, which is what Phase 1 needs to prove damage locality (S-4).
+//! Pack files, extents, and space accounting (Spec §4.5). Compaction and
+//! reconciliation are Phase 4.
 
 mod pack;
 

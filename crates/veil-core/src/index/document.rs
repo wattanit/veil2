@@ -1,11 +1,8 @@
 //! The index document and its serialisation (Spec §4.3).
 //!
-//! One CBOR document (RFC 8949), encrypted whole under the index subkey.
-//!
-//! CBOR is chosen over a compact non-self-describing encoding because it
-//! tolerates unknown fields, which is what makes the deferred migration path
-//! of Requirements §2.2 tractable — a reader can recognise and preserve what
-//! it does not understand.
+//! One CBOR document, encrypted whole under the index subkey. CBOR rather than
+//! a compact encoding because it tolerates unknown fields, so a reader can
+//! preserve what it does not understand.
 
 use std::collections::BTreeMap;
 
@@ -16,12 +13,9 @@ use super::entry::Entry;
 /// The index layout version, distinct from the vault's format version.
 pub const CURRENT_INDEX_VERSION: u16 = 1;
 
-/// Totals a user needs in order to decide whether compaction is worth running
-/// (FR-8).
-///
-/// **Maintained incrementally, never scanned** (FR-22). Deriving reclaimable
-/// space by scanning hundreds of gigabytes would cost more than the compaction
-/// it is meant to advise.
+/// Totals a user needs to decide whether compaction is worth running (FR-8).
+/// Maintained incrementally, never scanned — deriving reclaimable space by
+/// scanning would cost more than the compaction it advises (FR-22).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Statistics {
     /// Number of entries.
@@ -39,36 +33,32 @@ pub struct Statistics {
 pub struct IndexDocument {
     /// Layout version of this document.
     pub index_version: u16,
-    /// Monotonic counter, advanced by exactly one per committed mutation.
-    ///
-    /// The external-modification detector (FR-27), and what decides which slot
-    /// a read takes (§4.4).
+    /// Advanced by exactly one per committed mutation. The
+    /// external-modification detector (FR-27), and what decides which slot a
+    /// read takes (§4.4).
     pub generation: u64,
     /// The totals of FR-8.
     pub statistics: Statistics,
 
     /// The next identifier to issue, never decreasing.
     ///
-    /// **This is a cryptographic field wearing bookkeeping clothes.** The entry
-    /// identifier is bound into the DEK-wrapping nonce and into the content
-    /// associated data (§3.2, §3.3). Deriving the next identifier from the
-    /// highest *live* one would reissue the identifier of a deleted entry, and
-    /// a wrapped key from the dead entry would then decrypt under a live one's
-    /// nonce. The counter must therefore outlive the entries it counted, which
-    /// means it is stored rather than computed.
+    /// **Stored, not computed, and that is a cryptographic requirement.** The
+    /// entry identifier is bound into the DEK-wrapping nonce and the content
+    /// associated data (§3.2, §3.3). Deriving it from the highest *live* entry
+    /// would reissue a deleted entry's identifier, and that entry's wrapped key
+    /// would then decrypt under a live one's nonce. The counter has to outlive
+    /// the entries it counted.
     ///
-    /// `#[serde(default)]` so a document written before this field existed
-    /// still reads; the vault repairs the value upward from its live entries on
-    /// load, which is correct for every case except a vault whose highest entry
-    /// was deleted before this field existed. No such vault has been released.
+    /// `#[serde(default)]` so an older document still reads; the vault repairs
+    /// the value upward from its live entries on load.
     #[serde(default)]
     pub next_entry_id: u64,
 
     /// Every entry.
     pub entries: Vec<Entry>,
 
-    /// Document-level fields written by a version this build does not know,
-    /// preserved across a read and write cycle (FR-30).
+    /// Fields written by a version this build does not know, preserved across
+    /// a read and write cycle (FR-30).
     #[serde(flatten)]
     pub unknown: BTreeMap<String, ciborium::Value>,
 }
@@ -99,13 +89,11 @@ impl IndexDocument {
         Ok(out)
     }
 
-    /// Parses CBOR.
+    /// Parses CBOR. Total: no input panics, hangs, or allocates without bound.
     ///
     /// # Errors
     ///
     /// [`IndexFormatError::Malformed`] on anything the model cannot accept.
-    /// The parser is total: no input panics, hangs, or allocates without
-    /// bound (P1.7.e).
     pub fn from_cbor(bytes: &[u8]) -> Result<Self, IndexFormatError> {
         ciborium::from_reader(bytes).map_err(|_| IndexFormatError::Malformed)
     }

@@ -18,12 +18,9 @@ pub enum SkipReason {
     NotARegularFile,
 }
 
-/// One path the walk declined to store.
-///
-/// **Returned to the caller, not merely omitted.** FR-11 says links are
-/// *recorded as skipped*, and a walk that quietly drops them produces a vault
-/// the user believes is complete. The path is the caller's own — they supplied
-/// the root — so returning it tells them nothing they did not already know.
+/// One path the walk declined to store. Returned rather than silently omitted:
+/// a walk that drops links quietly produces a vault the user thinks is
+/// complete (FR-11).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Skipped {
     /// The path that was skipped, as encountered.
@@ -55,14 +52,11 @@ pub struct Walk {
 
 /// Walks `root`, collecting regular files and recording what was skipped.
 ///
-/// **Symbolic links are detected with `symlink_metadata` at every level**, both
-/// for the files that would be stored and for the directories that would be
-/// descended into. Checking only files would let a directory link pull in a
-/// whole tree from outside the root — the case FR-11 names — and would let a
-/// link to an ancestor make the walk run forever.
+/// Links are detected with `symlink_metadata` at every level, directories
+/// included — checking only files would let a directory link pull in a tree
+/// from outside the root, or loop forever on a link to an ancestor.
 ///
-/// The root itself is not tested: the caller named it, so following it is their
-/// instruction rather than the walk's inference.
+/// The root itself is not tested; the caller named it.
 ///
 /// # Errors
 ///
@@ -76,9 +70,9 @@ pub fn walk(root: &Path) -> Result<Walk> {
         for entry in fs::read_dir(&dir)? {
             children.push(entry?.path());
         }
-        // Directory order is not defined by any filesystem, and an ingest that
-        // stores files in a different order on two machines makes a vault's
-        // bytes depend on where it was written (HC-8).
+        // Directory order is undefined, and an ingest that stores files in a
+        // different order on two machines makes a vault's bytes depend on where
+        // it was written (HC-8).
         children.sort();
 
         for path in children {
@@ -106,9 +100,8 @@ pub fn walk(root: &Path) -> Result<Walk> {
             }
 
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                // A name that is not UTF-8 cannot be stored: §4.3 fixes names
-                // as UTF-8, and inventing a lossy replacement would produce an
-                // entry whose name does not match the file (HC-8).
+                // Names are UTF-8 (§4.3). A lossy replacement would produce
+                // an entry whose name does not match the file (HC-8).
                 out.skipped.push(Skipped {
                     path: path.clone(),
                     reason: SkipReason::NotARegularFile,
@@ -135,11 +128,9 @@ pub fn walk(root: &Path) -> Result<Walk> {
     Ok(out)
 }
 
-/// The `/`-separated folder metadata for `path` beneath `root`.
-///
-/// **The separator is a serialisation detail, never the host's** (§4.6). A
-/// vault written on Windows and opened on Linux must present the same folder
-/// strings, and it will not if the host's separator reaches the stored value.
+/// The `/`-separated folder metadata for `path` beneath `root`. The separator
+/// is never the host's, or a vault written on Windows would present different
+/// folder strings on Linux (§4.6).
 fn relative_folder(root: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
     let parent = relative.parent()?;

@@ -1,13 +1,11 @@
 //! Advisory locking for an open vault (Spec §2; FR-26).
 //!
-//! An OS advisory lock on a lock file, held for the lifetime of the open vault.
+//! An OS advisory lock on a lock file, held for the vault's lifetime.
 //!
-//! *Honesty clause, restated from Spec §2 because it is the kind of thing that
-//! gets lost between a document and a call site:* advisory locks are unreliable
-//! on network filesystems and some FUSE-backed mounts. There the lock is
-//! best-effort, and the index generation counter is the actual protection —
-//! Veil2 detects the conflicting write and refuses rather than preventing it
-//! (FR-27). The network-path advisory the product shows is P5.4.
+//! Advisory locks are unreliable on network filesystems and some FUSE mounts.
+//! There the lock is best-effort and the index generation counter is the real
+//! protection: the conflicting write is detected and refused, not prevented
+//! (FR-27).
 
 use std::fs;
 use std::path::Path;
@@ -16,12 +14,9 @@ use fs4::{FileExt, TryLockError};
 
 use crate::error::{Error, Result};
 
-/// Name of the lock file within a vault directory.
-///
-/// Inside the vault, so the vault stays self-contained and a copy of the
-/// directory is a copy of the vault. The cost is that a sync tool replicates
-/// this file; it holds no data, and a stale copy is harmless because the lock
-/// lives in the OS, not in the file's contents.
+/// Name of the lock file, inside the vault so a copy of the directory is a copy
+/// of the vault. A replicated copy is harmless: the lock lives in the OS, not
+/// in the file's contents.
 pub const LOCK_FILE: &str = "veil.lock";
 
 /// Whether a vault may be written.
@@ -30,10 +25,8 @@ pub enum Access {
     /// The vault is locked and writable.
     ReadWrite,
     /// The vault opened without a lock because its storage would not take one.
-    ///
-    /// §4.5 requires read-only media to open, and §4.8 requires verification to
-    /// run on a read-only vault. Refusing to open would make the operation that
-    /// diagnoses a failing drive the one operation a failing drive cannot run.
+    /// Read-only media must open (§4.5), and verification must run on them
+    /// (§4.8).
     ReadOnly,
 }
 
@@ -51,9 +44,8 @@ impl VaultLock {
     ///
     /// # Errors
     ///
-    /// [`Error::VaultInUse`] when another opener holds the lock. That is a
-    /// distinct condition from damage and from an I/O failure, because it sends
-    /// the user somewhere else entirely (FR-26, FR-2).
+    /// [`Error::VaultInUse`] when another opener holds it — a distinct
+    /// condition from damage, because it sends the user somewhere else.
     pub fn acquire(vault_dir: &Path) -> Result<Self> {
         let path = vault_dir.join(LOCK_FILE);
         let file = match fs::OpenOptions::new()
@@ -64,9 +56,8 @@ impl VaultLock {
             .open(&path)
         {
             Ok(file) => file,
-            // The distinction that matters: a lock file that cannot be created
-            // because the medium is read-only is not a failure, it is a vault
-            // that opens read-only. Any other I/O failure is a failure.
+            // A lock file that cannot be created because the medium is
+            // read-only is not a failure; it is a read-only vault.
             Err(e)
                 if matches!(
                     e.kind(),
@@ -86,13 +77,11 @@ impl VaultLock {
                 file: Some(file),
                 access: Access::ReadWrite,
             }),
-            // Contention is FR-26's condition and has its own error, because it
-            // sends the user somewhere no other failure does.
+            // Contention is FR-26's condition and has its own error.
             Err(TryLockError::WouldBlock) => Err(Error::VaultInUse),
-            // A lock the filesystem does not support is not contention. Saying
-            // "in use" here would send a user hunting for a second window that
-            // does not exist; the vault opens read-only and FR-27's generation
-            // counter is the protection, exactly as §2's honesty clause says.
+            // A lock the filesystem does not support is not contention.
+            // "In use" would send the user hunting for a second window that
+            // does not exist.
             Err(TryLockError::Error(_)) => Ok(Self {
                 file: None,
                 access: Access::ReadOnly,
@@ -109,15 +98,12 @@ impl VaultLock {
 
 impl Drop for VaultLock {
     fn drop(&mut self) {
-        // **The release must survive an error path and an unwind**, which is
-        // the whole reason this is a `Drop` rather than a call at the end of a
-        // successful operation. A leaked lock reports a user's own vault as in
-        // use, and the remedy is a file they were never told about.
+        // `Drop` rather than a call at the end of a successful path, so the
+        // release survives an error and an unwind. A leaked lock reports a
+        // user's own vault as in use, with no obvious remedy.
         //
-        // Closing the file releases the lock on every platform Veil2 supports;
-        // the explicit unlock is here so the release is stated rather than
-        // inferred, and its failure is ignored because there is no caller left
-        // to tell and the close covers it.
+        // Closing the file releases the lock anyway; the explicit unlock states
+        // it, and its failure is ignored because the close covers it.
         if let Some(file) = self.file.take() {
             let _ = FileExt::unlock(&file);
         }
