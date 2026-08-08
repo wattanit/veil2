@@ -18,3 +18,4 @@ pub mod vault;
 
 pub use error::{Damaged, Error, Limit, Result};
 pub use index::EntryId;
+pub use vault::Vault;

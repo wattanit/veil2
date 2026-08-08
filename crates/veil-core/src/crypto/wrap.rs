@@ -20,7 +20,7 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
 use super::error::CryptoError;
-use super::keys::{KEY_LEN, Kek, MasterKey};
+use super::keys::{Dek, EntryWrapKey, KEY_LEN, Kek, MasterKey};
 
 /// Length of the nonce used to wrap the master key.
 pub const WRAP_NONCE_LEN: usize = 24;
@@ -109,4 +109,78 @@ pub fn unwrap_master_key(
     let mut bytes = [0u8; KEY_LEN];
     bytes.copy_from_slice(&opened);
     Ok(MasterKey::from_bytes(bytes))
+}
+
+/// Nonce for wrapping one entry's data key.
+///
+/// The entry-wrap subkey is shared across entries, so the nonce must not be.
+/// Entry identifiers are unique within a vault and never reused, which makes
+/// them a nonce that needs no storage and cannot drift out of step with a
+/// counter.
+#[must_use]
+fn dek_nonce(entry_id: u64) -> [u8; WRAP_NONCE_LEN] {
+    let mut nonce = [0u8; WRAP_NONCE_LEN];
+    nonce[..8].copy_from_slice(&entry_id.to_le_bytes());
+    nonce
+}
+
+/// Wraps one entry's data key under the entry-wrap subkey.
+///
+/// # Errors
+///
+/// Fails only if the AEAD refuses the input.
+pub fn wrap_dek(
+    key: &EntryWrapKey,
+    entry_id: u64,
+    dek: &Dek,
+) -> Result<[u8; WRAPPED_KEY_LEN], CryptoError> {
+    let cipher = XChaCha20Poly1305::new(key.expose().into());
+    let nonce = dek_nonce(entry_id);
+    let sealed = cipher
+        .encrypt(
+            (&nonce).into(),
+            Payload {
+                msg: dek.expose(),
+                aad: &entry_id.to_le_bytes(),
+            },
+        )
+        .map_err(|_| CryptoError::Authentication)?;
+    if sealed.len() != WRAPPED_KEY_LEN {
+        return Err(CryptoError::Authentication);
+    }
+    let mut out = [0u8; WRAPPED_KEY_LEN];
+    out.copy_from_slice(&sealed);
+    Ok(out)
+}
+
+/// Unwraps one entry's data key.
+///
+/// The entry id is bound as associated data, so a wrapped key cannot be moved
+/// from one entry to another.
+///
+/// # Errors
+///
+/// [`CryptoError::Authentication`] when the index was altered.
+pub fn unwrap_dek(
+    key: &EntryWrapKey,
+    entry_id: u64,
+    wrapped: &[u8; WRAPPED_KEY_LEN],
+) -> Result<Dek, CryptoError> {
+    let cipher = XChaCha20Poly1305::new(key.expose().into());
+    let nonce = dek_nonce(entry_id);
+    let opened = cipher
+        .decrypt(
+            (&nonce).into(),
+            Payload {
+                msg: wrapped,
+                aad: &entry_id.to_le_bytes(),
+            },
+        )
+        .map_err(|_| CryptoError::Authentication)?;
+    if opened.len() != KEY_LEN {
+        return Err(CryptoError::Authentication);
+    }
+    let mut bytes = [0u8; KEY_LEN];
+    bytes.copy_from_slice(&opened);
+    Ok(Dek::from_bytes(bytes))
 }

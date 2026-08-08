@@ -23,5 +23,6 @@ pub use stream::{
 };
 pub use subkeys::{entry_wrap_key, index_key};
 pub use wrap::{
-    WRAP_NONCE_LEN, WRAPPED_KEY_LEN, generate_master_key, unwrap_master_key, wrap_master_key,
+    WRAP_NONCE_LEN, WRAPPED_KEY_LEN, generate_master_key, unwrap_dek, unwrap_master_key, wrap_dek,
+    wrap_master_key,
 };
