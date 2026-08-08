@@ -1,7 +1,7 @@
 # Veil2 — Phase 2 Test Cases: Vault Operations
 
 **Version:** 1.0
-**Status:** draft
+**Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Foundation and plan versions these cases are built against (G-14):**
