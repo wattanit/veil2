@@ -1,6 +1,6 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.5
+**Version:** 1.6
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
@@ -14,6 +14,9 @@
 - [Phase 1 To-Do](implementation/Phase1-ToDo.md) v1.0 · [Phase 1 Test Cases](implementation/Phase1-TestCases.md) v1.0
 - [Phase 2 To-Do](implementation/Phase2-ToDo.md) v1.0 · [Phase 2 Test Cases](implementation/Phase2-TestCases.md) v1.0
 - [Phase 3 To-Do](implementation/Phase3-ToDo.md) v1.0 · [Phase 3 Test Cases](implementation/Phase3-TestCases.md) v1.0
+- [Phase 4 To-Do](implementation/Phase4-ToDo.md) v1.0 · [Phase 4 Test Cases](implementation/Phase4-TestCases.md) v1.0 — **draft, awaiting owner approval**
+
+*Changes since v1.5 (minor — additive, no decision reversed):* the Phase 4 to-do list and test cases are written and pinned above. They carry seven notes for upstream, none of them absorbed: the Specification is still at v1.4 and those readings are proposed rather than settled. P4.1 gains directory-level durability as an explicit obligation, which §4.7 does not currently state.
 
 *Changes since v1.4 (minor — additive, no decision reversed):* the Phase 3 to-do list and test cases are written and pinned above; re-pinned to the v1.2 Requirements, v1.2 Design Guideline and v1.3 Specification, which absorbed what those two documents raised.
 

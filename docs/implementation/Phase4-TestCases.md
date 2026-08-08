@@ -1,0 +1,250 @@
+# Veil2 — Phase 4 Test Cases: Durability and Compaction
+
+**Version:** 1.0
+**Status:** draft — awaiting owner approval
+**Date:** 2026-08-08
+**Owner:** wattanit
+**Foundation and plan versions these cases are built against (G-14):**
+- Requirements Document **v1.2** — upstream
+- Design Guideline **v1.2** — upstream
+- Technical Specification **v1.4** — upstream
+- Implementation Plan **v1.6** — upstream
+- [Phase4-ToDo.md](Phase4-ToDo.md) **v1.0** — companion; each case names the item it covers
+
+This document owns the **enumerated checks that close Phase 4**. Every case cites the requirement it verifies (G-10).
+
+---
+
+## Conventions
+
+**Case identifiers** are `T<phase>.<n>` — section-numbering references, not foundation identifiers (G-19).
+
+**The crash cases kill a real process.** No case in this file simulates an interruption, and nothing in `veil-core` exists to let one. A case that cannot be reached without a seam in shipped code is not written; it is recorded as unreachable and said so, which this file does twice.
+
+**What "the vault survived" means.** Every crash case asserts the same four things, and a case that asserts fewer is not asserting HC-4:
+
+1. the vault opens;
+2. every file that existed before the killed operation is still listed;
+3. each of those extracts byte-identically to what was stored;
+4. the statistics match a full recount.
+
+**Where these run.** The development machine, macOS. Windows and Linux are unconfirmed (Spec §8.1), and it matters here more than anywhere: signal delivery, `fsync` semantics, and whether a directory sync is required at all are platform behaviour. What passes here is evidence for this platform and a reasonable expectation for the others.
+
+**How to run them.**
+
+```bash
+cargo test --release -p veil-cli --test crashes      # the crash suite
+cargo test --workspace                               # everything, debug
+cargo test -p veil-core -- --ignored --nocapture      # the sweeps and the scale case
+```
+
+The crash cases spawn real processes that derive real keys, so they run in release for the same reason the Phase 3 suite does.
+
+---
+
+## Write ordering
+
+### T4.1 — Every write path is a known write path
+*Covers P4.1.a, P4.1.b · Verifies FR-12, HC-4*
+
+Audit `veil-core`'s source for every point at which a file is created, renamed over, or removed, and compare against the enumerated list of write paths.
+
+**Verdict:** the set matches exactly. A new one that nobody reviewed fails the case, and the fix is to review it and add it, not to widen the check. This is a tripwire, not a proof — what proves the ordering is T4.2 to T4.8. It exists because the ordering obligation is the kind that is met once and then quietly broken by a later change that had no idea it was participating.
+
+---
+
+## Crashes
+
+### T4.2 — A kill during an add loses nothing that was already there
+*Covers P4.2.a, P4.2.b, P4.2.c, P4.2.f, P4.1.b · Verifies HC-4, FR-12*
+
+Build a vault holding several files. Start adding a file large enough that the add is genuinely in flight, wait until the process reports progress, then kill it with an uncatchable signal.
+
+**Verdict:** the four invariants. The interrupted file is either wholly present or wholly absent — never listed with content that does not authenticate — and the vault is openable without any repair step being asked of the user. The signal is a kill and not an interrupt: an interrupt is cancellation, which is a *stronger* promise, and T3.18 covers it.
+
+### T4.3 — A kill during a replace leaves exactly one intact version
+*Covers P4.2.a, P4.2.c · Verifies HC-4, FR-13*
+
+Store a file, then replace it with different content and kill the process part-way.
+
+**Verdict:** the path holds either the old content or the new content, in full, and it extracts. Never zero versions, never a truncated one. FR-13 says the new content is durable before the old becomes unreachable, and this is the only case that can tell whether that ordering was actually implemented or merely intended.
+
+### T4.4 — A kill during a delete leaves the file present or gone, never half
+*Covers P4.2.a, P4.2.c · Verifies HC-4, FR-21*
+
+Delete a file from a vault and kill the process during the operation.
+
+**Verdict:** the four invariants, and the file is either still listed and extractable or absent with its bytes accounted as reclaimable. A delete is one index generation, so this case is mostly asserting that it really is one — an implementation that removed the entry and updated the statistics in two commits would show up here and nowhere else.
+
+### T4.5 — A kill during reclaiming space loses no live file
+*Covers P4.2.a, P4.2.d, P4.6.a · Verifies HC-4, FR-24*
+
+Build a multi-pack vault with a small pack cap through the subject binary, delete enough to make several packs worth reclaiming, start reclaiming, and kill part-way.
+
+**Verdict:** the four invariants. Every live file extracts byte-identically whether its extents had been moved yet or not, and the vault opens with no manual step. FR-24 requires the vault to be openable at *every* point during the operation, and a kill at an arbitrary point is the only way to sample that.
+
+**Why this one uses a subject that is not the shipped binary.** Reclaiming space is a multi-pack behaviour and the pack cap is 1 GiB. Spec §4.5 made the cap an API parameter exactly so this test would not need gigabytes, and the command line does not expose it — a flag existing only to make a test cheap is the seam this project refuses. So the subject is a small binary that links `veil-core` and takes the cap as an argument. It is killed for real; nothing is simulated. Recorded in the To-Do as *Notes for Upstream*, item 7.
+
+### T4.6 — After any kill, the statistics are true again
+*Covers P4.2.c, P4.6.b, P4.4.c · Verifies FR-8, FR-22, HC-4*
+
+After each of T4.2 to T4.5, open the vault and compare every reported figure against a full recount.
+
+**Verdict:** entry count, logical bytes, physical bytes and reclaimable bytes all agree. An incremental counter is broken by exactly the event this suite creates — bytes written that no commit learned about, or a pack written off before it was removed — so a suite that killed processes and never checked the arithmetic would be testing the easy half.
+
+### T4.7 — Repeated kills at unpredictable points
+*Covers P4.2.e, P4.6.c · Verifies HC-4* — `#[ignore]`, run on request
+
+Run each operation many times, killing at a different point each run, seeded so a failure reproduces exactly.
+
+**Verdict:** the four invariants every time. A failure names the operation and the point at which the kill landed. This is the case that finds the boundary nobody thought of; it is `#[ignore]` because it costs minutes, and it is seeded because an unreproducible crash-test failure is worth almost nothing.
+
+### T4.8 — Both index slots are never unreadable at once
+*Covers P4.2.c · Verifies HC-4, Spec §4.4*
+
+After every kill in the suite, read both index slots directly.
+
+**Verdict:** at least one authenticates. The double-buffered design exists so that a crash mid-write damages only the expendable slot; this asserts it against real interruptions rather than against a test that overwrites a slot on purpose.
+
+---
+
+## Reclaiming space
+
+### T4.9 — What was promised is what is recovered
+*Covers P4.3.a, P4.3.c, P4.3.i · Verifies FR-8, FR-25, Design §8.4*
+
+Read the reclaimable figure, reclaim space, then read the figures again.
+
+**Verdict:** the space recovered equals the figure that was showing beforehand, the reclaimable figure is zero afterwards, and the physical figure fell by the amount recovered. Design §8.4 puts that number in the control the user presses, so a run that recovers less than it said has made the interface untrue.
+
+### T4.10 — Working space stays bounded by about one pack
+*Covers P4.3.f · Verifies FR-25*
+
+Build a multi-pack vault at a small cap with garbage spread across every pack, and sample the total bytes on disk throughout the operation.
+
+**Verdict:** the peak never exceeds the starting total by more than about one pack. FR-25 is the requirement that makes reclaiming space possible at all at the sizes in §1; an implementation that copies everything and then swaps passes every other case in this file and fails this one.
+
+### T4.11 — Live content survives byte-identically, and so do its identifiers
+*Covers P4.3.d, P4.3.e · Verifies FR-25, Spec §3.3, §4.5*
+
+Reclaim space over a vault with several files, then extract every one and compare against what was stored.
+
+**Verdict:** every file is byte-identical, every entry identifier is unchanged, every content hash is unchanged, and only the extents differ. Reissuing an identifier would break the binding it has into the wrapping nonce and the content's associated data, and this case is where that would show.
+
+### T4.12 — A pack with nothing to recover is not rewritten
+*Covers P4.3.b · Verifies FR-25*
+
+Reclaim space over a vault where one pack holds no garbage at all.
+
+**Verdict:** that pack is the same file afterwards — same identifier, same bytes — and the operation reports it as untouched. Rewriting a pack to recover nothing is pure cost, and at the sizes in §1 it is minutes of it.
+
+### T4.13 — Cancelling keeps what was already reclaimed
+*Covers P4.3.g · Verifies FR-14, FR-24*
+
+Start reclaiming space over several packs and cancel it part-way.
+
+**Verdict:** the cancelled exit code, the packs already reclaimed stay reclaimed, the vault opens, and the partly-written pack is gone by the time the next open finishes. Each pack is its own transaction, so a cancellation costs at most the pack in flight — which is FR-24's "at most the current unit of work" made observable.
+
+### T4.14 — Damage is refused, not compacted away
+*Covers P4.3.h · Verifies S-4, HC-3*
+
+Corrupt the stored bytes of one file, then try to reclaim space.
+
+**Verdict:** the operation refuses the pack holding the damage, names the entries it affects, and reclaims the other packs or none — but never rewrites the damaged pack and reports success. Copying damage into a fresh pack and deleting the original leaves the user with the same loss and no evidence of where it came from.
+
+### T4.15 — Reclaiming has no schedule and no condition
+*Covers P4.3.j · Verifies FR-23, Spec §5.2*
+
+Read the full help output of `reclaim-space` and of every other command.
+
+**Verdict:** no flag schedules, times, daemonises, or triggers on a threshold — the same verdict as T3.3, re-asserted now that the operation FR-23 is actually about exists. This is the case FR-23 was written for; until this phase there was nothing to attach it to.
+
+### T4.16 — The command says what it did and what it did not
+*Covers P4.3.j, P4.3.k · Verifies FR-21, FR-22, FR-29, Design §7, §8.4*
+
+Reclaim space and read the output. Then delete a file and read that output.
+
+**Verdict:** reclaiming states the figures in the words Design §7 fixes and never says compact, vacuum, or garbage-collect. Deleting still states that the bytes remain until space is reclaimed, and no longer says this version cannot reclaim it — a true sentence in Phase 3 that becomes a false one here, which is the kind of message that survives for years because nothing tests prose.
+
+---
+
+## Reconciliation
+
+### T4.17 — An orphaned pack is removed at open and the space is reported
+*Covers P4.4.a, P4.4.b, P4.4.c · Verifies FR-32*
+
+Leave a pack file that no extent references beside an otherwise intact vault, then open it.
+
+**Verdict:** the pack is gone, the space recovered is reported rather than absorbed, and the statistics afterwards match a recount. FR-32 requires the report as well as the removal: space that reappears without explanation is indistinguishable, to the person watching, from space that was never accounted for properly.
+
+### T4.18 — An open that recovers nothing writes nothing
+*Covers P4.4.d · Verifies HC-4, S-2*
+
+Open an intact vault twice, recording the generation and both index slots' contents each time.
+
+**Verdict:** identical. The generation does not advance, no slot is rewritten, and no pack is touched. An open that writes is an open that can fail, and it would make every read of a vault a durability event.
+
+### T4.19 — An interrupted reclaim is cleaned up at the next open
+*Covers P4.4.a, P4.1.c, P4.3.d · Verifies FR-32, HC-4, FR-24*
+
+Kill the process during a reclaim, then open the vault and read what reconciliation reported.
+
+**Verdict:** whichever side of the commit the kill landed on, the leftover pack — the new one if the index had not advanced, the old one if it had — is removed at open, its space is reported, and nothing live is lost. This is the case that proves the ordering of P4.1.c: the operation is self-healing in both directions, or it is not.
+
+### T4.20 — A read-only vault opens, skips reconciliation, and says so
+*Covers P4.4.e · Verifies FR-32, Spec §4.5, §4.8*
+
+Make a vault directory read-only, leave an orphaned pack in it, and open it. List it and check it. Then try to add.
+
+**Verdict:** it opens; the orphaned pack is still there; listing and checking succeed; the add exits with the read-only code; and the fact that the vault opened read-only is stated at the time it opens, not left to be discovered by the failing add. Refusing to open would turn an interrupted reclaim on a drive that later became read-only into permanent data loss, which HC-4 forbids.
+
+### T4.21 — Garbage inside a live pack is left alone
+*Covers P4.4.f · Verifies FR-23, FR-32*
+
+Delete one file from a pack that holds several, then open the vault.
+
+**Verdict:** the pack is untouched, its size is unchanged, and the reclaimable figure still counts the deleted file's bytes. Reconciliation removes packs nothing references; recovering bytes *inside* a pack is reclaiming space, and FR-23 makes that the user's decision alone.
+
+---
+
+## A pack that is gone
+
+### T4.22 — A missing pack opens the vault and names its casualties
+*Covers P4.5.a, P4.5.b, P4.5.e · Verifies S-4, Spec §4.5*
+
+Remove one pack file from a multi-pack vault and open it.
+
+**Verdict:** the vault opens; the entries with extents in that pack are enumerated at open without any content being read; and the command line says so plainly, in Design §7's words, pointing at `check` for the full account. Refusing to open would convert the loss of one pack into the loss of the whole vault — the failure S-4 exists to reject.
+
+### T4.23 — Everything outside the missing pack still works
+*Covers P4.5.c · Verifies S-4*
+
+In the same vault, list, save a copy of a file stored elsewhere, and check.
+
+**Verdict:** listing is complete, the copy is byte-identical, and `check` names exactly the entries in the missing pack and no others. S-4 is not the claim that damage is detected; it is the claim that damage is *bounded and attributable*, and only the second half is worth anything to someone deciding whether to reach for a backup.
+
+### T4.24 — A missing pack is never treated as garbage
+*Covers P4.5.d · Verifies FR-32, S-4*
+
+Open the vault of T4.22 and read what reconciliation reported.
+
+**Verdict:** nothing was removed, nothing was recovered, no entry was dropped from the index, and the statistics were not quietly adjusted to match the smaller vault. A missing pack is referenced by definition, so it is damage and not residue, and an implementation that confuses the two deletes the record of what the user lost.
+
+---
+
+## Scale
+
+### T4.25 — Bounded working space at a size where it is unambiguous
+*Covers P4.3.f · Verifies FR-25* — `#[ignore]`, run on request
+
+Build a vault large enough that one pack is a small fraction of it, make most of it garbage, and reclaim space while sampling the total on disk.
+
+**Verdict:** the peak stays within about one pack of the starting total, and the vault is intact afterwards. T4.10 asserts the same property at test scale where a bug could hide inside the noise; this one is the Plan's exit condition, and it is `#[ignore]` because it costs minutes and disk.
+
+---
+
+## Not covered, and why
+
+**Power loss.** Every crash case kills a process. That proves the *ordering* — no index generation names bytes that had not been synced — and does not prove that the platform's `fsync` reached the medium, because the page cache survives a process and only a power cut empties it. There is no rig for that here. Spec §11.1's open item is answered to the depth a process kill can answer it and no further, and the To-Do says so rather than letting the suite's green imply more than it tested.
+
+**A reclaim interrupted between the index commit and the pack removal, deterministically.** T4.19 reaches both sides of that boundary by killing at unpredictable points, and T4.7 samples it repeatedly. Landing on it *on purpose* would need the code to tell a test where it is, which is the seam Spec §11.1 already rejected. The window is small and the assertion is statistical; that is stated rather than dressed up as coverage.
