@@ -94,7 +94,7 @@ Deriving per-entry keys deterministically from the entry id would be simpler, bu
 
 ### 3.3 Content encryption
 
-**`StreamBE32<XChaCha20Poly1305>` — the STREAM construction from the `aead` crate.** This is the direct fix for the defect demonstrated in the original Veil, where the final chunk of a file could be removed and decryption still reported success. STREAM tags the last chunk distinctly, so truncation at a chunk boundary fails authentication (HC-3).
+**`StreamBE32<XChaCha20Poly1305>` — the STREAM construction from the `aead-stream` crate.** This is the direct fix for the defect demonstrated in the original Veil, where the final chunk of a file could be removed and decryption still reported success. STREAM tags the last chunk distinctly, so truncation at a chunk boundary fails authentication (HC-3).
 
 - **Chunk size: 1 MiB.** Initial; tune with use. Balances per-chunk tag overhead (16 bytes, negligible at this size) against cancellation latency and memory (S-1).
 - **Nonce prefix: 19 random bytes per entry**, stored in the index entry. STREAM consumes the remaining 5 bytes of the 192-bit nonce for its counter and last-block flag. A fresh random prefix per entry, with a key that is itself unique per entry, makes nonce reuse structurally impossible rather than dependent on a counter being managed correctly.
@@ -331,8 +331,9 @@ Locked initial set. Acceptance policy: primitives come from RustCrypto where one
 
 | Crate | Purpose | Requirement |
 |---|---|---|
-| `chacha20poly1305` | XChaCha20-Poly1305, and `aead::stream` for STREAM | HC-3, HC-6 |
-| `argon2` | Argon2id key derivation | HC-6, C-3 |
+| `chacha20poly1305` | XChaCha20-Poly1305 | HC-3, HC-6 |
+| `aead-stream` | STREAM construction over the above | HC-3, HC-6 |
+| `argon2` | Argon2id key derivation. Pinned to the 0.6 pre-release: 0.5 sits on the previous RustCrypto generation, and running two generations of `digest` in one graph means the audited implementation may not be the one that runs | HC-6, C-3 |
 | `hkdf`, `sha2` | Subkey derivation | §3.1 |
 | `blake3` | Content hashing | FR-17 |
 | `zeroize` | Key material lifetime | §3.1 |

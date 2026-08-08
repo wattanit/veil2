@@ -8,7 +8,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-argon2 = "0.5.3"
+aead-stream = { version = "0.6.0", features = ["alloc"] }
+argon2 = "0.6.0-rc.1"
 blake3 = "1.8.6"
 chacha20poly1305 = "0.11.0"
 ciborium = "0.2.2"
