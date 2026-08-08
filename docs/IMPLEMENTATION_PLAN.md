@@ -1,6 +1,6 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
@@ -8,6 +8,12 @@
 - Requirements Document **v1.1** — upstream
 - Design Guideline **v1.1** — upstream
 - Technical Specification **v1.1** — upstream
+
+**Downstream documents:**
+- [Phase 0 To-Do](implementation/Phase0-ToDo.md) v1.0 · [Phase 0 Test Cases](implementation/Phase0-TestCases.md) v1.0
+- [Phase 1 To-Do](implementation/Phase1-ToDo.md) v1.0 · [Phase 1 Test Cases](implementation/Phase1-TestCases.md) v1.0
+
+*Changes since v1.1 (minor — additive, no decision reversed):* the open question on when per-phase to-do lists are written is resolved and moved to the ledger; the Phase 0 and Phase 1 documents it resolves are pinned above.
 
 *Changes since v1.0:* re-pinned to the v1.1 suite; the three blocked tasks are unblocked; verification scheduled into Phases 2, 3 and 7.
 
@@ -28,6 +34,8 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 4. CI green on all three platforms (HC-8) — a task passing only on the development machine is not done.
 
 **Enumerated test cases live in per-phase test-case documents** (G-10), not here. This plan names what a phase must prove; the test-case documents enumerate the individual checks, each citing the requirement it verifies.
+
+**Per-phase to-do lists and test cases live in `docs/implementation/`**, written two phases ahead of the work rather than all at once — see the resolved entry in Open Questions. Phase 0 and Phase 1 exist; the rest are written as their phases approach.
 
 ---
 
@@ -251,6 +259,9 @@ These apply to every task in every phase and are part of the definition of done,
 
 ## Open Questions
 
-- **Whether per-phase to-do lists are written ahead of each phase or ahead of the whole plan.** Writing them close to the work is what the standard's division of labour intends (G-10), but Phase 1's crypto tasks may warrant earlier detail. Resolver: owner, before Phase 1 begins.
 - **Whether the scale tests of P5.5 run on developer hardware or a dedicated runner.** A multi-gigabyte fixture on every scheduled CI run has a cost worth deciding deliberately. Resolver: owner, at Phase 5.
 - **Whether Phase 7 ships as one release or the GUI lands incrementally behind a pre-release tag.** Affects nothing technical; affects when the 2.0.0 tag is cut. Resolver: owner, at Phase 6 exit.
+
+### Resolved during v1.2
+
+- **Whether per-phase to-do lists are written ahead of each phase or ahead of the whole plan.** Resolved as **two phases ahead**: Phase 0 and Phase 1 are written now, later phases as they approach. Writing all eight now would fix step-level detail against a Specification that Phase 1's measurements are expected to bump, and G-10 puts these documents close to the work for that reason. Phase 1 is the exception that earns early detail — it gates Phase 2 and its corruption suite has to be designed before the code it attacks exists. The four documents are pinned in the header above.
