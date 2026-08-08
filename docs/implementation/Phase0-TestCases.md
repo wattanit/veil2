@@ -21,7 +21,7 @@ This document owns the **enumerated checks that close Phase 0**. Every case cite
 
 Every case states its **verdict condition** as an observable outcome. A case whose expected result is "looks right" is not a test case.
 
-**Where these run.** On the development machine. There is no CI pipeline (Spec §8.1), so a case passes where it is run and nowhere else. HC-8 requires the three platforms to be peers and **nothing here verifies that** — see the withdrawn T0.1.
+**Where these run.** On the development machine, macOS. No CI (Spec §8.1), so Windows and Linux are unconfirmed.
 
 ---
 
@@ -36,9 +36,9 @@ Every case states its **verdict condition** as an observable outcome. A case who
 ### ~~T0.1 — The workspace builds and tests on all three platforms~~ — withdrawn
 *Covered the withdrawn P0.4 · Verified HC-8, A-4, Spec §1, §8.1*
 
-**Withdrawn, and it never passed.** It required a three-platform runner. There is none, and the workflow file that claimed to be one was never executed — so this case was reported as covered while nothing ran it. HC-8 is now verified by nothing; Spec §8.1 states that cost rather than hiding it. The identifier is retained and not reused (G-19).
+**Withdrawn, and it never passed.** It needed a three-platform runner. There is none, and the workflow file was never executed, so this was reported as covered while nothing ran it. Identifier retained, not reused (G-19).
 
-What survives is the single-platform half: the workspace builds and tests where it is developed, which T0.9's gates cover.
+What survives is the single-platform half — the workspace builds and tests where it is developed — which T0.9 covers.
 
 ### T0.2 — `veil-core` cannot flatten its errors
 *Covers P0.2.d · Verifies FR-2, Spec §6*

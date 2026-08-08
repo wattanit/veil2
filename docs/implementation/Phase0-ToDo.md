@@ -83,11 +83,11 @@ This document owns the **step-level breakdown of Phase 0**. It defers what to bu
 
 *Plan P0.4 · Spec §8.1 · HC-8*
 
-**Withdrawn. There is no CI pipeline and none is wanted (Spec §8.1).** All three items described machinery for a hosted runner: a three-platform matrix, fail-fast disabled, and branch protection. None of it ever ran — the repository has no remote, so the workflow file that existed was never executed once, and every Phase 0 to Phase 2 task that reported "CI green on three platforms" was reporting something that had not happened.
+**Withdrawn.** All three items were machinery for a hosted runner: a three-platform matrix, fail-fast disabled, branch protection. None of it ever ran — the repository has no remote, so the workflow file was never executed once, and every task that reported "CI green on three platforms" was reporting something that had not happened.
 
-What replaces it is what was actually being done all along: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, and `audit`, run locally before every commit. That is P0.5 and the Plan's definition of done.
+What replaces it is what was actually being done: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, `audit`, run locally. That is P0.5 and the Plan's definition of done.
 
-**The cost is HC-8, and it is not small.** Cross-platform behaviour is verified by nothing. Numbers are retained and not reused (G-19).
+Windows and Linux are unconfirmed as a result. Numbers retained, not reused (G-19).
 
 ---
 
@@ -122,7 +122,7 @@ What replaces it is what was actually being done all along: `fmt --check`, `clip
 
 The Implementation Plan's Phase 0 exit conditions govern. Restated here only as the checklist to run, not as new requirements:
 
-- Every local gate passes, and each has been observed rejecting a deliberate violation of itself. *Cross-platform verification is absent — see the withdrawn P0.4.*
+- Every local gate passes, and each has been seen rejecting a deliberate violation of itself. Windows and Linux unconfirmed — see the withdrawn P0.4.
 - The canary of P0.6.c fires: the guard detects a planted name, and the suite fails if it stops detecting it.
 - `veil-core`'s dependency graph contains no `anyhow` and no interactive-input crate.
 - `cargo deny` and `cargo audit` pass, and the lockfile is committed.

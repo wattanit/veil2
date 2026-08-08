@@ -30,7 +30,7 @@ Phase 1 proved the format. Phase 2 proves the **API**, and the Plan's framing is
 
 **The exit conditions are behavioural, not structural.** "The full lifecycle runs with no terminal present" is A-1 made observable; it is the single sentence that separates this rebuild from the original, whose logic could not be exercised without a pseudo-terminal. Nothing in this phase may require a TTY, a prompt, or a process boundary to test.
 
-**What Phase 2 deliberately does not do.** Compaction (FR-23, FR-24) is Phase 4. Reconciliation of orphaned packs at open (FR-32) is Phase 4. NFC normalisation of names (§4.6) is P5.1 — Phase 2 matches on the stored form exactly, which is the *rule* §4.6 fixes; the *normalisation* that makes the rule portable arrives in Phase 5. Crash injection at fsync boundaries (Spec §9) is P4.2: Phase 2 establishes the ordering, Phase 4 proves it survives interruption. Each of these is named here so that "Phase 2 is done" cannot be read as "these were considered and found unnecessary".
+**What Phase 2 deliberately does not do.** Compaction (FR-23, FR-24) is Phase 4. Reconciliation of orphaned packs at open (FR-32) is Phase 4. NFC normalisation of names (§4.6) is P5.1 — Phase 2 matches on the stored form exactly, which is the *rule* §4.6 fixes; the *normalisation* that makes the rule portable arrives in Phase 5. Crash testing (Spec §9) is P4.2: Phase 2 writes in the right order, Phase 4 kills a process to see whether that held. Each of these is named here so that "Phase 2 is done" cannot be read as "these were considered and found unnecessary".
 
 ---
 
@@ -291,7 +291,7 @@ Recorded per G-24, decided by the owner, absorbed as Specification or Plan bumps
 
 ## Open Questions
 
-- **Whether the fsync ordering itself gets asserted before Phase 4.** T2.11 asserts the observable half of FR-12 — the index never names bytes outside a pack — but not that the pack fsync precedes the index write. Observing that needs a filesystem seam in `veil-core`, which is the same seam P4.2's crash-injection harness needs. One decision, worth making once. Resolver: owner, before P4.2.
+- **~~Whether the fsync ordering itself gets asserted before Phase 4.~~** Resolved: no indirection layer. Phase 4 kills a real process, or the ordering stays unverified. See Spec §11.1.
 - **Carried from Phase 1:** the Argon2id measurement against C-3 — the working values are chosen, nothing is measured. `cargo-fuzz` is declined (Spec §11.1).
 
 ---

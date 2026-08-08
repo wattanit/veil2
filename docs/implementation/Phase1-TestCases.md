@@ -23,7 +23,7 @@ This document owns the **enumerated checks that close Phase 1 and open Phase 2**
 
 **Every failure case asserts which failure.** "Returns an error" is satisfied by a build that fails on everything. Each case below names the error class it requires, because FR-2's whole content is that failures must be distinguishable.
 
-**Where these run.** On the development machine. There is no CI pipeline (Spec §8.1), so nothing here says anything about Windows or Linux, and HC-8 is unverified.
+**Where these run.** On the development machine, macOS. Windows and Linux unconfirmed (Spec §8.1).
 
 ---
 

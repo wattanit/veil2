@@ -84,11 +84,11 @@ fn t2_10_ingest_is_a_copy() {
 /// were not written — and an independent reader opened afterwards gets the
 /// content back byte-identically.
 ///
-/// The *ordering of the fsyncs* is not observable from outside the process, and
-/// asserting it needs the same filesystem seam P4.2's crash-injection harness
-/// needs. That is a Phase 4 decision made once for both; this case exists so
-/// Phase 4 has something to interrupt, and the Phase 2 to-do records the seam
-/// as open.
+/// **Whether the fsync itself lands first is not checked, here or anywhere.**
+/// That is not observable from outside the process without an indirection layer
+/// inside `veil-core`, and that layer was rejected: a seam in shipped code to
+/// serve one test. If the ordering ever gets checked it will be by killing a
+/// real process, at Phase 4.
 #[test]
 fn t2_11_content_is_durable_before_the_index_names_it() {
     let scratch = harness::Scratch::new("durability");

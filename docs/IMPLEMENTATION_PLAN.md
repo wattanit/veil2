@@ -38,7 +38,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 3. `cargo clippy` clean, `cargo fmt` applied, `cargo deny` and `cargo audit` passing.
 4. The local gates of Spec §8.1 pass: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, `audit`.
 
-**There is no CI, by decision (Spec §8.1), and the definition of done is weaker as a result.** It previously read "CI green on all three platforms". Nothing runs on three platforms, so that clause was never satisfied by any task in Phases 0 through 2 and has been removed rather than left standing. Cross-platform verification is manual and the owner's; HC-8 is still a hard constraint and is currently unverified.
+This used to read "CI green on all three platforms". There is no CI and nothing runs on three platforms, so that clause was never met by any task and is removed. Development is on macOS; Windows and Linux are expected to work and unconfirmed (Spec §8.1).
 
 **Enumerated test cases live in per-phase test-case documents** (G-10), not here. This plan names what a phase must prove; the test-case documents enumerate the individual checks, each citing the requirement it verifies.
 
@@ -57,7 +57,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | P0.1 | Cargo workspace with `veil-core`, `veil-cli`, `veil-gui`; module skeleton | Spec §1, A-1, A-4 |
 | P0.2 | Error taxonomy skeleton — the variants of Spec §6 defined, `anyhow` excluded from `veil-core` by lint | Spec §6, FR-2, FR-5, FR-30 |
 | P0.3 | Key-material newtypes with `ZeroizeOnDrop` and hand-written `Debug` that print a placeholder | Spec §3.1, §6, HC-2 |
-| ~~P0.4~~ | **Withdrawn.** A continuous-integration matrix across the three platforms. Withdrawn because the project has no CI pipeline and wants none (Spec §8.1); the gates it would have run are run locally instead. The number is retained and not reused. HC-8's verification is left manual, which §8.1 states as a cost rather than a plan | Spec §8.1, HC-8 |
+| ~~P0.4~~ | **Withdrawn** — a three-platform CI matrix. There is no CI pipeline and none is wanted (Spec §8.1); the same gates run locally. Number retained, not reused | Spec §8.1, HC-8 |
 | P0.5 | `cargo deny` and `cargo audit` gating the build; dependency versions pinned | Spec §7, HC-6 |
 | P0.6 | Logging guard: a test asserting that entry names, folder metadata, and content never reach `tracing` output | Spec §6, HC-1 |
 
@@ -157,7 +157,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | Task | Work | Cites |
 |---|---|---|
 | P4.1 | Audit every write path against the fsync ordering the Spec prescribes | Spec §4.7, HC-4, FR-12 |
-| P4.2 | Crash-injection harness interrupting at every fsync boundary | Spec §9, HC-4 |
+| P4.2 | Crash tests that kill a real process mid-operation. No indirection layer inside `veil-core` — that would put a seam in shipped code to serve a test | Spec §9, HC-4 |
 | P4.3 | Compaction: select by garbage ratio, copy live extents, single generation step, remove old pack | Spec §4.5, FR-23, FR-24, FR-25 |
 | P4.4 | Reconciliation at open, discarding unreferenced packs and reporting space recovered; read-only vaults open read-only with reconciliation skipped | Spec §4.5, FR-32, HC-4 |
 | P4.5 | Missing-but-referenced pack treated as total damage to that pack — vault opens, affected entries enumerated | Spec §4.5, S-4 |
@@ -181,7 +181,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 |---|---|---|
 | P5.1 | NFC normalisation on ingest; exact case-sensitive comparison thereafter | Spec §4.6, HC-8, FR-13 |
 | P5.2 | Extraction representability check — stop and ask rather than silently altering a name | Spec §4.6, FR-31, HC-8 |
-| P5.3 | Portability exercise performed by hand on real machines: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names. The vaults are kept as fixtures so the reverse direction is repeatable without three machines present | Spec §9, HC-8 |
+| P5.3 | Portability check by hand: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names. Keep the vaults as fixtures so it is repeatable without three machines present | Spec §9, HC-8 |
 | P5.4 | Network-path detection and the best-effort locking advisory | Spec §2, FR-26, FR-27 |
 | P5.5 | Scale tests marked `#[ignore]` and run on request: a multi-gigabyte entry and a vault at C-1's limit | Spec §9, S-1, S-2, C-1, C-2 |
 | P5.6 | Fix the maximum path-metadata length, resolving that Spec open item | FR-10, Spec §11.1 |

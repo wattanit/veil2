@@ -25,7 +25,7 @@ This document owns the **enumerated checks that close Phase 2**. Every case cite
 
 **Every failure case asserts which failure.** "Returns an error" is satisfied by a build that fails on everything.
 
-**Where these run.** On the development machine, which is macOS. There is no CI pipeline (Spec §8.1). **This matters more here than in earlier phases:** advisory locking, symbolic links, and file permissions all differ by platform, and T2.1, T2.14, T2.15 and T2.40 have Windows or Unix branches that have never been executed. Three cases carry a skip-and-report path for Windows that nobody has seen run. HC-8 is unverified.
+**Where these run.** On the development machine, macOS. Windows and Linux unconfirmed (Spec §8.1). It matters more in this phase than earlier ones: T2.1, T2.14, T2.15 and T2.40 touch advisory locks, symbolic links and file permissions, which differ by platform. They should work on the other two; nobody has run them there.
 
 ---
 
@@ -119,7 +119,7 @@ Add a file, then a folder. Record every source file's bytes, length, and modific
 Add an entry, then inspect what the index claims against what the packs hold, and open the vault independently.
 **Verdict:** the generation advanced exactly once; every extent the new entry records lies wholly inside a pack file that exists and is at least that long; an independent reader opened afterwards gets the content back byte-identically.
 
-**This is the observable half of FR-12, and the other half is P4.2's.** The ordering of the fsyncs is not observable from outside the process, and asserting it needs the same filesystem seam the crash-injection harness needs — one decision, made once, for both. What this case establishes is that the index never points at bytes that were not written, which is the shape a wrong ordering produces, and it gives Phase 4 something to interrupt. See Open Questions.
+**Whether the fsync lands first is not checked here or anywhere.** That is not observable from outside the process without an indirection layer inside `veil-core`, which was considered and rejected — a seam in shipped code to serve a test. What this case does establish is that the index never points at bytes that were not written, which is the shape a wrong ordering produces. If the ordering ever gets checked it will be by killing a real process at Phase 4.
 
 ---
 
@@ -337,7 +337,7 @@ Make a vault directory read-only and verify it.
 
 ## Open Questions
 
-- **Whether T2.11 justifies a filesystem indirection layer in `veil-core`.** Observing write and fsync ordering requires either a trait between the core and `std::fs` or an external tracer. The trait is testable everywhere and adds a seam to production code; the tracer is platform-specific and would make the case a Linux case in practice. P4.2's crash-injection harness needs the same seam, so the decision is shared with Phase 4 and is worth making once. **Until it is made, the fsync ordering itself is unasserted** — T2.11 covers the half that is observable and says so. Resolver: owner, before P4.2.
+- **~~Whether T2.11 justifies a filesystem indirection layer in `veil-core`.~~** Resolved: no. It would add a seam to shipped code to serve one test. Phase 4 kills a real process instead, or the ordering stays unverified.
 - **~~Whether the entry and file-size limits stay values the vault carries.~~** Resolved into Specification §4.5 at v1.2: they are values with C-1 and C-2 as defaults, on the same reasoning as the pack cap. Original wording: T2.28 and T2.29 need them lowered to run at reasonable cost, exactly as the pack cap did in Phase 1 (Phase 1 upstream note 2). They are implemented as a `Limits` value defaulting to C-1 and C-2, following that precedent; C-1 and C-2 read as product constants rather than per-vault settings, so the shape is worth confirming rather than assuming. Resolver: owner.
 - **~~How long T2.35 and T2.36 are allowed to run.~~** Resolved: they run with the suite, at 24 and 32 cases and roughly half a minute. There is no scheduler to give them more (Spec §8.1); raising the counts is a one-line change when a run is worth waiting for.
 - **Carried from Phase 1:** the Argon2id measurement against C-3 — the working values are chosen, nothing is measured. `cargo-fuzz` is declined (Spec §11.1).
