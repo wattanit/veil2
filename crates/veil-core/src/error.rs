@@ -120,6 +120,25 @@ pub enum Error {
         affected: Vec<EntryId>,
     },
 
+    /// Nothing in the vault matches what the caller asked for.
+    ///
+    /// Distinct from [`Corrupt`](Self::Corrupt) for the same reason
+    /// [`WrongPassword`](Self::WrongPassword) is: a mistyped name and a damaged
+    /// vault send a user to entirely different remedies.
+    ///
+    /// Carries no path, for the reason [`Io`](Self::Io) carries none — the
+    /// caller supplied it and is the layer that can name it. It is also the
+    /// layer allowed to: a name is index data (HC-1).
+    #[error("no file in this vault matches that")]
+    NotFound,
+
+    /// The vault already holds a file at that path (FR-34).
+    ///
+    /// The full path is a file's identity (FR-13), so a second file under it
+    /// would leave the vault unable to say which one any later operation meant.
+    #[error("this vault already holds a file at that path; replace it rather than adding a second")]
+    AlreadyExists,
+
     /// Another process holds this vault open (FR-26).
     #[error("this vault is already open somewhere else; nothing has been changed")]
     VaultInUse,

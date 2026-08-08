@@ -44,7 +44,7 @@ Phase 2 built an API with no caller. Phase 3 is the caller, and the Plan is expl
 |---|---|---|---|
 | P3.1.a | One command per core capability, spelled in Design §7's vocabulary: `create`, `add`, `list`, `save-copy`, `replace`, `delete`, `check`, `info`, `password` | A-4, Design §7 | T3.1, T3.29 |
 | P3.1.b | Files addressed by their stored path — folder metadata and name together — never by an internal identifier | FR-13, Design §7 | T3.1 |
-| P3.1.c | A path matching more than one stored file refused, naming how many it matched, rather than acting on an arbitrary one | FR-13, HC-4 | T3.4 |
+| P3.1.c | A path matching more than one stored file refused rather than acted on arbitrarily — a guard, since FR-34 leaves no way to reach that state | FR-13, HC-4 | T3.4 |
 | P3.1.d | A path matching nothing reported as naming nothing, distinct from damage and from a wrong password | FR-2, HC-3, Spec §6 | T3.5 |
 | P3.1.d2 | `add` refusing a path the vault already holds, naming it and pointing at `replace` | FR-34, Spec §6 | T3.4 |
 | P3.1.e | `add` accepting both a file and a folder, reporting every path the walk declined | FR-9, FR-10, FR-11 | T3.1, T3.31 |

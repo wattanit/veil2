@@ -116,6 +116,10 @@ pub fn guarded<R>(markers: &[&str], f: impl FnOnce() -> R) -> R {
 /// Fails the test if any marker appears anywhere logged so far in this binary.
 pub fn assert_all_captured_clean(markers: &[&str]) {
     init();
+    // The same lock `scan` holds. Without it this reads the buffer while the
+    // canary's deliberately planted marker is still in it — the whole suite in
+    // one binary, tests in parallel — and the guard fails at random.
+    let _scope = scope_lock();
     let events = captured()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

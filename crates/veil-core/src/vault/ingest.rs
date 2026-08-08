@@ -30,6 +30,7 @@ impl Vault {
     ///
     /// # Errors
     ///
+    /// [`Error::AlreadyExists`] if the vault already holds that path (FR-34),
     /// [`Error::LimitExceeded`], [`Error::Cancelled`], [`Error::ChangedOnDisk`],
     /// or [`Error::Io`].
     pub fn add(
@@ -41,6 +42,12 @@ impl Vault {
         cancel: &Cancel,
     ) -> Result<EntryId> {
         self.begin_write()?;
+
+        // The full path is a file's identity (FR-13), so a second file under it
+        // would leave every later operation on that path guessing (FR-34).
+        if self.find(folder, name).is_some() {
+            return Err(Error::AlreadyExists);
+        }
 
         let count = self.document.entries.len() as u64;
         if count >= self.limits.max_entries {

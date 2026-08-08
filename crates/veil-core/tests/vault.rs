@@ -6,12 +6,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use veil_core::Error;
 use veil_core::crypto::{KdfParams, Password};
 use veil_core::index::EntryId;
 use veil_core::store::{entries_in_pack, existing_pack_ids, pack_path};
 use veil_core::vault::Vault;
 use veil_core::{Cancel, NoProgress};
-use veil_core::{Damaged, Error};
 
 /// Names and content of the shape HC-1 exists to protect.
 const MARKER_NAME: &str = "exec_compensation_2024.csv";
@@ -509,18 +509,18 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// T1.28 — a missing entry is named, not guessed at.
+/// T1.28 — asking for an entry that does not exist is not damage.
+///
+/// This case asserted the opposite until Phase 3: the vault reported an unknown
+/// identifier as damaged content, which is FR-2's conflation one level down —
+/// a mistyped name and a corrupted vault send a user to different remedies.
 #[test]
-fn t1_28_an_unknown_entry_is_reported_by_name() {
+fn t1_28_an_unknown_entry_is_not_reported_as_damage() {
     let scratch = Scratch::new("unknown-entry");
     let vault = create(&scratch.vault_dir(), SMALL_CAP);
-    let ghost = EntryId::new(999);
 
-    match read_back(&vault, ghost) {
-        Err(Error::Corrupt {
-            what: Damaged::Content,
-            affected,
-        }) => assert_eq!(affected, vec![ghost]),
-        other => panic!("expected a named failure, got {other:?}"),
+    match read_back(&vault, EntryId::new(999)) {
+        Err(Error::NotFound) => {}
+        other => panic!("expected NotFound, got {other:?}"),
     }
 }

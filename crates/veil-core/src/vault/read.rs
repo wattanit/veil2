@@ -9,7 +9,6 @@ use crate::error::{Damaged, Error, Result};
 use crate::index::{Entry, EntryId};
 use crate::store::PackSource;
 
-use super::mutate::no_such_entry;
 use super::{Cancel, NoProgress, Outcome, Progress, ProgressReport, Report, Unit, Vault, Verdict};
 
 impl Vault {
@@ -21,6 +20,7 @@ impl Vault {
     ///
     /// # Errors
     ///
+    /// [`Error::NotFound`] if no entry has that identifier,
     /// [`Error::Corrupt`] naming the entry when the content is damaged, or
     /// [`Error::Cancelled`].
     pub fn extract(
@@ -31,7 +31,7 @@ impl Vault {
         cancel: &Cancel,
     ) -> Result<()> {
         let Some(entry) = self.document.entries.iter().find(|e| e.id == id) else {
-            return Err(no_such_entry(Some(id)));
+            return Err(Error::NotFound);
         };
         self.read_entry(entry, dst, progress, cancel)
     }

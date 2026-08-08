@@ -2,7 +2,7 @@
 
 use std::io::Read;
 
-use crate::error::{Damaged, Error, Result};
+use crate::error::{Error, Result};
 use crate::index::EntryId;
 
 use super::{Cancel, Progress, Vault};
@@ -16,8 +16,8 @@ impl Vault {
     ///
     /// # Errors
     ///
-    /// [`Error::Corrupt`] with an empty affected list if no entry has that
-    /// path; otherwise as [`add`](Self::add).
+    /// [`Error::NotFound`] if no file has that path; otherwise as
+    /// [`add`](Self::add).
     pub fn replace(
         &mut self,
         folder: &str,
@@ -34,7 +34,7 @@ impl Vault {
             .iter()
             .position(|e| e.folder == folder && e.name == name)
         else {
-            return Err(no_such_entry(None));
+            return Err(Error::NotFound);
         };
 
         let id = EntryId::new(self.document.next_entry_id);
@@ -64,13 +64,13 @@ impl Vault {
     ///
     /// # Errors
     ///
-    /// [`Error::Corrupt`] with an empty affected list if no such entry exists;
-    /// [`Error::ChangedOnDisk`] or [`Error::Io`].
+    /// [`Error::NotFound`] if no such entry exists; [`Error::ChangedOnDisk`]
+    /// or [`Error::Io`].
     pub fn delete(&mut self, id: EntryId) -> Result<()> {
         self.begin_write()?;
 
         let Some(position) = self.document.entries.iter().position(|e| e.id == id) else {
-            return Err(no_such_entry(None));
+            return Err(Error::NotFound);
         };
 
         let removed = self.document.entries.swap_remove(position);
@@ -83,17 +83,5 @@ impl Vault {
         // entry's identifier would let its wrapped key decrypt under a live
         // entry's nonce.
         self.commit()
-    }
-}
-
-/// The refusal for a path or identifier that names no entry.
-///
-/// `Some(id)` when the caller asked for one by identifier, so the error can
-/// name it; `None` when the caller asked by path, since a path that matches
-/// nothing has no entry to name.
-pub(super) fn no_such_entry(id: Option<EntryId>) -> Error {
-    Error::Corrupt {
-        what: Damaged::Content,
-        affected: id.into_iter().collect(),
     }
 }

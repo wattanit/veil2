@@ -49,11 +49,13 @@ Pass `--password secret` to every subcommand.
 Search the full help output of every command for a flag that schedules, times, daemonises, or triggers on a threshold.
 **Verdict:** none exists. FR-23 forbids automatic compaction, and a switch a user can wire into cron is that prohibition defeated under another name.
 
-### T3.4 — A path already held is refused, and an existing duplicate is not guessed at
+### T3.4 — A path the vault already holds is refused
 *Covers P3.1.c, P3.1.d2 · Verifies FR-34, FR-13, HC-4*
 
-Add a file, then add a second file at the same folder and name. Then, against a vault built to hold a duplicate path directly through the library — the state FR-34 now prevents but that vaults written before it can still be in — save a copy of that path and delete it.
-**Verdict:** the second add exits with the already-exists code, names the path, and points at `replace`; the vault still holds one file at that path. Against the duplicate-holding vault, both the save and the delete refuse, naming how many files matched, and the vault is unchanged. Acting on an arbitrary one of two would make delete a coin toss on the user's data, and FR-34 stopping new duplicates does not remove the ones already written.
+Add a file, then add a second file at the same folder and name.
+**Verdict:** the second add exits with the already-exists code, names the path, and points at `replace`. The vault still holds one file at that path, with its original content — a refusal that damaged the file it refused to replace would be worse than the duplicate.
+
+**What this case does not cover, and why.** P3.1.c also refuses a path that matches *two* stored files rather than picking one. With FR-34 enforced there is no longer any way to create that state through the public API, so the branch is unreachable and untested. It stays in the code as a guard rather than being deleted: it is three lines, and the alternative if it is ever reached is `delete` acting on an arbitrary one of two files.
 
 ### T3.5 — A path matching nothing is not reported as damage
 *Covers P3.1.d · Verifies FR-2, HC-3*

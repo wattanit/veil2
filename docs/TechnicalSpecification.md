@@ -357,8 +357,8 @@ The taxonomy distinguishes, at minimum:
 | `Cancelled { rolled_back: bool }` | FR-14, FR-19 — states what the cancel left behind |
 | `VerificationFailed { entries }` | FR-33, S-4 — carries every failing entry, not just the first |
 | `ReadOnly` | §4.5, §4.8 — the vault opened without a lock because its storage would not take one, and a write was attempted |
-| `NotFound { folder, name }` | FR-2's principle applied to naming: a path that matches nothing is a mistyped name, not damage |
-| `AlreadyExists { folder, name }` | FR-34 — the path is already a file's identity, and adding a second is refused |
+| `NotFound` | FR-2's principle applied to naming: a path that matches nothing is a mistyped name, not damage |
+| `AlreadyExists` | FR-34 — the path is already a file's identity, and adding a second is refused |
 
 Two prohibitions, each with its reason:
 
@@ -366,6 +366,8 @@ Two prohibitions, each with its reason:
 - **Logging never records entry names, folder metadata, or content** (HC-1). `tracing` is used for operational events only — operation started, bytes processed, error variant. A log file that reconstructs the index would defeat the vault.
 
 `NotFound` is its own variant for the same reason `WrongPassword` is: a mistyped name and a damaged vault send a user to entirely different remedies, and reporting the first as the second is the original Veil's defining failure repeated at the level of names. It was reported as `Corrupt` with an empty affected list until Phase 3 found it.
+
+Neither `NotFound` nor `AlreadyExists` carries the path, for the reason the I/O variant carries none: the caller supplied it and is the layer that can name it. It is also the only layer permitted to — a file name is index data, and HC-1 is why no variant here holds one.
 
 `ReadOnly` is its own variant rather than an I/O error carrying a read-only kind. Both §4.5 and §4.8 require a read-only vault to *open* — refusing would turn an interrupted compaction on a drive that later became write-protected into permanent data loss, and would make the operation that diagnoses a failing drive the one operation a failing drive cannot run. So the refusal happens at the write, and it is a condition the frontends must phrase differently from a disk failure: nothing is wrong, the vault simply cannot be changed from here.
 
