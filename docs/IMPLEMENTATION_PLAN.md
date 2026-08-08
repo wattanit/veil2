@@ -1,0 +1,257 @@
+# Veil2 — Implementation Plan
+
+**Version:** 1.0
+**Status:** draft
+**Date:** 2026-08-08
+**Owner:** wattanit
+**Foundation versions this plan is built against (G-14):**
+- Requirements Document **v1.0** (approved) — upstream
+- Design Guideline **v1.0** (approved) — upstream
+- Technical Specification **v1.0** (approved) — upstream
+
+This document owns the **sequencing** of the work: ordered phases expanding the Technical Specification's milestones (Spec §10), each with entry and exit conditions, and each task citing the foundation item that put it there. It defers what to build to the Requirements, how it presents to the Design Guideline, and how it is built to the Specification.
+
+**It is not a shadow spec (G-11).** No task below restates a format, an algorithm, or a layout — each cites the Spec section that defines it. If implementation discovers that something in the Spec is wrong or underspecified, that flows back as a **Specification version bump** through the feedback protocol, never as a correction recorded here.
+
+---
+
+## Conventions
+
+**Task identifiers** are `P<phase>.<n>` — section numbering for reference within this document. They are not foundation identifiers; the standard's `HC`/`FR`/`A`/`C`/`S` categories are reserved for the suite (G-19).
+
+**Definition of done** for every task, without exception:
+1. The behavior the cited requirement describes is observable.
+2. Tests exist at the level the Spec's strategy (§9) prescribes for that kind of work.
+3. `cargo clippy` clean, `cargo fmt` applied, `cargo deny` and `cargo audit` passing.
+4. CI green on all three platforms (HC-8) — a task passing only on the development machine is not done.
+
+**Enumerated test cases live in per-phase test-case documents** (G-10), not here. This plan names what a phase must prove; the test-case documents enumerate the individual checks, each citing the requirement it verifies.
+
+---
+
+## Phase 0 — Workspace and CI Foundation
+
+*Proves nothing about the product; makes every later proof possible.*
+
+**Entry:** foundation suite approved at v1.0.
+
+| Task | Work | Cites |
+|---|---|---|
+| P0.1 | Cargo workspace with `veil-core`, `veil-cli`, `veil-gui`; module skeleton | Spec §1, A-1, A-4 |
+| P0.2 | Error taxonomy skeleton — the variants of Spec §6 defined, `anyhow` excluded from `veil-core` by lint | Spec §6, FR-2, FR-5, FR-30 |
+| P0.3 | Key-material newtypes with `ZeroizeOnDrop` and hand-written `Debug` that print a placeholder | Spec §3.1, §6, HC-2 |
+| P0.4 | CI matrix across macOS, Windows, Linux running test, clippy, fmt — all three as peers, any failure fails the build | Spec §8.1, HC-8 |
+| P0.5 | `cargo deny` and `cargo audit` gating the build; dependency versions pinned | Spec §7, HC-6 |
+| P0.6 | Logging guard: a test asserting that entry names, folder metadata, and content never reach `tracing` output | Spec §6, HC-1 |
+
+**Exit:** CI green on three platforms. A deliberately-added test that logs an entry name **fails** the build — P0.6 is worthless unless it can be shown to fire.
+
+---
+
+## Phase 1 — Format and Crypto Core (Spec M1)
+
+*Proves the format and the cryptographic construction, and that tampering and truncation fail loudly.*
+
+**Entry:** Phase 0 exit met.
+
+| Task | Work | Cites |
+|---|---|---|
+| P1.1 | Argon2id KEK derivation reading parameters from the header, never from constants | Spec §3.1, §4.2, HC-5, HC-6, C-3 |
+| P1.2 | Master-key generation and AEAD wrapping with the whole header as associated data | Spec §3.1, HC-5, HC-7, A-6 |
+| P1.3 | HKDF-SHA256 subkey derivation with versioned `info` strings | Spec §3.1, HC-6 |
+| P1.4 | Header serialisation, magic, and read-time dispatch on `format_version` | Spec §4.2, HC-5, FR-5, FR-30 |
+| P1.5 | STREAM content encryption and decryption, `Read` → `Write`, entry id bound as associated data | Spec §3.3, HC-3, A-2, S-1 |
+| P1.6 | BLAKE3 content hashing computed in the same pass as encryption | Spec §3.3, §4.7, FR-17 |
+| P1.7 | Entry model and CBOR index serialisation tolerant of unknown fields | Spec §4.3, FR-30 |
+| P1.8 | Double-buffered index persistence with generation counter; write to the older slot, fsync, highest authenticating generation wins | Spec §4.4, HC-4, FR-27 |
+| P1.9 | Pack file write and read with extents and the size cap | Spec §4.5, S-3, S-4, A-5, FR-25 |
+| P1.10 | End-to-end vertical slice: create a vault, store one file, read it back byte-identically — the first point at which header, index, packs and content encryption are proven to compose | Spec §4.1–§4.5 |
+| P1.11 | **Adversarial corruption suite** — every row of the Spec §9 table | Spec §9, HC-3, S-4 |
+| P1.12 | Measure Argon2id cost against C-3's one-second target on the **weakest** supported hardware; record the chosen values | C-3, Spec §11.1 |
+
+**Exit — and this is a hard gate:**
+- Round-trip is byte-identical for empty, single-chunk, and multi-chunk files.
+- **Every mutation in the Spec §9 corruption table fails as required**, including the truncated-final-chunk case that the original Veil accepted while reporting success.
+- A corrupted pack fails **only** the entries with extents in it, and names them (S-4).
+- Argon2id parameters are measured and recorded, resolving that Spec open item.
+
+**No work from Phase 2 begins until P1.11 is green.** Building product on an unverified crypto core is exactly how the original shipped a silent data-loss bug, and every later phase inherits whatever is wrong here.
+
+---
+
+## Phase 2 — Vault Operations (Spec M2)
+
+*Proves the core API is sufficient for both frontends, before either exists.*
+
+**Entry:** Phase 1 exit met, corruption suite green.
+
+| Task | Work | Cites |
+|---|---|---|
+| P2.1 | `create` / `open` / `lock`, advisory lock held for the vault's lifetime. `Vault` is an instance value carrying no process-global state, so the single-vault limit stays a product decision rather than a structural one | Spec §2, §5.1, FR-1, FR-2, FR-3, FR-26, A-7 |
+| P2.1a | Index loaded and decrypted at open, presenting every entry with its metadata without touching stored content; browsing thereafter serves from memory | Spec §4.3, §5.1, FR-6, S-2 |
+| P2.2 | Progress sink and cancellation token as parameters, checked at chunk boundaries | Spec §2, A-3, FR-14, FR-19 |
+| P2.3 | Ingest pipeline with copy semantics and the fsync ordering that makes durability true | Spec §4.7, FR-9, FR-12 |
+| P2.4 | Folder walk over regular files only; symlinks not followed, recorded as skipped | Spec §4.7, FR-10, FR-11 |
+| P2.5 | Extraction to a caller `Write`, verified, partial output removed on failure | Spec §4.7, FR-16, FR-17, FR-20 |
+| P2.6 | Replace by name — new content durable before the old becomes unreachable ⚠️ *blocked, see Sequencing Risks* | Spec §4.7, FR-13 |
+| P2.7 | Delete as index removal plus reclaimable accounting | Spec §4.5, FR-21 |
+| P2.8 | Statistics maintained incrementally, never scanned | Spec §4.3, FR-8, FR-22 |
+| P2.9 | Limit enforcement naming both the limit and the actual value | FR-15, C-1, C-2 |
+| P2.10 | Password change rewrapping the master key only | Spec §3.1, FR-4 |
+| P2.11 | Integration tests driving `veil-core` directly — no process, no terminal | Spec §9, A-1 |
+| P2.12 | Property tests: any byte sequence at any length survives round-trip | Spec §9 |
+
+**Exit:**
+- The full lifecycle runs with no terminal present, which is A-1 made observable.
+- Statistics match a full recount after an arbitrary sequence of add, replace, and delete.
+- A cancelled ingest leaves a vault indistinguishable from one where it never began (FR-14).
+- Password change completes in time independent of vault size (FR-4).
+
+---
+
+## Phase 3 — Command-Line Application (Spec M3)
+
+*Proves the core is usable with no UI, and establishes the integration surface everything later depends on.*
+
+**Entry:** Phase 2 exit met.
+
+| Task | Work | Cites |
+|---|---|---|
+| P3.1 | `clap` surface covering every core capability — parity is the requirement, not a goal ⚠️ *partly blocked* | A-4 |
+| P3.2 | Human-readable table output in the GUI's column order | Design §3.4 |
+| P3.3 | Machine-readable output mode for scripting | Design §3.4 |
+| P3.4 | Password input from environment variable or file; **never** from a command-line argument; non-interactive invocation detected and failed with the missing input named | Spec §5.2, HC-2 |
+| P3.5 | Progress to stderr, results to stdout, degrading to periodic lines off-terminal | Design §3.4 |
+| P3.6 | Exit codes distinguishing the Spec §6 error classes | Spec §5.2, §6, FR-2 |
+| P3.7 | `assert_cmd` suite over the full command surface | Spec §9, A-4 |
+
+**Exit:** every core capability is reachable from the CLI; a scripted invocation with no tty succeeds; exit codes let a script tell a wrong password from a damaged vault without parsing text (FR-2).
+
+---
+
+## Phase 4 — Durability and Compaction (Spec M4)
+
+*Proves HC-4 and FR-25 — the properties that make a vault trustworthy at hundreds of gigabytes.*
+
+**Entry:** Phase 3 exit met. The CLI comes first deliberately: crash-injection is far cheaper to drive through a command than through a UI.
+
+| Task | Work | Cites |
+|---|---|---|
+| P4.1 | Audit every write path against the fsync ordering the Spec prescribes | Spec §4.7, HC-4, FR-12 |
+| P4.2 | Crash-injection harness interrupting at every fsync boundary | Spec §9, HC-4 |
+| P4.3 | Compaction: select by garbage ratio, copy live extents, single generation step, remove old pack | Spec §4.5, FR-23, FR-24, FR-25 |
+| P4.4 | Reconciliation at open, discarding unreferenced packs and reporting space recovered; read-only vaults open read-only with reconciliation skipped | Spec §4.5, FR-32, HC-4 |
+| P4.5 | Missing-but-referenced pack treated as total damage to that pack — vault opens, affected entries enumerated | Spec §4.5, S-4 |
+| P4.6 | Crash suite green across add, replace, delete, and compact | Spec §9, HC-4 |
+
+**Exit:**
+- No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand.
+- Compaction of a vault of any size needs working space bounded by roughly one pack (FR-25) — verified against a vault large enough that the difference is unambiguous.
+- An interrupted compaction is cleaned up at next open, with the recovered space reported rather than absorbed silently (FR-32).
+- A vault on read-only media opens (FR-32).
+
+---
+
+## Phase 5 — Cross-Platform Correctness (Spec M5)
+
+*Proves HC-8, before the GUI multiplies the platform surface.*
+
+**Entry:** Phase 4 exit met.
+
+| Task | Work | Cites |
+|---|---|---|
+| P5.1 | NFC normalisation on ingest; exact case-sensitive comparison thereafter | Spec §4.6, HC-8, FR-13 |
+| P5.2 | Extraction representability check — stop and ask rather than silently altering a name | Spec §4.6, FR-31, HC-8 |
+| P5.3 | Portability CI: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names | Spec §9, HC-8 |
+| P5.4 | Network-path detection and the best-effort locking advisory | Spec §2, FR-26, FR-27 |
+| P5.5 | Scale tests on a scheduled job: a multi-gigabyte entry and a vault at C-1's limit | Spec §9, S-1, S-2, C-1, C-2 |
+| P5.6 | Fix the maximum path-metadata length, resolving that Spec open item | FR-10, Spec §11.1 |
+
+**Exit:** the portability test passes in every direction between all three platforms; peak memory does not scale with file size (S-1) and open time does not scale with vault size (S-2), both asserted rather than assumed.
+
+---
+
+## Phase 6 — GUI Foundation (Spec M6)
+
+*Proves the webview cannot leak the index, and that the one thing the interface exists to do — display the user's own filenames correctly — actually works.*
+
+**Entry:** Phase 5 exit met.
+
+| Task | Work | Cites |
+|---|---|---|
+| P6.1 | Tauri v2 shell over `veil-core`; operations on a worker thread, progress marshalled to the UI thread | Spec §5.3, A-3, A-4 |
+| P6.2 | Ephemeral webview storage configured per platform — all three, none left to default | Spec §5.3, HC-1 |
+| P6.3 | CSP restricted to the bundled origin; no `localStorage`, `sessionStorage`, or IndexedDB; devtools compiled out of release | Spec §5.3, HC-1 |
+| P6.4 | **Webview persistence test** on all three platforms: marker filenames, browse, close, then search webview data, caches, and temp directories | Spec §9, HC-1 |
+| P6.5 | Virtualised entry list at the density and typography the design fixes, including tabular numerals | Design §2.3, §3.2 |
+| P6.6 | Complex-script rendering verified in both themes — the evidence that decided the toolkit | HC-8, Design §2.2 |
+| P6.7 | Whole-window drop target naming the count before release; native file dialogs | Design §3.3, FR-9, FR-16 |
+
+**Exit:** the persistence test is green on all three platforms — any marker found is an HC-1 defect and blocks the phase. Thai, Arabic, Han and emoji filenames render correctly in light and dark. Dropping 34 files shows "34" before release.
+
+---
+
+## Phase 7 — GUI v1 (Spec M7)
+
+*Proves the product.*
+
+**Entry:** Phase 6 exit met.
+
+| Task | Work | Cites |
+|---|---|---|
+| P7.1 | Unlock screen — four elements only, a visibly alive working state during derivation, wrong password and damaged vault as distinct outcomes | Design §5, FR-2, C-3 |
+| P7.2 | Superseded and too-new format messages | Design §5, FR-5, FR-30 |
+| P7.3 | Vault creation: password subject to C-4, the unrecoverability block, explicit acknowledgement rather than a pre-ticked box | Design §8.2, HC-7, C-4, FR-1, FR-29 |
+| P7.4 | Identity bar with lock state legible at a glance, and the statistics line | Design §3.2, FR-8 |
+| P7.5 | Search and the folder-grouping view toggle — a view control, not a tree | Design §3.2, FR-7 |
+| P7.6 | Add flow with progress and cancel, and the retained-originals clause on completion | Design §8.3, FR-9, FR-14, FR-29 |
+| P7.7 | Extract flow: destination always chosen, overwrite confirmed by name, the unprotected-copy line every time | Design §6, FR-16, FR-18, FR-29 |
+| P7.8 | Unrepresentable-name prompt at extraction | Design §6, FR-31 |
+| P7.9 | Delete with the persistence clause, and reclaim space with the figures in the button | Design §8.4, FR-21, FR-22, FR-23, FR-8, FR-29 |
+| P7.10 | Lock action and a locked screen distinct from a greyed-out list | Design §8.5, FR-3, HC-1 |
+| P7.11 | Three-part error presentation — what happened, what state things are in, what you can do | Design §4.2 |
+| P7.12 | Constrained conditions: vault in use, changed on disk, storage gone, destination full, limits exceeded, damaged region marked per-entry | Design §4.3, FR-15, FR-26, FR-27, FR-28, S-4 |
+| P7.13 | Vocabulary audit against the Design §7 table across GUI and CLI alike | Design §7 |
+| P7.14 | Packaging: macOS bundle UTI, signing and notarisation; Windows installer and association; Linux AppImage with the WebKitGTK version check | Spec §8.2, HC-8 |
+
+**Exit:** every functional requirement is reachable from the GUI; the vocabulary audit is clean in both applications; all three packages install and open a vault created on a different platform.
+
+---
+
+## Cross-Cutting Obligations
+
+These apply to every task in every phase and are part of the definition of done, not a final sweep:
+
+- **No plaintext, key material, or password** reaches an error message, a `Debug` output, or a log line (HC-1, HC-2, Spec §6).
+- **Every new long-running operation** gets progress reporting and cooperative cancellation when it is written, not afterwards (A-3).
+- **Every new error variant** carries the state fact the three-part message needs (Design §4.2, Spec §6).
+- **Anything learned that changes HOW** goes into the Technical Specification as a version bump via the feedback protocol (G-11, G-24). This document records sequencing, never design.
+
+---
+
+## Sequencing Risks and Blocked Tasks
+
+**Three Design Guideline open questions block scheduled work.** They need answers before the phase that depends on them, and the Design Guideline must bump to v1.1 to carry them:
+
+| Open question | Blocks | Needed by |
+|---|---|---|
+| Whether replace-by-name matches on name alone or name plus folder metadata | P2.6 | Phase 2 |
+| Whether the product offers a whole-vault verification operation | P3.1, P7 scope | Phase 3 |
+| Whether the CLI exposes compaction as a schedulable operation | P3.1 | Phase 3 |
+
+**Ordering choices worth defending:**
+
+- **P1.11 gates everything.** The corruption suite is not a Phase 1 deliverable to be finished later; it is the condition for starting Phase 2.
+- **CLI before durability work.** Crash-injection through a command is cheap; through a GUI it is not.
+- **Cross-platform before GUI.** Every platform-specific bug found after Phase 6 costs three times as much to reproduce.
+- **Argon2id cost measured on the weakest target** (P1.12), not the development machine. A vault that cannot be opened on a modest laptop is a worse failure than a slow derivation on a fast one.
+
+**Standing risk:** the webview configurations of P6.2 fail *silently* when wrong — a running application looks identical whether or not it is writing a cache. P6.4 is the only thing that detects it, which is why it is an exit condition rather than a task.
+
+---
+
+## Open Questions
+
+- **Whether per-phase to-do lists are written ahead of each phase or ahead of the whole plan.** Writing them close to the work is what the standard's division of labour intends (G-10), but Phase 1's crypto tasks may warrant earlier detail. Resolver: owner, before Phase 1 begins.
+- **Whether the scale tests of P5.5 run on developer hardware or a dedicated runner.** A multi-gigabyte fixture on every scheduled CI run has a cost worth deciding deliberately. Resolver: owner, at Phase 5.
+- **Whether Phase 7 ships as one release or the GUI lands incrementally behind a pre-release tag.** Affects nothing technical; affects when the 2.0.0 tag is cut. Resolver: owner, at Phase 6 exit.
