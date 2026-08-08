@@ -204,14 +204,6 @@ impl Vault {
         }
     }
 
-    /// Sets the pack cap for subsequent writes.
-    ///
-    /// Reads follow whatever extents an entry already records, so changing
-    /// this never invalidates stored content.
-    pub fn set_pack_cap(&mut self, cap: u64) {
-        self.pack_cap = cap;
-    }
-
     /// Sets the limits this vault enforces (FR-15, C-1, C-2).
     pub fn set_limits(&mut self, limits: Limits) {
         self.limits = limits;
