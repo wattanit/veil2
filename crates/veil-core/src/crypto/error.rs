@@ -23,4 +23,13 @@ pub enum CryptoError {
     /// Key-derivation parameters outside the range this build accepts.
     #[error("key-derivation parameters are out of range")]
     ParametersOutOfRange,
+
+    /// Content authenticated chunk by chunk but did not match the hash
+    /// recorded for it (FR-17).
+    #[error("content does not match its recorded hash")]
+    ContentHashMismatch,
+
+    /// Reading or writing failed underneath the cryptographic layer.
+    #[error("a storage operation failed")]
+    Io,
 }

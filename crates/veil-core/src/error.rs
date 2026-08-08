@@ -248,6 +248,13 @@ impl From<crate::crypto::CryptoError> for Error {
                 what: Damaged::Header,
                 affected: Vec::new(),
             },
+            C::ContentHashMismatch => Self::Corrupt {
+                what: Damaged::ContentHash,
+                affected: Vec::new(),
+            },
+            C::Io => Self::Io {
+                kind: std::io::ErrorKind::Other,
+            },
         }
     }
 }

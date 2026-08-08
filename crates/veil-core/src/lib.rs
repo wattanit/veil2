@@ -7,6 +7,8 @@
 //!
 //! Module ownership follows Technical Specification §1.
 
+#![forbid(unsafe_code)]
+
 pub mod crypto;
 pub mod error;
 pub mod format;

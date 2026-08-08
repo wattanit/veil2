@@ -10,12 +10,17 @@
 mod error;
 mod kdf;
 mod keys;
+mod stream;
 mod subkeys;
 mod wrap;
 
 pub use error::CryptoError;
 pub use kdf::{KdfAlgorithm, KdfParams, derive_kek};
 pub use keys::{Dek, EntryWrapKey, IndexKey, Kek, MasterKey, Password};
+pub use stream::{
+    CHUNK_LEN, ContentSummary, HASH_LEN, NONCE_PREFIX_LEN, TAG_LEN, decrypt, encrypt, generate_dek,
+    generate_nonce_prefix,
+};
 pub use subkeys::{entry_wrap_key, index_key};
 pub use wrap::{
     WRAP_NONCE_LEN, WRAPPED_KEY_LEN, generate_master_key, unwrap_master_key, wrap_master_key,

@@ -14,7 +14,10 @@ publish = false
 veil-core = { path = "crates/veil-core", version = "2.0.0" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Denied rather than forbidden at the workspace level so a measurement harness
+# in a test can opt out with a reason. The library itself forbids it outright
+# in lib.rs, where forbid cannot be overridden by anything downstream.
+unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.lints.clippy]
