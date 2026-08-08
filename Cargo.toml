@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/veil-core", "crates/veil-cli", "crates/veil-gui"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2024"
+publish = false
+
+# Shared version pins. Spec §7: every dependency is pinned, and the three
+# crates cannot drift to different versions of a cryptographic dependency
+# (Phase 0 to-do P0.1.a). Additions here require a Specification bump (P0.5.b).
+[workspace.dependencies]
+veil-core = { path = "crates/veil-core", version = "2.0.0" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+# HC-2: a panic path that formats state is a disclosure route as well as a crash.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

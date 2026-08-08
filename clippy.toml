@@ -1,0 +1,2 @@
+# Spec §6, HC-2: no key material or plaintext reaches a log line.
+disallowed-macros = []

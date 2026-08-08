@@ -1,0 +1,87 @@
+# Supply-chain gate (Technical Specification §7, HC-6).
+#
+# Every dependency is pinned; this file and `cargo audit` fail the build.
+# Additions to the dependency set require a Specification bump (Phase 0
+# to-do P0.5.b), so a new entry here without one is a defect.
+
+[graph]
+targets = [
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# No advisory is ignored. An ignore entry here is a decision that needs a
+# reason recorded next to it and an owner who made it.
+ignore = []
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.93
+# The workspace crates are unpublished and carry no licence field yet; that is
+# the owner's decision to make, not a build gate's.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Nothing may reintroduce the failure mode the taxonomy exists to prevent.
+deny = [
+    # Spec §6: `anyhow` is not used in the library. The original Veil's
+    # `From<anyhow::Error>` conversion is how a wrong password and a corrupted
+    # vault became one value to every caller.
+    # Spec §6 permits it at a binary's top level; no binary uses it yet, so the
+    # ban is unconditional today. Add `wrappers = ["veil-cli"]` at the point a
+    # binary actually needs it, and not before.
+    { name = "anyhow" },
+    # Spec §7: `sled` is not carried forward — unmaintained since 2021.
+    { name = "sled" },
+    # A-1: the core never prompts. These are the dependencies that would make
+    # it able to.
+    { name = "rpassword" },
+    { name = "dialoguer" },
+    { name = "inquire" },
+]
+
+# Known duplicate versions, each with the reason it is tolerated.
+#
+# Every entry below has one cause: `argon2` 0.5.3 is the current stable
+# release and still sits on the previous RustCrypto generation (digest 0.10),
+# while `sha2`, `hkdf`, and `chacha20poly1305` are on digest 0.11. The only
+# way to collapse them today is `argon2` 0.6.0-rc.1, and a release candidate
+# in a product whose whole claim is HC-6 is a decision for the owner, not a
+# default. Revisit when argon2 0.6 is released; these skips should then all
+# disappear together.
+skip = [
+    { name = "digest", version = "=0.10.7" },
+    { name = "block-buffer", version = "=0.10.4" },
+    { name = "crypto-common", version = "=0.1.7" },
+    { name = "rand_core", version = "=0.6.4" },
+    { name = "cpufeatures", version = "=0.2.17" },
+]
+
+# `syn` is a proc-macro dependency. It is compiled by the build, never linked
+# into a binary, and reaches no runtime code path. Unifying it would mean
+# pinning `clap_derive` and `serde_derive` against `tracing-attributes` for no
+# gain HC-6 recognises. This skip is a different judgement from the ones above
+# and is kept separate so the two are not confused for each other.
+skip-tree = [{ name = "syn", version = "=2.0.119", depth = 1 }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
