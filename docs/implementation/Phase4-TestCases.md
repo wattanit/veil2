@@ -33,12 +33,15 @@ This document owns the **enumerated checks that close Phase 4**. Every case cite
 **How to run them.**
 
 ```bash
-cargo test --release -p veil-cli                     # the crash suite, and Phase 3's
-cargo test --workspace                               # everything, debug
-cargo test -p veil-core -- --ignored --nocapture      # the sweeps and the scale case
+cargo test --release -p veil-cli                              # the crash suite, and Phase 3's
+cargo test --workspace                                        # everything, debug
+cargo test --release -p veil-cli --test crashes -- --ignored   # the sweep (T4.7)
+cargo test -p veil-core --test reclaim -- --ignored            # the scale case (T4.25)
 ```
 
-The crash cases spawn real processes that derive real keys, so they run in release for the same reason the Phase 3 suite does.
+The crash cases spawn real processes that derive real keys, so they run in release for the same reason the Phase 3 suite does — and the whole package rather than one target, because selecting a single test target skips the example the reclaim cases drive.
+
+The scale case runs in **debug**, and not by preference: `cargo test --release -p veil-core` does not build, because the core's suite needs the cheap KDF parameters that are deliberately compiled out of anything but a debug build. It is slower and it still finishes.
 
 ---
 
