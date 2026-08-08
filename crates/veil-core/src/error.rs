@@ -148,6 +148,17 @@ pub enum Error {
     #[error("this vault changed on disk since it was opened; the change was not overwritten")]
     ChangedOnDisk,
 
+    /// The vault opened read-only and a write was attempted (§4.5, §4.8).
+    ///
+    /// Not an I/O failure, and the difference is what the message must carry:
+    /// nothing is wrong. Both §4.5 and §4.8 require a read-only vault to open —
+    /// refusing would turn an interrupted compaction on a drive that later
+    /// became write-protected into permanent data loss (HC-4), and would make
+    /// the operation that diagnoses a failing drive the one operation a failing
+    /// drive cannot run.
+    #[error("this vault is open read-only and cannot be changed; nothing has been altered")]
+    ReadOnly,
+
     /// The storage medium became unavailable mid-operation (FR-28).
     #[error("the vault's storage is no longer reachable; the operation stopped where it was")]
     StorageUnavailable,

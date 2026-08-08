@@ -64,7 +64,7 @@ Phase 1 proved the format. Phase 2 proves the **API**, and the Plan's framing is
 | P2.1a.b | Statistics served from the index document, never computed by scanning packs | FR-8, FR-22 | T2.27 |
 | P2.1a.c | Open touching no pack file, so open cost tracks entry count and not vault size | S-2, FR-22 | T2.4 |
 
-**P2.1a.c is asserted by removing the packs, not by timing.** A timing assertion on shared CI hardware is a flake generator. What S-2 states is not that open is fast but that vault size is not an input to it — and a vault whose pack files are gone entirely still opening, enumerating every entry, and reporting its statistics is that property in a form nothing which read a pack could survive.
+**P2.1a.c is asserted by removing the packs, not by timing.** A timing assertion on a machine doing other work is a flake generator. What S-2 states is not that open is fast but that vault size is not an input to it — and a vault whose pack files are gone entirely still opening, enumerating every entry, and reporting its statistics is that property in a form nothing which read a pack could survive.
 
 ---
 
@@ -269,7 +269,7 @@ The Implementation Plan's Phase 2 exit conditions govern. Restated as the checkl
 
 ## Notes for Upstream
 
-Recorded per G-24, decided by the owner, absorbed as Specification or Plan bumps or dropped. Nothing below is decided by this document.
+Recorded per G-24, decided by the owner, absorbed as Specification or Plan bumps or dropped. Nothing below is decided by this document. **Items 2 through 8 were absorbed into Specification v1.2; item 1 into Plan v1.4.**
 
 **1. FR-27's write-time check is not scheduled by the Plan.** The Plan attaches FR-27 to P1.8 (the generation counter) and P5.4 (the network-path advisory). The counter is a detector only if a write consults it, and Phase 2 is the phase that introduces writes, so the check is implemented here as P2.1.e. Either the Plan gains an explicit task or P2.1 gains FR-27 in its citation list. Resolver: owner, at the next Plan bump.
 
@@ -292,7 +292,7 @@ Recorded per G-24, decided by the owner, absorbed as Specification or Plan bumps
 ## Open Questions
 
 - **Whether the fsync ordering itself gets asserted before Phase 4.** T2.11 asserts the observable half of FR-12 — the index never names bytes outside a pack — but not that the pack fsync precedes the index write. Observing that needs a filesystem seam in `veil-core`, which is the same seam P4.2's crash-injection harness needs. One decision, worth making once. Resolver: owner, before P4.2.
-- **Carried from Phase 1, unresolved:** the Argon2id cost parameters satisfying C-3, and whether `cargo-fuzz` targets are added.
+- **Carried from Phase 1:** the Argon2id measurement against C-3 — the working values are chosen, nothing is measured. `cargo-fuzz` is declined (Spec §11.1).
 
 ---
 

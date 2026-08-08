@@ -8,8 +8,11 @@
 //! settings becomes unopenable — the HC-5 failure the original Veil was one
 //! edit away from, having hardcoded its Argon2 constants.
 //!
-//! The one parameter set named anywhere is [`KdfParams::for_tests`], which a
-//! release build cannot reach.
+//! Two parameter sets are named: [`KdfParams::for_tests`], which a release
+//! build cannot reach, and [`KdfParams::for_new_vaults`], which is what a
+//! *creation* uses. Neither is reachable from the derivation path, and that is
+//! the distinction that matters — a value chosen when a vault is made is not a
+//! fallback for opening one.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 
@@ -90,6 +93,29 @@ impl KdfParams {
             m_cost: 64,
             t_cost: 1,
             p_cost: 1,
+        }
+    }
+
+    /// The parameters a newly created vault records (C-3, Spec §11.1).
+    ///
+    /// **These have not been measured, and the Specification says so.** They
+    /// are the estimate of Spec §11.1 — chosen to approach C-3's one-second
+    /// budget while staying feasible on a modest machine — accepted by the
+    /// owner as a working value until there is low-spec hardware to tune on. A
+    /// vault that cannot be opened on a small laptop is a worse failure than a
+    /// slow derivation on a fast one, so if either number moves it is likely
+    /// this one, downward.
+    ///
+    /// **Changing it orphans nothing** (HC-5). It is used at creation only;
+    /// opening a vault derives from what that vault recorded, and this constant
+    /// is unreachable from that path. A caller is free to pass something else.
+    #[must_use]
+    pub const fn for_new_vaults() -> Self {
+        Self {
+            // 256 MiB, expressed in the kibibytes the parameter is measured in.
+            m_cost: 256 * 1024,
+            t_cost: 3,
+            p_cost: 4,
         }
     }
 

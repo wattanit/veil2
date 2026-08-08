@@ -23,7 +23,7 @@ This document owns the **enumerated checks that close Phase 1 and open Phase 2**
 
 **Every failure case asserts which failure.** "Returns an error" is satisfied by a build that fails on everything. Each case below names the error class it requires, because FR-2's whole content is that failures must be distinguishable.
 
-**Where these run.** In the CI matrix on macOS, Windows, and Linux as peers (HC-8), except T1.34, which is a measurement on named hardware.
+**Where these run.** On the development machine. There is no CI pipeline (Spec §8.1), so nothing here says anything about Windows or Linux, and HC-8 is unverified.
 
 ---
 
@@ -290,7 +290,7 @@ Fuzz the header parser over arbitrary bytes, and the index parser over arbitrary
 Measure candidate parameter sets on the least capable machine in the supported range, under realistic memory pressure. Record the values, the machine, and the measurements.
 **Verdict:** the chosen set approaches C-3's one-second budget on that machine and its memory cost is satisfiable there.
 
-*This is a measurement, not a pass or fail assertion in CI.* Timing assertions on shared runners are noise. The output is evidence that resolves the Specification's open item, and the decision it feeds is the owner's.
+*This is a measurement, not a pass or fail assertion.* Timing assertions are noise on a machine doing other work. The output is evidence that resolves the Specification's open item, and the decision it feeds is the owner's.
 
 ### T1.35 — Test parameters cannot reach a release build
 *Covers P1.1.d · Verifies C-3, HC-5*

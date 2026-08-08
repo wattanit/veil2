@@ -25,7 +25,7 @@ This document owns the **enumerated checks that close Phase 2**. Every case cite
 
 **Every failure case asserts which failure.** "Returns an error" is satisfied by a build that fails on everything.
 
-**Where these run.** In the CI matrix on macOS, Windows, and Linux as peers (HC-8). Advisory-lock behaviour differs between platforms and T2.1 is therefore a genuine three-platform case, not a Linux case run three times.
+**Where these run.** On the development machine, which is macOS. There is no CI pipeline (Spec §8.1). **This matters more here than in earlier phases:** advisory locking, symbolic links, and file permissions all differ by platform, and T2.1, T2.14, T2.15 and T2.40 have Windows or Unix branches that have never been executed. Three cases carry a skip-and-report path for Windows that nobody has seen run. HC-8 is unverified.
 
 ---
 
@@ -55,7 +55,7 @@ Call `lock` on an open vault.
 Build a vault spanning several packs, close it, delete every pack file, and open it again.
 **Verdict:** it opens, enumerates every entry, and reports statistics identical to before — nothing that read a pack could survive it, which is S-2 in its strongest observable form and simultaneously the FR-33 assertion, since a verification at open could not pass. Separately, two vaults are open at once in one process (A-7).
 
-**Removing the packs rather than timing the open is deliberate.** A timing assertion on shared CI hardware is a flake generator, and what S-2 states is not that open is fast but that vault size is not an input to it.
+**Removing the packs rather than timing the open is deliberate.** A timing assertion on a machine doing other work is a flake generator, and what S-2 states is not that open is fast but that vault size is not an input to it.
 
 ### T2.5 — A vault changed on disk since open is not written over
 *Covers P2.1.e · Verifies FR-27, Spec §4.3, §4.4*
@@ -263,7 +263,7 @@ Add entries, change the password, close, and reopen with each password.
 *Covers P2.10.b · Verifies FR-4, A-6*
 
 Record the bytes of every file in the vault, change the password, and compare.
-**Verdict:** the header file changed; no pack file and no index slot changed. FR-4's size-independence follows from this structurally, which is a stronger statement than a timing measurement on shared CI hardware.
+**Verdict:** the header file changed; no pack file and no index slot changed. FR-4's size-independence follows from this structurally, which is a stronger statement than a timing measurement on a machine doing other work.
 
 ### T2.32 — Two changes in a row both take effect
 *Covers P2.10.a · Verifies FR-4*
@@ -338,9 +338,9 @@ Make a vault directory read-only and verify it.
 ## Open Questions
 
 - **Whether T2.11 justifies a filesystem indirection layer in `veil-core`.** Observing write and fsync ordering requires either a trait between the core and `std::fs` or an external tracer. The trait is testable everywhere and adds a seam to production code; the tracer is platform-specific and would make the case a Linux case in practice. P4.2's crash-injection harness needs the same seam, so the decision is shared with Phase 4 and is worth making once. **Until it is made, the fsync ordering itself is unasserted** — T2.11 covers the half that is observable and says so. Resolver: owner, before P4.2.
-- **Whether the entry and file-size limits stay values the vault carries.** T2.28 and T2.29 need them lowered to run at reasonable cost, exactly as the pack cap did in Phase 1 (Phase 1 upstream note 2). They are implemented as a `Limits` value defaulting to C-1 and C-2, following that precedent; C-1 and C-2 read as product constants rather than per-vault settings, so the shape is worth confirming rather than assuming. Resolver: owner.
-- **How long T2.35 and T2.36 are allowed to run.** They are configured at 24 and 32 cases, which costs roughly half a minute — chosen for a suite that runs on every push. A scheduled job could afford far more, and property tests find what they find in proportion to how long they are allowed to look. Resolver: owner, alongside the same question for the corruption matrix carried from Phase 1.
-- **Carried from Phase 1, unresolved:** the Argon2id cost parameters satisfying C-3, and whether `cargo-fuzz` targets are added.
+- **~~Whether the entry and file-size limits stay values the vault carries.~~** Resolved into Specification §4.5 at v1.2: they are values with C-1 and C-2 as defaults, on the same reasoning as the pack cap. Original wording: T2.28 and T2.29 need them lowered to run at reasonable cost, exactly as the pack cap did in Phase 1 (Phase 1 upstream note 2). They are implemented as a `Limits` value defaulting to C-1 and C-2, following that precedent; C-1 and C-2 read as product constants rather than per-vault settings, so the shape is worth confirming rather than assuming. Resolver: owner.
+- **~~How long T2.35 and T2.36 are allowed to run.~~** Resolved: they run with the suite, at 24 and 32 cases and roughly half a minute. There is no scheduler to give them more (Spec §8.1); raising the counts is a one-line change when a run is worth waiting for.
+- **Carried from Phase 1:** the Argon2id measurement against C-3 — the working values are chosen, nothing is measured. `cargo-fuzz` is declined (Spec §11.1).
 
 ---
 

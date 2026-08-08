@@ -1,12 +1,14 @@
 # Veil2 — Technical Specification
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.1 — upstream
 - Design Guideline v1.1 — upstream
+
+*Changes since v1.1 (minor — additive and clarifying, no decision reversed):* absorbs what Phases 1 and 2 discovered. §3.1 and §4.2 state how a wrong password is told from a damaged header, and the header gains the checksum that makes it possible; §4.3 names the entry-identifier counter; §4.5 and §11.1 make the pack cap and the C-1/C-2 limits values the API accepts; §5.1 gains `extract_to_path` and `reload`; §6 gains the read-only condition; §7 states that its table covers runtime dependencies and names the test-only ones; §8.1 and §9 remove the continuous-integration matrix and state plainly that cross-platform behaviour is therefore unverified; §11.1 resolves two items and records two decisions.
 
 *Changes since v1.0 (minor — additive and clarifying, no decision reversed):* §4.6 fixes replace-matching to the full path; §4.8 added for verification; §5.1 and §5.2 gain the operation; §6 gains its error variant.
 
@@ -84,6 +86,12 @@ password ──Argon2id(salt, params)──▶ KEK
 
 Vault creation enforces C-4's minimum password length; it is the only credential policy, since strength estimation is a promise about an attacker's resources that the Design Guideline forbids the product from making.
 
+**A wrong password and a damaged header both fail the same unwrap, and FR-2 requires them told apart.** Making the whole header associated data means the AEAD result alone cannot distinguish them — the two are indistinguishable to the cipher by construction. The rule is therefore stated here rather than left to an implementation habit:
+
+> A header that fails its own integrity check is **damage**. A header that passes it and still fails the unwrap is a **wrong password**.
+
+The header carries a 4-byte non-cryptographic checksum over its own preceding bytes for this purpose alone (§4.2). *Honesty clause:* the checksum is **not** a security control and defends nothing. An attacker altering a header recomputes it trivially, and the AEAD is what enforces HC-3 — unchanged. What the checksum distinguishes is *accidental* damage from a mistyped password, which is the whole content of FR-2: a user with a typo must not be sent to look for a corrupted file, and a user with a failing drive must not be told to try their password again.
+
 **MK has exactly one unwrap path.** HC-7's unrecoverability is therefore a property of the key hierarchy rather than a policy layered over it — there is no escrow slot to disable and no second wrapping to forget to remove. Adding a further unwrap path is the deferred door of Requirements §2.2, and A-6 is what keeps it cheap.
 
 ### 3.2 Per-entry keys
@@ -144,6 +152,7 @@ Plaintext, fixed size, authenticated as associated data by the master-key unwrap
 | `kdf_m_cost`, `kdf_t_cost`, `kdf_p_cost` | `u32` ×3 | Stored, never assumed — tuning defaults must not orphan vaults (HC-5) |
 | `kdf_salt` | `[u8; 32]` | |
 | `wrap_nonce` | `[u8; 24]` | |
+| `checksum` | `u32` | Non-cryptographic checksum over every preceding byte. **Not a security control** — it exists solely so a damaged header can be told from a wrong password (§3.1, FR-2) |
 | `wrapped_master_key` | `[u8; 48]` | 32-byte key plus 16-byte tag |
 
 Format and writer versions are separate fields with separate lifecycles: many application releases may write one format version, and bumping the application must never invalidate a compatibility check.
@@ -160,6 +169,7 @@ IndexDocument
 ├── generation: u64          # monotonic; the external-modification detector (FR-27)
 ├── statistics                # maintained incrementally, never scanned (FR-22)
 │   ├── entry_count, logical_bytes, physical_bytes, reclaimable_bytes
+├── next_entry_id: u64        # monotonic; never decreases, never reset
 └── entries: [Entry]
 
 Entry
@@ -174,6 +184,8 @@ Entry
 └── extents: [(pack_id: u32, offset: u64, length: u64)]
 ```
 
+`next_entry_id` is **stored rather than derived, and that is a cryptographic requirement wearing bookkeeping clothes.** The entry identifier is bound into the DEK-wrapping nonce and into each chunk's associated data (§3.2, §3.3). Deriving the next identifier from the highest *live* entry — the obvious implementation — reissues a deleted entry's identifier the moment the highest entry is removed, and a wrapped key from the dead entry then decrypts under a live one's nonce. The counter must outlive the entries it counted, so it lives in the document. Deleting every entry does not reset it.
+
 The entry carries no absolute source path. The original Veil stored one, which retained a fact about the user's machine that nothing needed.
 
 ### 4.4 Atomic index persistence
@@ -186,7 +198,9 @@ Rewriting the whole index on every mutation is accepted deliberately: at C-1 it 
 
 ### 4.5 Pack files and space management
 
-Packs are append-only, capped at **1 GiB** (initial; tunable). The cap is what satisfies three requirements at once:
+Packs are append-only, capped at **1 GiB** (initial; tunable). The cap is a **value the API accepts**, defaulting to that figure, not a compile-time constant: a test that must write a gigabyte to reach the spanning path or S-4's attribution gets marked ignored within a month, and those are among the most consequential properties in the format. The same holds for C-1 and C-2 — the entry and file-size limits are values with those defaults, because FR-15's requirement is that the refusal *names both numbers*, and a refusal only reachable by writing 64 GiB is a refusal nobody has watched fire.
+
+The cap is what satisfies three requirements at once:
 
 - **S-3** — adding a file dirties one pack plus the index, so incremental backup and file-sync transfer bytes proportional to the change, not to the vault.
 - **S-4** — a damaged region costs only the entries with extents in that pack. Because extents map packs to entries, the affected entries are enumerable, which is the attribution S-4 requires.
@@ -260,12 +274,18 @@ Vault::statistics(&self) -> Statistics                       // FR-8, FR-22
 Vault::add(&mut self, src, folder, &mut dyn Progress, &Cancel) -> Result<EntryId>
 Vault::replace(&mut self, id, src, …) -> Result<EntryId>     // FR-13
 Vault::extract(&self, id, dst: &mut dyn Write, …) -> Result<()>
+Vault::extract_to_path(&self, id, path, …) -> Result<()>     // FR-17, removes partial output
 Vault::delete(&mut self, id) -> Result<()>                   // FR-21
+Vault::reload(&mut self) -> Result<()>                       // FR-27, adopts an external change
 Vault::compact(&mut self, &mut dyn Progress, &Cancel) -> Result<Reclaimed>
 Vault::verify(&self, &mut dyn Progress, &Cancel) -> Result<VerifyReport>  // FR-33, §4.8
 ```
 
-`extract` writes to a `Write` rather than returning bytes, which is what makes S-1 structural rather than a discipline the caller must maintain. The whole index is resident once opened, so browsing is memory-speed (FR-6) and statistics are a field read rather than a scan (FR-22).
+`extract` writes to a `Write` rather than returning bytes, which is what makes S-1 structural rather than a discipline the caller must maintain. It therefore never learns a path — and FR-17's "the incomplete output is removed" can only be honoured by whoever created the file. `extract_to_path` is that owner, and it lives here rather than in each frontend: writing the removal twice is how two frontends come to differ, which A-4 forbids.
+
+`reload` is the second half of FR-27. Detecting an external change and refusing to write over it is only useful if there is a way forward; requiring the password again to get one would make the safe answer cost more than the unsafe one, which is how a safety mechanism becomes something users route around. The subkeys are already held, so a reload is one index read.
+
+ The whole index is resident once opened, so browsing is memory-speed (FR-6) and statistics are a field read rather than a scan (FR-22).
 
 ### 5.2 Command-line application
 
@@ -295,7 +315,7 @@ Vault operations run on a worker thread and report progress to the UI thread thr
 
 Reinforcing rules, each testable: the frontend uses no `localStorage`, `sessionStorage`, or IndexedDB at all; Content-Security-Policy is restricted to the bundled origin with no remote host permitted, so no vault-derived string can leave the machine; developer tools are compiled out of release builds. §9 carries the test that verifies this rather than trusting it.
 
-**Accepted cost.** Tauri brings a JavaScript toolchain and its dependency tree into a security product's supply chain, which egui would not have. It is bounded by the same policy as §7: pinned versions, audited in CI, and no frontend dependency permitted to make network requests at runtime.
+**Accepted cost.** Tauri brings a JavaScript toolchain and its dependency tree into a security product's supply chain, which egui would not have. It is bounded by the same policy as §7: pinned versions, audited by the same gates, and no frontend dependency permitted to make network requests at runtime.
 
 ---
 
@@ -315,11 +335,14 @@ The taxonomy distinguishes, at minimum:
 | `LimitExceeded { limit, value }` | FR-15 — carries both numbers the message must name |
 | `Cancelled { rolled_back: bool }` | FR-14, FR-19 — states what the cancel left behind |
 | `VerificationFailed { entries }` | FR-33, S-4 — carries every failing entry, not just the first |
+| `ReadOnly` | §4.5, §4.8 — the vault opened without a lock because its storage would not take one, and a write was attempted |
 
 Two prohibitions, each with its reason:
 
 - **No error, `Display`, or `Debug` output contains plaintext, file content, key material, or the password** (HC-2). Key types have hand-written `Debug` implementations that print a placeholder.
 - **Logging never records entry names, folder metadata, or content** (HC-1). `tracing` is used for operational events only — operation started, bytes processed, error variant. A log file that reconstructs the index would defeat the vault.
+
+`ReadOnly` is its own variant rather than an I/O error carrying a read-only kind. Both §4.5 and §4.8 require a read-only vault to *open* — refusing would turn an interrupted compaction on a drive that later became write-protected into permanent data loss, and would make the operation that diagnoses a failing drive the one operation a failing drive cannot run. So the refusal happens at the write, and it is a condition the frontends must phrase differently from a disk failure: nothing is wrong, the vault simply cannot be changed from here.
 
 Errors carry the state fact the Design Guideline's three-part message needs: `Cancelled` says whether it rolled back, `Corrupt` names the affected entries.
 
@@ -327,7 +350,7 @@ Errors carry the state fact the Design Guideline's three-part message needs: `Ca
 
 ## 7. Dependencies
 
-Locked initial set. Acceptance policy: primitives come from RustCrypto where one exists, because HC-6 requires published and widely reviewed constructions and that ecosystem is the reviewed one. No vendor SDKs. Every dependency is pinned; `cargo audit` and `cargo deny` run in CI and fail the build.
+Locked initial set. Acceptance policy: primitives come from RustCrypto where one exists, because HC-6 requires published and widely reviewed constructions and that ecosystem is the reviewed one. No vendor SDKs. Every dependency is pinned; `cargo audit` and `cargo deny` are gates run before every commit, and a failure of either blocks the commit (§8.1).
 
 | Crate | Purpose | Requirement |
 |---|---|---|
@@ -345,7 +368,9 @@ Locked initial set. Acceptance policy: primitives come from RustCrypto where one
 | `clap` | CLI argument parsing | A-4 |
 | `tauri` (v2) | GUI shell, webview integration, native dialogs | §5.3 |
 
-The frontend toolchain is pinned and lockfile-committed like the Rust dependencies, and audited in the same CI step. No frontend dependency may make a network request at runtime; the Content-Security-Policy of §5.3 enforces this rather than relying on review.
+The frontend toolchain is pinned and lockfile-committed like the Rust dependencies, and audited by the same gates. No frontend dependency may make a network request at runtime; the Content-Security-Policy of §5.3 enforces this rather than relying on review.
+
+**The table above covers dependencies that ship.** Test-only dependencies are held to the same pinning and audit policy but are listed separately, because a crate that cannot reach a release binary is a different risk: `proptest` (property tests, §9), `assert_cmd` (CLI tests, §9), and `tracing-subscriber` (the logging guard of §6). Adding one still requires a bump of this section, so the set stays deliberate.
 
 The original Veil's `sled` is not carried forward: it has been unmaintained since 2021, and §4.3 and §4.4 do the job in a few hundred lines with a durability story that fits in a paragraph.
 
@@ -355,7 +380,11 @@ The original Veil's `sled` is not carried forward: it has been unmaintained sinc
 
 ### 8.1 Toolchain
 
-Rust 2024 edition. Release versions begin at 2.0.0 per Requirements §8. CI matrix covers macOS, Windows, and Linux as peers (HC-8) — no platform is a port, and a failure on any one fails the build.
+Rust 2024 edition. Release versions begin at 2.0.0 per Requirements §8.
+
+**There is no continuous-integration pipeline, and none is planned.** The gates are run locally, by whoever is writing the code, before every commit: `cargo fmt --check`, `cargo clippy --workspace --all-targets` at `-D warnings`, `cargo test`, `cargo deny check`, and `cargo audit`. All must pass. This is a deliberate choice about how the project is worked on, not an omission to be corrected later.
+
+*Honesty clause, and it is a significant one.* HC-8 requires macOS, Windows, and Linux to be peers rather than one platform and two ports, and **without a multi-platform runner nothing verifies that.** Every gate above runs on one machine, so a defect confined to another platform is not caught by anything in this project — the code paths that differ (advisory locking, symbolic links, path and permission handling, filesystem case behaviour) are exactly the ones a single-platform run cannot exercise. HC-8 remains a hard constraint and a release violating it is still defective; what this section states is that its verification is currently manual, occasional, and the owner's, and that the cost of that choice is real and lands here.
 
 ### 8.2 Packaging
 
@@ -395,13 +424,13 @@ The original Veil had fourteen unit tests, no integration tests, and logic that 
 
 **Crash-injection tests for HC-4:** interrupt `add`, `replace`, `delete`, and `compact` at every fsync boundary; assert the vault opens, the index authenticates, statistics match a full recount, and no entry that existed beforehand is lost.
 
-**Cross-platform portability test for HC-8:** each CI platform writes a vault containing filenames in Latin, Thai, Arabic, Han, and emoji, including NFC/NFD pairs and names reserved on Windows. Every other platform opens it and verifies names and content byte-for-byte. This test is the enforcement mechanism for HC-8 and §4.6.
+**Cross-platform portability test for HC-8:** a vault containing filenames in Latin, Thai, Arabic, Han, and emoji, including NFC/NFD pairs and names reserved on Windows, is written on one platform and opened on each of the others, verifying names and content byte-for-byte. This is the enforcement mechanism for HC-8 and §4.6, and with no runner (§8.1) it is a **manual exercise the owner performs on real machines** rather than an automatic check. A manual test is one nobody runs by default; §8.1's honesty clause states the consequence.
 
-**Fuzzing** (`cargo-fuzz`) on the header and index parsers, which are the only attacker-controlled inputs reachable before authentication.
+**The header and index parsers get randomised input** — they are the only attacker-controlled inputs reachable before authentication, so a panic in either is a defect regardless of who reaches it. `cargo-fuzz` would be the right tool and is declined (§11.1): it needs a nightly toolchain and a tool on the machine. What runs instead is seeded and deterministic, so a failure reproduces exactly, and it covers the same two entry points at lower depth.
 
 **Webview persistence test for §5.3, on all three platforms.** Open a vault whose entries carry distinctive marker filenames, browse them, close the application, then search the webview's data directory, the application's cache directories, and the system temporary directory for those markers. Any hit is a defect against HC-1. This test exists because §5.3's three platform configurations fail silently when wrong — nothing about the running application looks different if a cache is being written — and a silent HC-1 violation is the failure mode this project was rebuilt to eliminate.
 
-**Scale tests**, gated to a scheduled job rather than every push: a multi-gigabyte entry, and a vault at C-1's entry limit, asserting S-1 (peak memory does not scale with file size) and S-2 (open time does not scale with vault size).
+**Scale tests**, run on request rather than with the suite because a multi-gigabyte fixture costs minutes and disk: a multi-gigabyte entry, and a vault at C-1's entry limit, asserting S-1 (peak memory does not scale with file size) and S-2 (open time does not scale with vault size). Marked `#[ignore]` so they are named and reachable rather than absent.
 
 ---
 
@@ -417,7 +446,7 @@ High-level; the Implementation Plan expands each into phases and tasks. Each sta
 
 **M4 — Durability and compaction.** Crash-injection suite, compaction with bounded working space, orphaned-pack reconciliation. *Proves HC-4 and FR-25 — the properties that make a vault trustworthy at hundreds of gigabytes.*
 
-**M5 — Cross-platform.** CI matrix green, portability artifact test passing. *Proves HC-8, and does it before GUI work multiplies the platform surface.*
+**M5 — Cross-platform.** The portability exercise of §9 performed on real machines of all three platforms, in every direction. *Proves HC-8, and does it before GUI work multiplies the platform surface.*
 
 **M6 — GUI foundation.** Tauri shell over `veil-core`, the ephemeral-webview configuration of §5.3 verified by the §9 persistence test on all three platforms, and the entry list rendering complex-script filenames correctly in both themes with OS drag-and-drop and native dialogs working. *Proves that the webview cannot leak the index, and that the one thing the interface exists to do — display the user's own filenames correctly — actually works before any feature is built on it.*
 
@@ -431,9 +460,12 @@ M1 through M5 touch no GUI code, so the interface work blocks nothing and is blo
 
 ### 11.1 Open items
 
-- **Final Argon2id parameters.** Initial target: `m = 256 MiB, t = 3, p = 4`, chosen to approach C-3's one-second budget while remaining feasible on the least capable supported machine. Memory cost must be validated against the lowest-spec target before it is fixed, since an unopenable vault on a small machine is worse than a faster derivation. Resolver: measurement during M1.
-- **Pack size cap.** 1 GiB initial. Smaller improves sync granularity (S-3) and damage locality (S-4); larger reduces file count and per-pack overhead. Resolver: tune with use once real vaults exist.
+- **Final Argon2id parameters.** `m = 256 MiB, t = 3, p = 4` is what new vaults are created with, chosen to approach C-3's one-second budget while remaining feasible on the least capable supported machine. **It is an estimate and has not been measured against C-3 on any machine.** The owner has accepted it as the working value pending a cheap machine to tune on; the measurement is what closes this item. Nothing is orphaned by a later change — HC-5 means every vault records what it was created with, and opening reads that and never a constant. Resolver: measurement on low-spec hardware when available.
+- **Pack size cap.** 1 GiB initial, and a value the API accepts (§4.5). Smaller improves sync granularity (S-3) and damage locality (S-4); larger reduces file count and per-pack overhead. Resolver: tune with use once real vaults exist.
 - **Whether compaction may proceed while a read is in flight.** The single-writer model permits it in principle; whether the added state is worth avoiding a blocked read is an implementation judgement. Resolver: M4.
+- **How the fsync ordering of §4.7 is verified.** FR-12 requires pack data to be durable before the index names it. That the index never *names* bytes outside a pack is observable and tested; that the pack fsync *precedes* the index write is not observable from outside the process. Verifying it needs the file operations of `veil-core` routed through a layer a test can watch — the same layer the crash-injection tests of §9 need. The owner has approved adding it, at M4 rather than sooner, since nothing before M4 depends on it. Until then the ordering is implemented and unasserted, and this section says so rather than the tests implying otherwise. Resolver: closed at M4.
+
+*Resolved in v1.2:* **`cargo-fuzz` on the header and index parsers (§9)** — declined. It requires a nightly toolchain and a tool installed on the development machine, and the owner has ruled that out. The seeded randomised testing that exists covers the same two entry points at lower depth and runs with the suite; §9's fuzzing line stands as a description of what would be better, not of what is done.
 
 *Resolved during v1.0:* **GUI toolkit** — resolved as Tauri v2, §5.3. egui was the preferred candidate on supply-chain and webview-persistence grounds, and was rejected on evidence: its text layout ranks among the weakest available for complex scripts such as Thai and Devanagari, and the known workarounds are pre-rendering to a texture or wrapping a webview, which respectively reimplement the problem and reintroduce the dependency. Under HC-8 the interface is filenames, so this is disqualifying. The webview persistence risk that egui would have avoided is closed explicitly in §5.3 and verified by the §9 test rather than assumed. Filename normalisation (Requirements open question) — resolved as NFC with exact case-sensitive comparison, §4.6. A referenced pack that is missing entirely (Requirements open question) — resolved as total damage to that pack, opening the vault and reporting the affected entries rather than refusing, §4.5. Withdrawal of support for a superseded format version (Requirements open question) — resolved as **not permitted while the migration path of Requirements §2.2 remains unbuilt**; a release may not refuse a vault it can still read, because there is no other route by which the user's data could be recovered.
 

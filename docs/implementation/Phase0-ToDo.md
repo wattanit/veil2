@@ -1,4 +1,4 @@
-# Veil2 — Phase 0 To-Do: Workspace and CI Foundation
+# Veil2 — Phase 0 To-Do: Workspace and Gate Foundation
 
 **Version:** 1.0
 **Status:** approved
@@ -56,7 +56,7 @@ This document owns the **step-level breakdown of Phase 0**. It defers what to bu
 | P0.2.a | `thiserror` error enum with the variants of the Specification's taxonomy table, each carrying the fields that table gives it — the fields are the requirement, not decoration | Spec §6 | T0.10 |
 | P0.2.b | `WrongPassword` and the corruption variants are distinct and never collapse into one another anywhere in the crate | FR-2, Spec §6 | T0.10 |
 | P0.2.c | `FormatTooNew` and `FormatSuperseded` carry the version numbers their messages must name | FR-5, FR-30 | T0.10 |
-| P0.2.d | `anyhow` absent from `veil-core`'s dependency graph, checked in CI. The original Veil's `From<anyhow::Error>` conversion is exactly how a wrong password and a corrupt vault became indistinguishable, and it was one line | Spec §6 | T0.2 |
+| P0.2.d | `anyhow` absent from `veil-core`'s dependency graph, checked by a test. The original Veil's `From<anyhow::Error>` conversion is exactly how a wrong password and a corrupt vault became indistinguishable, and it was one line | Spec §6 | T0.2 |
 | P0.2.e | Every variant's `Display` states what happened and the state things are in, so the three-part message the Design Guideline requires can be assembled without the caller inventing facts | Design §4.2, Spec §6 | T0.10 |
 | P0.2.f | No variant carries file content, key material, or the password in any field | HC-2, Spec §6 | T0.11 |
 
@@ -79,15 +79,15 @@ This document owns the **step-level breakdown of Phase 0**. It defers what to bu
 
 ---
 
-## P0.4 — CI matrix
+## ~~P0.4 — CI matrix~~ — withdrawn
 
 *Plan P0.4 · Spec §8.1 · HC-8*
 
-| Item | Work | Cites | Tests |
-|---|---|---|---|
-| P0.4.a | Matrix over macOS, Windows, and Linux running build, test, `clippy -D warnings`, and `fmt --check` | Spec §8.1, HC-8 | T0.1, T0.9 |
-| P0.4.b | Fail-fast disabled, so one platform's failure does not hide the other two. Fixing platforms one at a time is how a project acquires a primary platform and two ports | HC-8 | T0.1 |
-| P0.4.c | Branch protection requiring all matrix jobs — a check that does not block a merge is a report, not a gate | Spec §8.1 | — |
+**Withdrawn. There is no CI pipeline and none is wanted (Spec §8.1).** All three items described machinery for a hosted runner: a three-platform matrix, fail-fast disabled, and branch protection. None of it ever ran — the repository has no remote, so the workflow file that existed was never executed once, and every Phase 0 to Phase 2 task that reported "CI green on three platforms" was reporting something that had not happened.
+
+What replaces it is what was actually being done all along: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, and `audit`, run locally before every commit. That is P0.5 and the Plan's definition of done.
+
+**The cost is HC-8, and it is not small.** Cross-platform behaviour is verified by nothing. Numbers are retained and not reused (G-19).
 
 ---
 
@@ -122,7 +122,7 @@ This document owns the **step-level breakdown of Phase 0**. It defers what to bu
 
 The Implementation Plan's Phase 0 exit conditions govern. Restated here only as the checklist to run, not as new requirements:
 
-- CI green on macOS, Windows, and Linux.
+- Every local gate passes, and each has been observed rejecting a deliberate violation of itself. *Cross-platform verification is absent — see the withdrawn P0.4.*
 - The canary of P0.6.c fires: the guard detects a planted name, and the suite fails if it stops detecting it.
 - `veil-core`'s dependency graph contains no `anyhow` and no interactive-input crate.
 - `cargo deny` and `cargo audit` pass, and the lockfile is committed.
@@ -141,6 +141,6 @@ Recorded here rather than acted on, per the Plan's cross-cutting obligation that
 
 ## Open Questions
 
-- **Whether CI runs on self-hosted or hosted runners for the three platforms.** Affects P0.4's cost and, later, whether P5.5's scale tests have anywhere to run. Resolver: owner, before Phase 5.
+- **~~Whether CI runs on self-hosted or hosted runners for the three platforms.~~** Resolved: neither. There is no CI (Spec §8.1). P5.5's scale tests run on developer hardware on request.
 </content>
 </invoke>

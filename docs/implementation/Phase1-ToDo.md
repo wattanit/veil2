@@ -228,7 +228,7 @@ The Implementation Plan's Phase 1 exit conditions govern. Restated as the checkl
 
 ## Notes for Upstream
 
-Recorded per G-24, decided by the owner, absorbed as Specification bumps or dropped. Nothing below is decided by this document.
+Recorded per G-24, decided by the owner, absorbed as Specification bumps or dropped. Nothing below is decided by this document. **All three were absorbed into Specification v1.2.**
 
 **1. Distinguishing a wrong password from a tampered header (P1.2.c).** §3.1 makes the whole header associated data, so both conditions produce one AEAD failure. §6 requires `WrongPassword` to be distinct from corruption (FR-2), but §3.1 does not say how the two are told apart at that call. A rule is needed — the plausible one is that a header failing its own internal consistency checks is corruption and an otherwise well-formed header is a wrong password — and it belongs in §3.1 rather than in an implementation habit. Resolver: owner, at the next Specification bump.
 
@@ -240,8 +240,8 @@ Recorded per G-24, decided by the owner, absorbed as Specification bumps or drop
 
 ## Open Questions
 
-- **What Argon2id cost parameters satisfy C-3, and on what hardware.** P1.12 was waived rather than completed, so nothing in the build has been measured against C-3's one-second budget. `KdfParams` has no default: every vault records what it was created with, so choosing a set later orphans nothing (HC-5). Until it is measured, the value a vault gets is whatever its creator passes in, and the Specification's §11.1 open item stands unresolved. Resolver: owner, when hardware is available.
+- **What Argon2id cost parameters satisfy C-3, and on what hardware.** Partly settled: the owner has accepted §11.1's estimate — `m = 256 MiB, t = 3, p = 4` — as the working value new vaults are created with, pending a low-spec machine to tune on. **Nothing has been measured against C-3's one-second budget**, so the item stays open; what closes it is the measurement, not the choice. Changing it later orphans nothing (HC-5): every vault records what it was created with, and opening reads that and never a constant. Resolver: owner, when hardware is available.
 - **Whether `cargo-fuzz` targets are added for the header and index parsers.** Spec §9 calls for them. T1.33 covers the same two entry points with seeded randomised testing at lower depth; proper fuzzing needs a nightly toolchain and a tool installed on the machine. Resolver: owner.
-- **Whether the corruption suite runs on every push or on a scheduled job.** It is the gate on Phase 2, so it must run before any merge that touches `veil-core`; whether the full parameterised matrix of mutation positions runs every time is a cost decision. Resolver: owner, at P1.11.
-- **Whether fuzz targets (P1.4.f, P1.7.e) run in CI with a time budget or only on a schedule.** Both are defensible; the choice affects how quickly a parser regression is caught. Resolver: owner, at P1.11.
+- **~~Whether the corruption suite runs on every push or on a scheduled job.~~** Resolved: with the rest of the suite, every time `cargo test` is run. There is no scheduler and no CI (Spec §8.1).
+- **~~Whether fuzz targets (P1.4.f, P1.7.e) run in CI with a time budget or only on a schedule.~~** Resolved: neither. `cargo-fuzz` is declined — it needs a nightly toolchain and a tool installed on the machine. T1.33's seeded randomised testing covers the same two parsers less deeply and runs with the suite.
 </content>

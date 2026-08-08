@@ -308,9 +308,7 @@ impl Vault {
     /// silently would discard it.
     fn begin_write(&self) -> Result<()> {
         if self.lock.access() == Access::ReadOnly {
-            return Err(Error::Io {
-                kind: std::io::ErrorKind::ReadOnlyFilesystem,
-            });
+            return Err(Error::ReadOnly);
         }
         let on_disk = crate::index::generations(&self.dir)
             .into_iter()
@@ -636,9 +634,7 @@ impl Vault {
         params: KdfParams,
     ) -> Result<()> {
         if self.lock.access() == Access::ReadOnly {
-            return Err(Error::Io {
-                kind: std::io::ErrorKind::ReadOnlyFilesystem,
-            });
+            return Err(Error::ReadOnly);
         }
 
         // Verified against what is on disk, not against what is in memory: the

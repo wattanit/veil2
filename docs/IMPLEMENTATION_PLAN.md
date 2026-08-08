@@ -1,18 +1,20 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Foundation versions this plan is built against (G-14):**
 - Requirements Document **v1.1** — upstream
 - Design Guideline **v1.1** — upstream
-- Technical Specification **v1.1** — upstream
+- Technical Specification **v1.2** — upstream
 
 **Downstream documents:**
 - [Phase 0 To-Do](implementation/Phase0-ToDo.md) v1.0 · [Phase 0 Test Cases](implementation/Phase0-TestCases.md) v1.0
 - [Phase 1 To-Do](implementation/Phase1-ToDo.md) v1.0 · [Phase 1 Test Cases](implementation/Phase1-TestCases.md) v1.0
 - [Phase 2 To-Do](implementation/Phase2-ToDo.md) v1.0 · [Phase 2 Test Cases](implementation/Phase2-TestCases.md) v1.0
+
+*Changes since v1.3 (minor):* re-pinned to Specification v1.2. P0.4 is withdrawn and the definition of done no longer claims CI — there is no pipeline and none is wanted. P5.3 and P5.5 become manual and on-request rather than scheduled jobs.
 
 *Changes since v1.2 (minor — additive, no decision reversed):* the Phase 2 to-do list and test cases are written and pinned above.
 
@@ -34,7 +36,9 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 1. The behavior the cited requirement describes is observable.
 2. Tests exist at the level the Spec's strategy (§9) prescribes for that kind of work.
 3. `cargo clippy` clean, `cargo fmt` applied, `cargo deny` and `cargo audit` passing.
-4. CI green on all three platforms (HC-8) — a task passing only on the development machine is not done.
+4. The local gates of Spec §8.1 pass: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, `audit`.
+
+**There is no CI, by decision (Spec §8.1), and the definition of done is weaker as a result.** It previously read "CI green on all three platforms". Nothing runs on three platforms, so that clause was never satisfied by any task in Phases 0 through 2 and has been removed rather than left standing. Cross-platform verification is manual and the owner's; HC-8 is still a hard constraint and is currently unverified.
 
 **Enumerated test cases live in per-phase test-case documents** (G-10), not here. This plan names what a phase must prove; the test-case documents enumerate the individual checks, each citing the requirement it verifies.
 
@@ -42,7 +46,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 
 ---
 
-## Phase 0 — Workspace and CI Foundation
+## Phase 0 — Workspace and Gate Foundation
 
 *Proves nothing about the product; makes every later proof possible.*
 
@@ -53,11 +57,11 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | P0.1 | Cargo workspace with `veil-core`, `veil-cli`, `veil-gui`; module skeleton | Spec §1, A-1, A-4 |
 | P0.2 | Error taxonomy skeleton — the variants of Spec §6 defined, `anyhow` excluded from `veil-core` by lint | Spec §6, FR-2, FR-5, FR-30 |
 | P0.3 | Key-material newtypes with `ZeroizeOnDrop` and hand-written `Debug` that print a placeholder | Spec §3.1, §6, HC-2 |
-| P0.4 | CI matrix across macOS, Windows, Linux running test, clippy, fmt — all three as peers, any failure fails the build | Spec §8.1, HC-8 |
+| ~~P0.4~~ | **Withdrawn.** A continuous-integration matrix across the three platforms. Withdrawn because the project has no CI pipeline and wants none (Spec §8.1); the gates it would have run are run locally instead. The number is retained and not reused. HC-8's verification is left manual, which §8.1 states as a cost rather than a plan | Spec §8.1, HC-8 |
 | P0.5 | `cargo deny` and `cargo audit` gating the build; dependency versions pinned | Spec §7, HC-6 |
 | P0.6 | Logging guard: a test asserting that entry names, folder metadata, and content never reach `tracing` output | Spec §6, HC-1 |
 
-**Exit:** CI green on three platforms. A deliberately-added test that logs an entry name **fails** the build — P0.6 is worthless unless it can be shown to fire.
+**Exit:** every gate of the definition of done passes locally, and each is confirmed to reject a deliberate violation of itself. A deliberately-added test that logs an entry name **fails** — P0.6 is worthless unless it can be shown to fire.
 
 ---
 
@@ -177,9 +181,9 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 |---|---|---|
 | P5.1 | NFC normalisation on ingest; exact case-sensitive comparison thereafter | Spec §4.6, HC-8, FR-13 |
 | P5.2 | Extraction representability check — stop and ask rather than silently altering a name | Spec §4.6, FR-31, HC-8 |
-| P5.3 | Portability CI: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names | Spec §9, HC-8 |
+| P5.3 | Portability exercise performed by hand on real machines: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names. The vaults are kept as fixtures so the reverse direction is repeatable without three machines present | Spec §9, HC-8 |
 | P5.4 | Network-path detection and the best-effort locking advisory | Spec §2, FR-26, FR-27 |
-| P5.5 | Scale tests on a scheduled job: a multi-gigabyte entry and a vault at C-1's limit | Spec §9, S-1, S-2, C-1, C-2 |
+| P5.5 | Scale tests marked `#[ignore]` and run on request: a multi-gigabyte entry and a vault at C-1's limit | Spec §9, S-1, S-2, C-1, C-2 |
 | P5.6 | Fix the maximum path-metadata length, resolving that Spec open item | FR-10, Spec §11.1 |
 
 **Exit:** the portability test passes in every direction between all three platforms; peak memory does not scale with file size (S-1) and open time does not scale with vault size (S-2), both asserted rather than assumed.
@@ -262,7 +266,7 @@ These apply to every task in every phase and are part of the definition of done,
 
 ## Open Questions
 
-- **Whether the scale tests of P5.5 run on developer hardware or a dedicated runner.** A multi-gigabyte fixture on every scheduled CI run has a cost worth deciding deliberately. Resolver: owner, at Phase 5.
+- **~~Whether the scale tests of P5.5 run on developer hardware or a dedicated runner.~~** Resolved: developer hardware on request, since there is no runner (Spec §8.1).
 - **Whether Phase 7 ships as one release or the GUI lands incrementally behind a pre-release tag.** Affects nothing technical; affects when the 2.0.0 tag is cut. Resolver: owner, at Phase 6 exit.
 
 ### Resolved during v1.2
