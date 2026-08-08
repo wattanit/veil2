@@ -80,10 +80,13 @@ impl KdfParams {
 
     /// The parameters a newly created vault records (C-3, Spec §11.1).
     ///
-    /// **Unmeasured.** An estimate aimed at C-3's one-second budget, kept as a
-    /// working value until there is low-spec hardware to tune on. If a number
-    /// moves it is likely the memory cost, downward — a vault that will not
-    /// open on a small laptop is worse than a slow derivation on a fast one.
+    /// **0.27 s** on the development machine in a release build, against C-3's
+    /// one-second budget. That machine is among the fastest supported, and C-3
+    /// aims at the slowest, so the figure is a floor rather than an answer;
+    /// `tests/kdf_cost.rs` reproduces it and prints the neighbouring parameter
+    /// sets. If a number moves it is likely the memory cost, downward — a vault
+    /// that will not open on a small laptop is worse than a slow derivation on
+    /// a fast one.
     ///
     /// Changing it orphans nothing: it is used at creation only, and opening
     /// derives from what the vault recorded (HC-5).

@@ -27,6 +27,14 @@ This document owns the **enumerated checks that close Phase 3**. Every case cite
 
 **Where these run.** The development machine, macOS. Windows and Linux are unconfirmed (Spec §8.1). It matters here for signal delivery (T3.18), for the no-tty detection (T3.12, T3.17), and for file permissions on a password file.
 
+**How to run them.** Every case spawns the real binary, which derives a real key at C-3's cost — the cheap test parameters are compiled out of anything but a debug build, deliberately, so that no release binary can make a weak vault.
+
+```bash
+cargo test --release -p veil-cli
+```
+
+That is about fifteen seconds. `cargo test --workspace` runs these too, in debug, where Argon2id is roughly twenty times slower and the whole suite takes five minutes. Both are correct; the release run is the one to use while working on the command line. `cargo test --release --workspace` does **not** work, because the core's own suite needs the debug-only test parameters.
+
 ---
 
 ## The command surface
@@ -197,11 +205,12 @@ Provoke each condition in the P3.6 table that this phase can reach — success, 
 Hold a vault open, then run a command against the same directory.
 **Verdict:** the in-use code, and a message saying the vault is open — not a damage report and not an I/O failure.
 
-### T3.22 — A vault changed on disk refuses the write
-*Covers P3.6.a · Verifies FR-27*
+### ~~T3.22 — A vault changed on disk refuses the write~~
+*Withdrawn as unreachable · FR-27, Spec §5.2*
 
-Open a vault, change it from a second process, and attempt a write from the first.
-**Verdict:** the changed-on-disk code, the write not applied, and the message saying the vault can be reloaded. Detecting a change and refusing is only useful if the way forward is stated.
+**Withdrawn during implementation, not deferred.** The case assumed a vault held open across two writes. A command-line invocation opens, writes, and exits, so the generation it read is never stale by the time it commits — and a second writer is refused by the advisory lock long before the generation counter is consulted. FR-27's check is real and Phase 2 covers it (T2.5, T2.41); there is no command-line invocation that reaches it.
+
+Exit code 7 is therefore assigned and unprovoked. That is stated rather than hidden: what guarantees it exists is the compiler, since `Failure::code` matches exhaustively over an error type deliberately left without `#[non_exhaustive]`, so a variant with no code assigned does not build.
 
 ### T3.23 — A read-only vault reads but does not write
 *Covers P3.6.a · Verifies Spec §4.5, §4.8, FR-32*
@@ -236,8 +245,10 @@ Delete a file.
 ### T3.28 — A limit names both numbers
 *Covers P3.6.a · Verifies FR-15*
 
-Add a file larger than the configured per-file limit.
-**Verdict:** the limit code, and a message carrying both the limit and the actual size. "Too large" without the two numbers leaves the user to guess what would fit.
+Provoke the per-file limit and read what it says.
+**Verdict:** a message carrying both the limit and the actual size. "Too large" without the two numbers leaves the user to guess what would fit.
+
+**Provoked through the library rather than the binary.** The limit is 64 GiB (C-2) and the command line offers no flag to lower it — a switch whose only purpose is to make a test cheap is a seam in shipped code, which this project does not add. So the case asserts the message the library produces, and every other failing case in this file demonstrates that the command line prints those messages verbatim.
 
 ---
 
