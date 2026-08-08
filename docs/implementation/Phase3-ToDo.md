@@ -1,14 +1,14 @@
 # Veil2 — Phase 3 To-Do: Command-Line Application
 
 **Version:** 1.0
-**Status:** draft
+**Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Foundation and plan versions this list is built against (G-14):**
-- Requirements Document **v1.1** — upstream
-- Design Guideline **v1.1** — upstream
-- Technical Specification **v1.2** — upstream
-- Implementation Plan **v1.4** — upstream; this list expands Plan tasks P3.1–P3.7
+- Requirements Document **v1.2** — upstream
+- Design Guideline **v1.2** — upstream
+- Technical Specification **v1.3** — upstream
+- Implementation Plan **v1.5** — upstream; this list expands Plan tasks P3.1–P3.7
 
 This document owns the **step-level breakdown of Phase 3**. It defers what to build to the Requirements, how it presents to the Design Guideline, how it is built to the Specification, and phase sequencing to the Implementation Plan. Enumerated checks live in [Phase3-TestCases.md](Phase3-TestCases.md).
 
@@ -45,7 +45,8 @@ Phase 2 built an API with no caller. Phase 3 is the caller, and the Plan is expl
 | P3.1.a | One command per core capability, spelled in Design §7's vocabulary: `create`, `add`, `list`, `save-copy`, `replace`, `delete`, `check`, `info`, `password` | A-4, Design §7 | T3.1, T3.29 |
 | P3.1.b | Files addressed by their stored path — folder metadata and name together — never by an internal identifier | FR-13, Design §7 | T3.1 |
 | P3.1.c | A path matching more than one stored file refused, naming how many it matched, rather than acting on an arbitrary one | FR-13, HC-4 | T3.4 |
-| P3.1.d | A path matching nothing reported as naming nothing, distinct from damage and from a wrong password | FR-2, HC-3 | T3.5 |
+| P3.1.d | A path matching nothing reported as naming nothing, distinct from damage and from a wrong password | FR-2, HC-3, Spec §6 | T3.5 |
+| P3.1.d2 | `add` refusing a path the vault already holds, naming it and pointing at `replace` | FR-34, Spec §6 | T3.4 |
 | P3.1.e | `add` accepting both a file and a folder, reporting every path the walk declined | FR-9, FR-10, FR-11 | T3.1, T3.31 |
 | P3.1.f | `list` filtering by folder and by name substring, so FR-7's grouping has a command-line equivalent | FR-6, FR-7 | T3.6 |
 | P3.1.g | No flag anywhere that schedules, times, or conditions an operation on a threshold | FR-23, Spec §5.2 | T3.3 |
@@ -53,7 +54,7 @@ Phase 2 built an API with no caller. Phase 3 is the caller, and the Plan is expl
 
 **Why P3.1.b.** The core addresses files by `EntryId`, which is an integer that changes on every replace. Exposing it would put a number in the user's shell history that means a different file tomorrow. The stored path is the identity FR-13 already fixed, so the CLI resolves a path to an identifier itself and the identifier never appears on screen.
 
-**Why P3.1.d is an item rather than a consequence.** The core reports a path that matches nothing as `Corrupt` with an empty affected list. That is the FR-2 mistake in another suit — naming nothing and being damaged are different conditions with different remedies. The CLI resolves paths against `entries()` before it calls the core, so it never asks a question whose "no" is a damage report. See *Notes for Upstream*, item 1.
+**Why P3.1.d is an item rather than a consequence.** The core reported a path that matches nothing as `Corrupt` with an empty affected list. That is the FR-2 mistake in another suit — naming nothing and being damaged are different conditions with different remedies. It is fixed in the core rather than papered over in the CLI, so the GUI inherits the fix instead of repeating the workaround (*Notes for Upstream*, item 1).
 
 ---
 
@@ -143,23 +144,7 @@ Phase 2 built an API with no caller. Phase 3 is the caller, and the Plan is expl
 | P3.6.b | The mapping in one place, exhaustive over the error enum, so a new variant cannot silently become "general failure" | Spec §6 | T3.19 |
 | P3.6.c | The codes documented in `--help`, since an interface a script depends on that is only discoverable by experiment is not an interface | Design §3.4 | T3.19 |
 
-The proposed mapping, offered to the owner as *Notes for Upstream* item 2 because a script depending on these numbers makes them a public contract:
-
-| Code | Condition | Foundation |
-|---|---|---|
-| 0 | Success | |
-| 1 | Unexpected failure | |
-| 2 | Usage error | |
-| 3 | Wrong password | FR-2 |
-| 4 | Not a vault, or a format this release does not read | FR-5, FR-30 |
-| 5 | Damage found | HC-3, FR-33, S-4 |
-| 6 | Vault in use | FR-26 |
-| 7 | Vault changed on disk | FR-27 |
-| 8 | Vault is read-only | Spec §4.5, §4.8 |
-| 9 | A limit would be exceeded | FR-15 |
-| 10 | Cancelled | FR-14, FR-19 |
-| 11 | Storage became unavailable | FR-28 |
-| 12 | A required password was not supplied and cannot be asked for | Spec §5.2 |
+The mapping now lives in **Spec §5.2**, where a compatibility obligation belongs. This phase implements that table and adds nothing to it.
 
 ---
 
@@ -181,23 +166,27 @@ The proposed mapping, offered to the owner as *Notes for Upstream* item 2 becaus
 
 ## Notes for Upstream
 
-Recorded per G-24; the owner absorbs them at the next Specification or Design bump. **None is acted on in code beyond what this list already schedules.**
+Recorded per G-24. **All six were absorbed by the owner before this list was approved**, so the pins in the header are the versions that already contain them.
 
-1. **Spec §6 has no variant for "no such file".** The core reports a path that matches nothing as `Corrupt` with an empty affected list, which conflates naming nothing with damage — the same conflation FR-2 exists to prevent, one level down. Phase 3 works around it in P3.1.d by resolving paths before calling the core, but the GUI will hit the same edge. Suggested: a `NotFound` variant in the §6 table.
+1. **Spec §6 had no variant for "no such file".** The core reported a path that matches nothing as `Corrupt` with an empty affected list — the conflation FR-2 exists to prevent, one level down. *Absorbed: `NotFound` in Spec §6 (v1.3). Phase 3 also uses the core's own refusal rather than pre-checking, so the GUI inherits the fix.*
 
-2. **The exit-code numbers belong in Spec §5.2.** Once a backup script tests `$? -eq 5`, the number is an interface with a compatibility obligation, and an interface with a compatibility obligation belongs in the Specification rather than in a phase document. The table under P3.6 is the proposal.
+2. **The exit-code numbers belong in Spec §5.2.** Once a backup script tests `$? -eq 5`, the number carries a compatibility obligation. *Absorbed: the table is Spec §5.2 (v1.3).*
 
-3. **Design fixes no column order.** §3.4 requires the CLI table to use "the same column order as the GUI", and §3.2 describes the content list without enumerating its columns. Proposed and used by this phase until Design says otherwise: **name, folder, size, added**.
+3. **Design fixed no column order.** §3.4 required the CLI table to match the GUI's columns; §3.2 never enumerated them. *Absorbed: **name, folder, size, added** in Design §3.2 (v1.2).*
 
-4. **Three dependencies ship for the first time in this phase**, so Spec §7 needs a bump to hold them: `anyhow` (permitted for binaries by §6, but absent from the §7 table), `serde_json` (P3.3's machine output; already a test-only dependency), and a signal handler for P3.5.d — `ctrlc` is the proposal, being small and widely reviewed. A no-echo password reader is also required for P3.4.c; `rpassword` is the proposal.
+4. **Four dependencies ship for the first time in this phase.** *Absorbed into the Spec §7 table (v1.3): `anyhow` (binaries only; §6's prohibition on it inside the library stands), `serde_json`, `ctrlc`, `rpassword`.*
 
-5. **Whether `add` may store two files at the same path.** Nothing forbids it today, which is what makes P3.1.c necessary — a duplicate path is unaddressable from the CLI afterwards. FR-13 treats the full path as identity, so the honest reading is that `add` should refuse a path that already exists and point at `replace`. That is a Requirements-grade change, not one this phase makes.
+5. **Whether `add` may store two files at the same path.** *Absorbed: **FR-34** (Requirements v1.2) refuses it, with `AlreadyExists` in Spec §6. P3.1.c stands regardless — vaults written before this exist, and a duplicate already in one still has to be reported rather than guessed at.*
 
-6. **`--force` for overwrite at the destination.** FR-18 requires explicit confirmation naming the file before overwriting. A non-interactive invocation cannot be asked, so it must either fail or carry a flag that pre-confirms. This phase fails without a flag and accepts `--force` as the pre-confirmation, which is a reading of FR-18 rather than something FR-18 says.
+6. **`--force` for overwrite at the destination.** FR-18 requires confirmation naming the file; a non-interactive invocation cannot be asked. *Absorbed as a reading rather than a document change: this phase refuses without a flag and treats `--force` as the pre-confirmation. Recorded here because it is a reading of FR-18, not something FR-18 says.*
 
 ---
 
 ## Open Questions
 
-- **Whether `list` should default to grouping by folder or to a flat list.** FR-7 makes grouping a view control in the GUI; on a command line, a flat table pipes and a grouped one reads. This phase ships flat with a `--group` flag. Resolver: owner, before approval.
-- **Whether a vault path may be defaulted from an environment variable.** Convenient for scripting, and one more place a path can come from silently. This phase requires it as an argument. Resolver: owner, at Phase 3 exit.
+*None outstanding.* Both were resolved by the owner at approval:
+
+### Resolved before v1.0
+
+- **~~Whether `list` defaults to grouping by folder or to a flat list.~~** Resolved: **flat**, with `--group` to group. A flat table pipes; a grouped one does not.
+- **~~Whether a vault path may be defaulted from an environment variable.~~** Resolved: **no** — the vault is always an argument. One more place a path can come from silently is one more way to write to the wrong vault.

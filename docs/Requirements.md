@@ -1,12 +1,14 @@
 # Veil2 — Requirements Document
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Design Guideline v1.1 — downstream
-- Technical Specification v1.1 — downstream
+- Design Guideline v1.2 — downstream
+- Technical Specification v1.3 — downstream
+
+*Changes since v1.1 (minor — additive, no decision reversed):* FR-34 added — adding a file at a path the vault already holds is refused rather than stored alongside it. Raised by Phase 3: a duplicated path is unaddressable from a command line afterwards, and FR-13 already treats the full path as identity.
 
 *Changes since v1.0 (minor — additive and clarifying, no decision reversed):* FR-13 clarified to match on full path; FR-33 added for vault verification; §7's tamper-detection limit updated to name it.
 
@@ -116,6 +118,8 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 **FR-12.** Report an ingest as successful only once the stored data is durable. Acceptance: an immediate power loss after the success report does not lose the entry.
 
 **FR-13.** Replace an existing entry, matched on its full path — folder metadata and name together, so `work/2024/report.pdf` is replaced only by `work/2024/report.pdf` and never by a same-named file from a different folder. The new content is durable before the previous content becomes unreachable, so an interruption leaves one intact version and never zero (HC-4).
+
+**FR-34.** Refuse to add a file at a path the vault already holds, naming the path and pointing at replacement instead. FR-13 makes the full path a file's identity; storing two files under one identity leaves a vault whose contents cannot be named unambiguously, and every later operation on that path — replace, save a copy, delete — is then a choice the product has to make on the user's behalf without being able to ask.
 
 **FR-14.** Report progress and accept cancellation for every ingest. A cancelled ingest leaves the vault as though it had not been started.
 

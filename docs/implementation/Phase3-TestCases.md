@@ -1,14 +1,14 @@
 # Veil2 — Phase 3 Test Cases: Command-Line Application
 
 **Version:** 1.0
-**Status:** draft
+**Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Foundation and plan versions these cases are built against (G-14):**
-- Requirements Document **v1.1** — upstream
-- Design Guideline **v1.1** — upstream
-- Technical Specification **v1.2** — upstream
-- Implementation Plan **v1.4** — upstream
+- Requirements Document **v1.2** — upstream
+- Design Guideline **v1.2** — upstream
+- Technical Specification **v1.3** — upstream
+- Implementation Plan **v1.5** — upstream
 - [Phase3-ToDo.md](Phase3-ToDo.md) **v1.0** — companion; each case names the item it covers
 
 This document owns the **enumerated checks that close Phase 3**. Every case cites the requirement it verifies (G-10).
@@ -49,11 +49,11 @@ Pass `--password secret` to every subcommand.
 Search the full help output of every command for a flag that schedules, times, daemonises, or triggers on a threshold.
 **Verdict:** none exists. FR-23 forbids automatic compaction, and a switch a user can wire into cron is that prohibition defeated under another name.
 
-### T3.4 — A path matching two files is refused
-*Covers P3.1.c · Verifies FR-13, HC-4*
+### T3.4 — A path already held is refused, and an existing duplicate is not guessed at
+*Covers P3.1.c, P3.1.d2 · Verifies FR-34, FR-13, HC-4*
 
-Add the same file twice under the same folder, then save a copy of that path, then delete it.
-**Verdict:** both refuse, naming how many files matched, and the vault is unchanged. Acting on an arbitrary one of two would make delete a coin toss on the user's data.
+Add a file, then add a second file at the same folder and name. Then, against a vault built to hold a duplicate path directly through the library — the state FR-34 now prevents but that vaults written before it can still be in — save a copy of that path and delete it.
+**Verdict:** the second add exits with the already-exists code, names the path, and points at `replace`; the vault still holds one file at that path. Against the duplicate-holding vault, both the save and the delete refuse, naming how many files matched, and the vault is unchanged. Acting on an arbitrary one of two would make delete a coin toss on the user's data, and FR-34 stopping new duplicates does not remove the ones already written.
 
 ### T3.5 — A path matching nothing is not reported as damage
 *Covers P3.1.d · Verifies FR-2, HC-3*

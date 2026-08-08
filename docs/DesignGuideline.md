@@ -1,12 +1,14 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.1 — upstream
-- Technical Specification v1.1 — downstream
+- Requirements Document v1.2 — upstream
+- Technical Specification v1.3 — downstream
+
+*Changes since v1.1 (minor — additive, no decision reversed):* §3.2 fixes the content list's column order, which §3.4 already required the command line to follow but which no section stated.
 
 *Changes since v1.0 (minor — additive and clarifying, no decision reversed):* the three open questions on replace-matching, whole-vault verification, and CLI compaction scheduling are resolved; §8.6 added for verification; the §7 vocabulary table gains its verb.
 
@@ -113,7 +115,7 @@ One panel showing vault contents. There is no second panel for the local filesys
 
 **Controls** — search, the grouping toggle, and add. Grouping by recorded folder path is a *view* control, not a tree widget (FR-7). Groups collapse and expand; they cannot be renamed, created, or dragged, because they are metadata rather than structure.
 
-**Content list** — virtualised, sorted by any column, multi-select.
+**Content list** — virtualised, sorted by any column, multi-select. Columns are **name, folder, size, added**, in that order, and §3.4 binds the command line to the same order. Name leads because it is what the user is looking for; folder follows because it is what disambiguates two files with one name; size and date are what they compare, and are the two the tabular-numeral rule of §2.3 exists for.
 
 **Operation bar** — present only while an operation runs. Shows what is happening, real progress, throughput, and cancel. One operation at a time is visible; queued work is stated as a count.
 

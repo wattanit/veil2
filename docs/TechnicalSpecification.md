@@ -1,12 +1,14 @@
 # Veil2 — Technical Specification
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.1 — upstream
-- Design Guideline v1.1 — upstream
+- Requirements Document v1.2 — upstream
+- Design Guideline v1.2 — upstream
+
+*Changes since v1.2 (minor — additive, no decision reversed):* absorbs what Phase 3 needs before it can start. §5.2 gains the exit-code table, which a script depending on it makes a compatibility obligation; §6 gains `NotFound` — naming nothing was being reported as damage, which is FR-2's conflation one level down — and `AlreadyExists` for FR-34; §7 gains the four dependencies the command line ships.
 
 *Changes since v1.1 (minor — additive and clarifying, no decision reversed):* absorbs what Phases 1 and 2 discovered. §3.1 and §4.2 state how a wrong password is told from a damaged header, and the header gains the checksum that makes it possible; §4.3 names the entry-identifier counter; §4.5 and §11.1 make the pack cap and the C-1/C-2 limits values the API accepts; §5.1 gains `extract_to_path` and `reload`; §6 gains the read-only condition; §7 states that its table covers runtime dependencies and names the test-only ones; §8.1 and §9 remove the continuous-integration matrix and state plainly that cross-platform behaviour is therefore unverified; §11.1 resolves two items and records two decisions.
 
@@ -295,6 +297,25 @@ Non-interactive invocation is detected rather than assumed: where a password is 
 
 Exit codes distinguish the §6 error classes, so scripts can tell a wrong password from a damaged vault without parsing text. Verification (§4.8) exits non-zero when any entry fails, so it is usable as a check in a backup script without parsing its output.
 
+The codes are fixed here rather than in the application, because the moment a backup script tests for one it is an interface with a compatibility obligation, and this document is where those live. The mapping is exhaustive over the §6 taxonomy: a variant added later without a code assigned is a defect, not a fallback into 1.
+
+| Code | Condition | Satisfies |
+|---|---|---|
+| 0 | Success | |
+| 1 | Unexpected failure | |
+| 2 | Usage error | |
+| 3 | `WrongPassword` | FR-2 |
+| 4 | `NotAVault`, `FormatTooNew`, `FormatSuperseded` | FR-5, FR-30 |
+| 5 | `Corrupt` — damage found, including by verification | HC-3, FR-33, S-4 |
+| 6 | `VaultInUse` | FR-26 |
+| 7 | `ChangedOnDisk` | FR-27 |
+| 8 | `ReadOnly` | §4.5, §4.8 |
+| 9 | `LimitExceeded` | FR-15 |
+| 10 | `Cancelled` | FR-14, FR-19 |
+| 11 | `StorageUnavailable` | FR-28 |
+| 12 | A required password was not supplied and no terminal is available to ask | §5.2 above |
+| 13 | `NotFound`, `AlreadyExists` | FR-34 |
+
 **Compaction is not exposed as a schedulable operation** (FR-23, resolving that Requirements open question). No timer flag, no daemon mode, no "run if reclaimable exceeds N" switch. FR-23 forbids automatic compaction, and a scheduling hook would be that prohibition defeated under another name — a user who wires it into cron has automatic compaction whatever the manual page calls it. Verification carries no such restriction: it only reads, so running it from a scheduled backup script is legitimate and supported.
 
 ### 5.3 Graphical application
@@ -336,11 +357,15 @@ The taxonomy distinguishes, at minimum:
 | `Cancelled { rolled_back: bool }` | FR-14, FR-19 — states what the cancel left behind |
 | `VerificationFailed { entries }` | FR-33, S-4 — carries every failing entry, not just the first |
 | `ReadOnly` | §4.5, §4.8 — the vault opened without a lock because its storage would not take one, and a write was attempted |
+| `NotFound { folder, name }` | FR-2's principle applied to naming: a path that matches nothing is a mistyped name, not damage |
+| `AlreadyExists { folder, name }` | FR-34 — the path is already a file's identity, and adding a second is refused |
 
 Two prohibitions, each with its reason:
 
 - **No error, `Display`, or `Debug` output contains plaintext, file content, key material, or the password** (HC-2). Key types have hand-written `Debug` implementations that print a placeholder.
 - **Logging never records entry names, folder metadata, or content** (HC-1). `tracing` is used for operational events only — operation started, bytes processed, error variant. A log file that reconstructs the index would defeat the vault.
+
+`NotFound` is its own variant for the same reason `WrongPassword` is: a mistyped name and a damaged vault send a user to entirely different remedies, and reporting the first as the second is the original Veil's defining failure repeated at the level of names. It was reported as `Corrupt` with an empty affected list until Phase 3 found it.
 
 `ReadOnly` is its own variant rather than an I/O error carrying a read-only kind. Both §4.5 and §4.8 require a read-only vault to *open* — refusing would turn an interrupted compaction on a drive that later became write-protected into permanent data loss, and would make the operation that diagnoses a failing drive the one operation a failing drive cannot run. So the refusal happens at the write, and it is a condition the frontends must phrase differently from a disk failure: nothing is wrong, the vault simply cannot be changed from here.
 
@@ -366,6 +391,10 @@ Locked initial set. Acceptance policy: primitives come from RustCrypto where one
 | `thiserror` | Error taxonomy | §6 |
 | `tracing` | Operational logging, subject to §6 | |
 | `clap` | CLI argument parsing | A-4 |
+| `anyhow` | Error handling at a binary's top level only. §6 forbids it in the library and that prohibition stands — the reason it exists is that the original Veil made a wrong password and a damaged vault indistinguishable, which is a property of the library's taxonomy, not of how a binary prints one | §6 |
+| `serde_json` | Machine-readable command-line output | Design §3.4 |
+| `ctrlc` | Interrupt handling, so an interrupt reaches the cancellation the core already implements rather than killing the process | FR-14, FR-19 |
+| `rpassword` | Reading a password from a terminal without echoing it | HC-2 |
 | `tauri` (v2) | GUI shell, webview integration, native dialogs | §5.3 |
 
 The frontend toolchain is pinned and lockfile-committed like the Rust dependencies, and audited by the same gates. No frontend dependency may make a network request at runtime; the Content-Security-Policy of §5.3 enforces this rather than relying on review.
