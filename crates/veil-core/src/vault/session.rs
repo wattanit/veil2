@@ -13,7 +13,7 @@ use crate::format::{CURRENT_FORMAT_VERSION, Header, SALT_LEN, unlock};
 use crate::index::IndexDocument;
 use crate::store::DEFAULT_PACK_CAP;
 
-use super::{Access, Limits, Vault, VaultLock};
+use super::{Access, Limits, Reconciled, Vault, VaultLock};
 
 /// Name of the header file within a vault directory (Spec §4.1).
 pub const HEADER_FILE: &str = "veil.header";
@@ -33,6 +33,12 @@ impl Vault {
     ) -> Result<Self> {
         check_length(password)?;
         std::fs::create_dir_all(dir)?;
+        // The vault's own directory entry, before anything is put inside it.
+        // A bare relative path has an empty parent, which is the current
+        // directory and not something to open by that name.
+        if let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty()) {
+            crate::durable::sync_dir(parent)?;
+        }
         let lock = VaultLock::acquire(dir)?;
 
         let mut kdf_salt = [0u8; SALT_LEN];
@@ -93,14 +99,18 @@ impl Vault {
         let key = index_key(&master);
         let document = crate::index::read(dir, &key)?;
 
-        Ok(Self::assemble(
+        let mut vault = Self::assemble(
             dir.to_path_buf(),
             header,
             master,
             document,
             DEFAULT_PACK_CAP,
             lock,
-        ))
+        );
+        // The residue of an interrupted ingest or reclaim is cleared here, and
+        // what it recovered is kept for the caller to report (FR-32).
+        vault.reconciled = vault.reconcile()?;
+        Ok(vault)
     }
 
     /// Changes the vault's password (FR-4).
@@ -189,6 +199,12 @@ impl Vault {
             pack_cap,
             limits: Limits::default(),
             lock,
+            // A vault being created has no residue; `open` overwrites this with
+            // what reconciliation actually found.
+            reconciled: Reconciled::Done {
+                packs_removed: 0,
+                bytes_recovered: 0,
+            },
         }
     }
 }
@@ -232,6 +248,10 @@ fn write_header(dir: &Path, header: &Header) -> Result<()> {
         file.sync_all()?;
     }
     std::fs::rename(&staging, &final_path)?;
+    // The rename is a directory change. Without this the old header can still
+    // be the one on disk after a crash, with the new one durable under a name
+    // nothing looks for (§4.7, HC-4).
+    crate::durable::sync_dir(dir)?;
     Ok(())
 }
 

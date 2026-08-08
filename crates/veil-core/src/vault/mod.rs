@@ -1,13 +1,14 @@
-//! Public API: create, open, ingest, extract, replace, delete, verify
+//! Public API: create, open, ingest, extract, replace, delete, verify, reclaim
 //! (Spec §2, §5.1). Nothing here needs a terminal or a prompt (A-1).
 //!
-//! Not built yet: compaction and orphaned-pack cleanup (Phase 4), NFC name
-//! normalisation (Phase 5) — so name comparison here is exact on stored bytes.
+//! Not built yet: NFC name normalisation (Phase 5) — so name comparison here is
+//! exact on stored bytes.
 //!
 //! This file holds the type and the read-only accessors. The operations are
 //! split by what they do to a vault: `session` opens and closes one and owns
 //! the password, `ingest` puts data in, `mutate` changes what is already there,
-//! `read` gets data out.
+//! `read` gets data out, `reclaim` recovers the space `mutate` left behind, and
+//! `reconcile` clears up after a crash at open.
 
 mod ingest;
 mod limits;
@@ -15,6 +16,8 @@ mod lock;
 mod mutate;
 mod progress;
 mod read;
+mod reclaim;
+mod reconcile;
 mod session;
 mod verify;
 mod walk;
@@ -23,6 +26,8 @@ pub use ingest::FolderOutcome;
 pub use limits::{Limits, MAX_ENTRIES_PER_VAULT, MAX_FILE_SIZE};
 pub use lock::{Access, LOCK_FILE, VaultLock};
 pub use progress::{Cancel, NoProgress, Progress, ProgressReport, Unit};
+pub use reclaim::Reclaimed;
+pub use reconcile::Reconciled;
 pub use session::HEADER_FILE;
 pub use verify::{Outcome, Report, Verdict};
 pub use walk::{Found, SkipReason, Skipped, Walk, walk};
@@ -49,6 +54,9 @@ pub struct Vault {
     pack_cap: u64,
     limits: Limits,
     lock: VaultLock,
+    /// What reconciliation did at open. FR-32 requires the recovered space be
+    /// reported rather than absorbed, and this is where the caller reads it.
+    reconciled: Reconciled,
 }
 
 impl Vault {

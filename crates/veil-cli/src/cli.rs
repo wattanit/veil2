@@ -142,6 +142,16 @@ pub enum Command {
         vault: PathBuf,
     },
 
+    /// Reclaim the space deleted and replaced files still occupy.
+    ///
+    /// Runs only when you ask. There is no flag to schedule it, time it, or
+    /// start it when a vault passes some size — `veil info` shows the figures
+    /// the decision rests on.
+    ReclaimSpace {
+        /// The vault.
+        vault: PathBuf,
+    },
+
     /// Change a vault's password.
     Password {
         /// The vault.

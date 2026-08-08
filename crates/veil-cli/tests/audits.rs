@@ -7,7 +7,7 @@ mod harness;
 
 use harness::{Scratch, run};
 
-const COMMANDS: [&str; 9] = [
+const COMMANDS: [&str; 10] = [
     "create",
     "add",
     "list",
@@ -17,6 +17,9 @@ const COMMANDS: [&str; 9] = [
     "check",
     "info",
     "password",
+    // Arrived in Phase 4 (P4.3). Design §7 calls it reclaiming space and never
+    // compaction, and this audit is what holds that at the process boundary.
+    "reclaim-space",
 ];
 
 /// Everything the command line says: every help text, and both streams of a
@@ -71,6 +74,7 @@ fn everything_it_says(scratch: &Scratch) -> String {
         // Refused: no such file.
         vec!["delete".into(), vault.clone(), "docs/ghost.pdf".into()],
         vec!["delete".into(), vault.clone(), "docs/report.pdf".into()],
+        vec!["reclaim-space".into(), vault.clone()],
     ];
     for args in runs {
         said.push_str(

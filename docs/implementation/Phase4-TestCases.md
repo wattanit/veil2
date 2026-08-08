@@ -83,7 +83,7 @@ Build a multi-pack vault with a small pack cap through the subject binary, delet
 
 **Verdict:** the four invariants. Every live file extracts byte-identically whether its extents had been moved yet or not, and the vault opens with no manual step. FR-24 requires the vault to be openable at *every* point during the operation, and a kill at an arbitrary point is the only way to sample that.
 
-**Why this one uses a subject that is not the shipped binary.** Reclaiming space is a multi-pack behaviour and the pack cap is 1 GiB. Spec §4.5 made the cap an API parameter exactly so this test would not need gigabytes, and the command line does not expose it — a flag existing only to make a test cheap is the seam this project refuses. So the subject is a small binary that links `veil-core` and takes the cap as an argument. It is killed for real; nothing is simulated. Recorded in the To-Do as *Notes for Upstream*, item 7.
+**Why this one uses a subject that is not the shipped binary.** Reclaiming space is a multi-pack behaviour and the pack cap is 1 GiB. Spec §4.5 made the cap an API parameter exactly so this test would not need gigabytes, and the command line does not expose it — a flag existing only to make a test cheap is the seam this project refuses. So the subject is a small binary that links `veil-core` and takes the cap as an argument. It is killed for real; nothing is simulated. Recorded in the To-Do as *Notes for Upstream*, item 8.
 
 ### T4.6 — After any kill, the statistics are true again
 *Covers P4.2.c, P4.6.b, P4.4.c · Verifies FR-8, FR-22, HC-4*
@@ -145,12 +145,14 @@ Start reclaiming space over several packs and cancel it part-way.
 
 **Verdict:** the cancelled exit code, the packs already reclaimed stay reclaimed, the vault opens, and the partly-written pack is gone by the time the next open finishes. Each pack is its own transaction, so a cancellation costs at most the pack in flight — which is FR-24's "at most the current unit of work" made observable.
 
-### T4.14 — Damage is refused, not compacted away
+### T4.14 — A pack that is not all there is refused, not compacted away
 *Covers P4.3.h · Verifies S-4, HC-3*
 
-Corrupt the stored bytes of one file, then try to reclaim space.
+Truncate a pack so that an extent the index holds claims more than the file contains, then try to reclaim space.
 
-**Verdict:** the operation refuses the pack holding the damage, names the entries it affects, and reclaims the other packs or none — but never rewrites the damaged pack and reports success. Copying damage into a fresh pack and deleting the original leaves the user with the same loss and no evidence of where it came from.
+**Verdict:** the operation refuses that pack, names the entries with extents in it, and never rewrites it. Copying a short extent forward would produce an entry whose recorded length no longer matches its stored bytes, and would delete the original that proved what happened.
+
+**What this does *not* refuse, and why.** A pack that is complete but whose bytes were *altered* is reclaimed like any other. Telling authentic bytes from tampered ones means decrypting them, and reclaiming space deliberately does not decrypt (P4.3.e) — so the choice is between doing a full verification pass inside an operation whose job is not verification, or copying the damage faithfully. Copying loses nothing: the same bytes stay damaged in the new pack, `check` still names the same entries, and FR-33 keeps damage as the subject of the operation built for it. Asserted here rather than left implicit, because "reclaiming refuses damage" is the kind of claim that gets remembered as broader than it is.
 
 ### T4.15 — Reclaiming has no schedule and no condition
 *Covers P4.3.j · Verifies FR-23, Spec §5.2*
@@ -204,6 +206,13 @@ Make a vault directory read-only, leave an orphaned pack in it, and open it. Lis
 Delete one file from a pack that holds several, then open the vault.
 
 **Verdict:** the pack is untouched, its size is unchanged, and the reclaimable figure still counts the deleted file's bytes. Reconciliation removes packs nothing references; recovering bytes *inside* a pack is reclaiming space, and FR-23 makes that the user's decision alone.
+
+### T4.26 — A pack that deleting emptied entirely is removed at open
+*Covers P4.4.a · Verifies FR-32, FR-23*
+
+Delete every file that had extents in one pack, close the vault, and open it again.
+
+**Verdict:** the pack is gone, its bytes are reported as recovered, and the figures fall by exactly that amount. This is the other side of T4.21 and the two together are the whole rule: reconciliation removes packs, never bytes inside them. It is not FR-23 being broken — nothing live is rewritten and no I/O competes with anything — but it is visible to the user as a seam, so it is asserted deliberately rather than arrived at. The reading is recorded in the To-Do as *Notes for Upstream*, item 7, and it is the owner's to overturn.
 
 ---
 

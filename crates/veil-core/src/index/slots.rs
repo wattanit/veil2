@@ -170,11 +170,18 @@ pub fn write(vault_dir: &Path, key: &IndexKey, document: &IndexDocument) -> Resu
             affected: Vec::new(),
         })?;
 
+    // A slot written for the first time is a new name in the vault directory,
+    // and a name is durable only once the directory is (§4.7, HC-4).
+    let named_a_slot = !target.exists();
+
     let mut file = fs::File::create(target)?;
     file.write_all(&preamble)?;
     file.write_all(&sealed)?;
     // Success is only reportable once the bytes are durable (FR-12, HC-4).
     file.sync_all()?;
+    if named_a_slot {
+        crate::durable::sync_dir(vault_dir)?;
+    }
     Ok(())
 }
 

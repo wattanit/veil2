@@ -10,7 +10,7 @@ use veil_core::Error;
 use veil_core::crypto::KdfParams;
 use veil_core::index::{Entry, EntryId};
 use veil_core::store::DEFAULT_PACK_CAP;
-use veil_core::vault::Vault;
+use veil_core::vault::{Reconciled, Vault};
 
 use crate::cli::{Cli, Command, Format};
 use crate::failure::{Failure, Run};
@@ -50,6 +50,7 @@ pub fn dispatch(cli: &Cli) -> Run<()> {
         Command::Delete { vault, file } => delete(vault, file, cli),
         Command::Check { vault } => report::check(&open(vault, cli)?, cli.format),
         Command::Info { vault } => report::info(&open(vault, cli)?, cli.format),
+        Command::ReclaimSpace { vault } => reclaim_space(vault, cli),
         Command::Password {
             vault,
             new_password_file,
@@ -65,7 +66,43 @@ fn open(dir: &Path, cli: &Cli) -> Run<Vault> {
         "Password",
         false,
     )?;
-    Ok(Vault::open(dir, &secret)?)
+    let vault = Vault::open(dir, &secret)?;
+    announce(&vault);
+    Ok(vault)
+}
+
+/// Says what opening the vault found, before the command's own result.
+///
+/// All three of these are conditions the user has not asked about and needs to
+/// know anyway: FR-32 requires recovered space to be reported rather than
+/// absorbed and a read-only vault to say so, and S-4 requires a partial loss to
+/// be presented as a list of files rather than discovered later. They go to
+/// standard error, because none of them is the result of the command that was
+/// run.
+fn announce(vault: &Vault) {
+    match vault.reconciled() {
+        Reconciled::Skipped => output::note(
+            "This vault is read-only. You can look at it and check it for damage, \
+             but nothing can be added to it or changed in it.",
+        ),
+        Reconciled::Done {
+            bytes_recovered, ..
+        } if bytes_recovered > 0 => output::note(&format!(
+            "Recovered {} that an operation left behind when it did not finish.",
+            output::human_size(bytes_recovered)
+        )),
+        Reconciled::Done { .. } => {}
+    }
+
+    let unreadable = vault.unreadable_entries().len();
+    if unreadable > 0 {
+        output::note(&format!(
+            "{} file{} in this vault cannot be read: part of what the vault stored \
+             is missing.\nEverything else is fine. Run `veil check` to see which files.",
+            output::count(unreadable as u64),
+            output::plural(unreadable),
+        ));
+    }
 }
 
 fn create(dir: &Path, cli: &Cli) -> Run<()> {
@@ -209,14 +246,57 @@ fn delete(dir: &Path, file: &str, cli: &Cli) -> Run<()> {
         Format::Table => output::say(
             cli.format,
             &format!(
-                "Deleted {file}\nIts stored bytes stay in the vault until space is reclaimed. \
-                 This version\ncannot reclaim space yet, so anyone with this vault could still \
-                 recover them.",
+                "Deleted {file}\nIts stored bytes stay in the vault until you reclaim space, so \
+                 anyone with this\nvault could still recover them until then. \
+                 Run `veil reclaim-space` to remove them.",
             ),
         ),
         Format::Json => output::json(&serde_json::json!({
             "deleted": file,
             "bytes_still_stored": true,
+        })),
+    }
+}
+
+/// Recovers the space deleted and replaced files still occupy (FR-23, FR-25).
+///
+/// Never scheduled and never conditional: the command exists, the figures are
+/// in `info`, and the person reading them decides. A flag that started this on
+/// a threshold would be FR-23's prohibition wearing a different hat.
+fn reclaim_space(dir: &Path, cli: &Cli) -> Run<()> {
+    let mut vault = open(dir, cli)?;
+    let mut progress = Stderr::new("reclaiming");
+    let outcome = vault.compact(&mut progress, &cancel_on_interrupt());
+    progress.finish();
+    let reclaimed = outcome?;
+    let after = vault.statistics();
+
+    match cli.format {
+        Format::Table => {
+            let mut text = format!(
+                "Reclaimed {}. The vault now takes {} on disk.",
+                output::human_size(reclaimed.bytes_recovered),
+                output::human_size(after.physical_bytes),
+            );
+            if !reclaimed.complete {
+                text.push_str(
+                    "\nIt stopped before finishing. What it reclaimed is reclaimed; \
+                     run it again to\nfinish the rest.",
+                );
+            }
+            if reclaimed.bytes_recovered > 0 {
+                // The other half of what `delete` promised. Those bytes were
+                // recoverable until now, and now they are not (FR-21, FR-29).
+                text.push_str("\nThe bytes of the files you deleted are gone from the vault now.");
+            }
+            output::say(cli.format, &text)
+        }
+        Format::Json => output::json(&serde_json::json!({
+            "bytes_recovered": reclaimed.bytes_recovered,
+            "packs_rewritten": reclaimed.packs_rewritten,
+            "complete": reclaimed.complete,
+            "physical_bytes": after.physical_bytes,
+            "reclaimable_bytes": after.reclaimable_bytes,
         })),
     }
 }

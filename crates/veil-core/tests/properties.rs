@@ -152,9 +152,28 @@ proptest! {
 
         // The figures survive a close and reopen: they live in the index, not
         // in the process.
-        let expected = vault.statistics();
+        //
+        // **Amended in Phase 4.** Open now reconciles (FR-32), and a sequence
+        // of deletes and replaces can leave a pack with nothing live in it —
+        // stored data no entry references, so it goes, and the totals fall by
+        // exactly what it held. The property this case is about is that the
+        // totals stay *true*, which the recount below asserts directly and
+        // which no longer implies they are unchanged by an open.
+        let before = vault.statistics();
         drop(vault);
         let vault = harness::open(&dir).unwrap();
-        prop_assert_eq!(vault.statistics(), expected);
+        let recovered = vault.reconciled().bytes_recovered();
+
+        prop_assert_eq!(vault.statistics().entry_count, before.entry_count);
+        prop_assert_eq!(vault.statistics().logical_bytes, before.logical_bytes);
+        prop_assert_eq!(
+            vault.statistics().physical_bytes,
+            before.physical_bytes - recovered
+        );
+        prop_assert_eq!(
+            vault.statistics().reclaimable_bytes,
+            before.reclaimable_bytes - recovered
+        );
+        assert_statistics_match_recount(&vault, "after a reopen");
     }
 }

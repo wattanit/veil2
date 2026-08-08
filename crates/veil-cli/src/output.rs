@@ -130,6 +130,18 @@ pub fn say(format: Format, message: &str) -> Run<()> {
     Ok(())
 }
 
+/// Writes an advisory to standard error, in both output modes.
+///
+/// Standard output carries results, and a script reading it must find valid
+/// output or nothing — never a sentence where a listing was expected. But some
+/// things have to be said whatever the caller asked for: FR-32 requires the
+/// space reconciliation recovered to be reported rather than absorbed, and a
+/// read-only vault to say so. Neither is a result of the command that was
+/// asked for, so neither belongs on standard output.
+pub fn note(message: &str) {
+    let _ = writeln!(std::io::stderr().lock(), "{message}");
+}
+
 /// A size in the units a person reads, one decimal place, powers of 1000.
 #[must_use]
 pub fn human_size(bytes: u64) -> String {

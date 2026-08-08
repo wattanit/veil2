@@ -159,6 +159,7 @@ fn t3_3_nothing_can_be_scheduled() {
         "check",
         "info",
         "password",
+        "reclaim-space",
     ] {
         help.push_str(&run(&[command, "--help"]).everything());
     }
@@ -166,8 +167,15 @@ fn t3_3_nothing_can_be_scheduled() {
     for flag in FORBIDDEN {
         assert!(!help.contains(flag), "the surface carries {flag}");
     }
-    // And the operation those flags would schedule is not here at all yet.
-    assert!(!help.contains("reclaim"), "reclaiming space arrived early");
+
+    // **Amended in Phase 4.** This used to assert that reclaiming space had not
+    // arrived early. It has now arrived (P4.3), which is what makes the check
+    // above worth running: until this phase there was no operation for those
+    // flags to schedule, so FR-23 was being asserted against nothing.
+    assert!(
+        help.contains("reclaim-space"),
+        "the operation FR-23 is about is missing from the surface"
+    );
 }
 
 /// T3.4 — a path the vault already holds is refused (FR-34).

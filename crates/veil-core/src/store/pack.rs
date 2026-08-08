@@ -68,6 +68,30 @@ pub fn total_pack_bytes(vault_dir: &Path) -> Result<u64> {
     Ok(total)
 }
 
+/// Removes one pack file and makes the removal durable, returning the bytes it
+/// held.
+///
+/// Removing the file is a change to the directory, so the directory is what has
+/// to be synced; syncing the file would be syncing something that no longer
+/// exists. A pack that is already gone frees nothing and is not an error — both
+/// reclaiming space and reconciliation can arrive here after a crash that got
+/// part-way (HC-4).
+///
+/// # Errors
+///
+/// [`Error::Io`] if the file cannot be removed or the directory cannot be
+/// synced.
+pub fn remove_pack(vault_dir: &Path, pack_id: u32) -> Result<u64> {
+    let path = pack_path(vault_dir, pack_id);
+    let Ok(metadata) = fs::metadata(&path) else {
+        return Ok(0);
+    };
+    let length = metadata.len();
+    fs::remove_file(&path)?;
+    crate::durable::sync_dir(&vault_dir.join(PACKS_DIR))?;
+    Ok(length)
+}
+
 /// Every entry with at least one extent in the given pack — the attribution
 /// S-4 requires (a list of unreadable files, not a failed vault).
 #[must_use]
@@ -91,6 +115,12 @@ pub struct PackSink<'a> {
     /// Where the sink started, so an abandoned write can be undone exactly.
     start_pack_id: u32,
     start_offset: u64,
+    /// Whether this sink brought a pack file into existence. A new file needs
+    /// its directory synced too, or its bytes are durable under no name.
+    named_a_pack: bool,
+    /// Set by [`PackSink::seal_extent`]; stops the next write from merging into
+    /// the extent before it.
+    break_extent: bool,
 }
 
 impl<'a> PackSink<'a> {
@@ -120,6 +150,37 @@ impl<'a> PackSink<'a> {
             extents: Vec::new(),
             start_pack_id: pack_id,
             start_offset: offset,
+            named_a_pack: false,
+            break_extent: false,
+        })
+    }
+
+    /// Opens a sink that starts a pack of its own rather than appending to the
+    /// newest, so its bytes are separable from everything already stored.
+    ///
+    /// This is what reclaiming space writes into: the live extents of one pack
+    /// are copied here, and the new pack takes an identifier above every pack
+    /// present. Identifiers are therefore never reused — the new pack is
+    /// created before the old one is removed, so the highest only ever rises.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Io`] if the packs directory cannot be created or listed.
+    pub fn open_fresh(vault_dir: &'a Path, cap: u64) -> Result<Self> {
+        fs::create_dir_all(vault_dir.join(PACKS_DIR))?;
+        let pack_id = existing_pack_ids(vault_dir)?.last().map_or(1, |id| id + 1);
+
+        Ok(Self {
+            vault_dir,
+            cap,
+            pack_id,
+            offset: 0,
+            file: None,
+            extents: Vec::new(),
+            start_pack_id: pack_id,
+            start_offset: 0,
+            named_a_pack: false,
+            break_extent: false,
         })
     }
 
@@ -129,8 +190,21 @@ impl<'a> PackSink<'a> {
         &self.extents
     }
 
-    /// Finishes the sink, fsyncing the pack before anything may refer to it.
-    /// This is the ordering FR-12 depends on.
+    /// Ends the current extent, so the next write starts a new one.
+    ///
+    /// An ingest streams one entry through a sink and wants its writes merged
+    /// into as few extents as possible. Reclaiming space streams *several*
+    /// entries through one sink, and there the merge would be wrong: two
+    /// entries' runs landing next to each other would become one extent
+    /// belonging to whichever entry asked first. Sealing between them keeps
+    /// each entry's copied run its own.
+    pub fn seal_extent(&mut self) {
+        self.break_extent = true;
+    }
+
+    /// Finishes the sink, fsyncing the pack — and, when this sink created one,
+    /// the directory that names it — before anything may refer to it. This is
+    /// the ordering FR-12 depends on.
     ///
     /// # Errors
     ///
@@ -138,6 +212,10 @@ impl<'a> PackSink<'a> {
     pub fn finish(mut self) -> Result<Vec<Extent>> {
         if let Some(file) = self.file.take() {
             file.sync_all()?;
+        }
+        // Bytes durable under a name that is durable too (§4.7, HC-4).
+        if self.named_a_pack {
+            crate::durable::sync_dir(&self.vault_dir.join(PACKS_DIR))?;
         }
         Ok(self.extents)
     }
@@ -177,6 +255,9 @@ impl<'a> PackSink<'a> {
                 file.sync_all()?;
             }
         }
+        // A removal is a change to the directory, so the directory is where it
+        // has to become durable.
+        crate::durable::sync_dir(&self.vault_dir.join(PACKS_DIR))?;
         Ok(())
     }
 
@@ -185,6 +266,7 @@ impl<'a> PackSink<'a> {
             return Ok(());
         }
         let path = pack_path(self.vault_dir, self.pack_id);
+        self.named_a_pack |= !path.exists();
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(false)
@@ -208,8 +290,12 @@ impl<'a> PackSink<'a> {
     }
 
     fn record(&mut self, length: u64) {
-        // Consecutive writes into one pack merge into one extent.
+        // Consecutive writes into one pack merge into one extent, unless a
+        // caller has sealed the one before.
+        let merge = !self.break_extent;
+        self.break_extent = false;
         if let Some(last) = self.extents.last_mut()
+            && merge
             && last.pack_id == self.pack_id
             && last.offset + last.length == self.offset
         {

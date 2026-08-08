@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod crypto;
+pub mod durable;
 pub mod error;
 pub mod format;
 pub mod index;
@@ -16,4 +17,6 @@ pub mod vault;
 
 pub use error::{Damaged, Error, Limit, Result};
 pub use index::EntryId;
-pub use vault::{Cancel, Limits, NoProgress, Progress, ProgressReport, Unit, Vault};
+pub use vault::{
+    Cancel, Limits, NoProgress, Progress, ProgressReport, Reclaimed, Reconciled, Unit, Vault,
+};
