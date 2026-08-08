@@ -7,7 +7,7 @@
 **Foundation and plan versions these cases are built against (G-14):**
 - Requirements Document **v1.2** — upstream
 - Design Guideline **v1.2** — upstream
-- Technical Specification **v1.3** — upstream
+- Technical Specification **v1.4** — upstream
 - Implementation Plan **v1.5** — upstream
 - [Phase3-ToDo.md](Phase3-ToDo.md) **v1.0** — companion; each case names the item it covers
 

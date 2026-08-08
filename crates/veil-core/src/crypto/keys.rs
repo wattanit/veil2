@@ -121,7 +121,24 @@ impl Password {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Length in characters, for C-4.
+    ///
+    /// Characters rather than bytes: C-4 says twelve characters, and a Thai or
+    /// Han password reaches twelve bytes in four. Falls back to bytes when the
+    /// password is not valid UTF-8 — a password read from a file need not be,
+    /// and refusing it for that would be a policy C-4 does not state.
+    #[must_use]
+    pub fn char_count(&self) -> usize {
+        core::str::from_utf8(&self.0).map_or(self.0.len(), |s| s.chars().count())
+    }
 }
+
+/// The minimum password length C-4 fixes, in characters.
+///
+/// Enforced here rather than in each application: two frontends applying their
+/// own minimum is how one of them ends up with a weaker one (A-4).
+pub const MIN_PASSWORD_CHARS: usize = 12;
 
 impl core::fmt::Debug for Password {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

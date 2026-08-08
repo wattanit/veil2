@@ -4,9 +4,21 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "veil"
+path = "src/main.rs"
+
 [lints]
 workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive"] }
+ctrlc = "3.5.2"
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 veil-core.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2.2.2"

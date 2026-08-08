@@ -5,8 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::crypto::{
-    KdfAlgorithm, KdfParams, MasterKey, Password, WRAP_NONCE_LEN, derive_kek, entry_wrap_key,
-    generate_master_key, index_key, wrap_master_key,
+    KdfAlgorithm, KdfParams, MIN_PASSWORD_CHARS, MasterKey, Password, WRAP_NONCE_LEN, derive_kek,
+    entry_wrap_key, generate_master_key, index_key, wrap_master_key,
 };
 use crate::error::{Error, Result};
 use crate::format::{CURRENT_FORMAT_VERSION, Header, SALT_LEN, unlock};
@@ -31,6 +31,7 @@ impl Vault {
         params: KdfParams,
         pack_cap: u64,
     ) -> Result<Self> {
+        check_length(password)?;
         std::fs::create_dir_all(dir)?;
         let lock = VaultLock::acquire(dir)?;
 
@@ -121,6 +122,7 @@ impl Vault {
         if self.lock.access() == Access::ReadOnly {
             return Err(Error::ReadOnly);
         }
+        check_length(new)?;
 
         // Verified against what is on disk, not what is in memory: the question
         // is whether the caller knows the password that opens this vault now.
@@ -189,6 +191,20 @@ impl Vault {
             lock,
         }
     }
+}
+
+/// Refuses a password shorter than C-4's minimum (FR-1).
+///
+/// Applied where a password is *set*, never where one is offered to open a
+/// vault: a vault created under an older minimum must still open, or a rule
+/// meant to protect people would lock them out of their own data (HC-5).
+fn check_length(password: &Password) -> Result<()> {
+    if password.char_count() < MIN_PASSWORD_CHARS {
+        return Err(Error::PasswordTooShort {
+            minimum: MIN_PASSWORD_CHARS,
+        });
+    }
+    Ok(())
 }
 
 /// The stored counter, raised to clear every live entry but never lowered:

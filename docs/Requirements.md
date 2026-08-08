@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Companion documents:**
 - Design Guideline v1.2 — downstream
-- Technical Specification v1.3 — downstream
+- Technical Specification v1.4 — downstream
 
 *Changes since v1.1 (minor — additive, no decision reversed):* FR-34 added — adding a file at a path the vault already holds is refused rather than stored alongside it. Raised by Phase 3: a duplicated path is unaddressable from a command line afterwards, and FR-13 already treats the full path as identity.
 

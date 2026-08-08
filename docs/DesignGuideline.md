@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.2 — upstream
-- Technical Specification v1.3 — downstream
+- Technical Specification v1.4 — downstream
 
 *Changes since v1.1 (minor — additive, no decision reversed):* §3.2 fixes the content list's column order, which §3.4 already required the command line to follow but which no section stated.
 

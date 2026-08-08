@@ -1,12 +1,14 @@
 # Veil2 — Technical Specification
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.2 — upstream
 - Design Guideline v1.2 — upstream
+
+*Changes since v1.3 (minor — additive, no decision reversed):* §6 gains `PasswordTooShort`. §3.1 already required vault creation to enforce C-4's minimum; nothing did, because the taxonomy had no way to say so. It is enforced in the library rather than in each application, since two frontends applying their own minimum is how one of them ends up with a weaker one (A-4).
 
 *Changes since v1.2 (minor — additive, no decision reversed):* absorbs what Phase 3 needs before it can start. §5.2 gains the exit-code table, which a script depending on it makes a compatibility obligation; §6 gains `NotFound` — naming nothing was being reported as damage, which is FR-2's conflation one level down — and `AlreadyExists` for FR-34; §7 gains the four dependencies the command line ships.
 
@@ -303,7 +305,7 @@ The codes are fixed here rather than in the application, because the moment a ba
 |---|---|---|
 | 0 | Success | |
 | 1 | Unexpected failure | |
-| 2 | Usage error | |
+| 2 | Usage error, including `PasswordTooShort` | C-4 |
 | 3 | `WrongPassword` | FR-2 |
 | 4 | `NotAVault`, `FormatTooNew`, `FormatSuperseded` | FR-5, FR-30 |
 | 5 | `Corrupt` — damage found, including by verification | HC-3, FR-33, S-4 |
@@ -359,6 +361,7 @@ The taxonomy distinguishes, at minimum:
 | `ReadOnly` | §4.5, §4.8 — the vault opened without a lock because its storage would not take one, and a write was attempted |
 | `NotFound` | FR-2's principle applied to naming: a path that matches nothing is a mistyped name, not damage |
 | `AlreadyExists` | FR-34 — the path is already a file's identity, and adding a second is refused |
+| `PasswordTooShort { minimum }` | FR-1, C-4 — raised where a password is set, never where one is offered to open a vault |
 
 Two prohibitions, each with its reason:
 

@@ -69,8 +69,14 @@ impl core::fmt::Display for Damaged {
 
 /// Every way a vault operation can fail. Each variant carries what happened
 /// and what state things are left in.
+///
+/// Deliberately **not** `#[non_exhaustive]`. That attribute buys forward
+/// compatibility for callers outside this workspace, and there are none — the
+/// crate is unpublished. What it would cost is real: the command line maps
+/// every variant to an exit code (Spec §5.2), and a wildcard arm is how a new
+/// variant silently becomes "unexpected failure". The compiler enforcing that
+/// mapping is worth more than a compatibility affordance nothing uses.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum Error {
     /// The password did not unwrap the master key, and the header is otherwise
     /// well formed (FR-2). Distinct from corruption, so a typo does not send
@@ -118,6 +124,17 @@ pub enum Error {
         what: Damaged,
         /// Every entry rendered unreadable by it.
         affected: Vec<EntryId>,
+    },
+
+    /// The password offered for a new vault is shorter than C-4's minimum
+    /// (FR-1).
+    ///
+    /// Carries the minimum, never the length offered: the length of a password
+    /// is a fact about the password (HC-2).
+    #[error("a vault password must be at least {minimum} characters")]
+    PasswordTooShort {
+        /// C-4's minimum, in characters.
+        minimum: usize,
     },
 
     /// Nothing in the vault matches what the caller asked for.

@@ -7,7 +7,7 @@
 **Foundation and plan versions this list is built against (G-14):**
 - Requirements Document **v1.2** — upstream
 - Design Guideline **v1.2** — upstream
-- Technical Specification **v1.3** — upstream
+- Technical Specification **v1.4** — upstream
 - Implementation Plan **v1.5** — upstream; this list expands Plan tasks P3.1–P3.7
 
 This document owns the **step-level breakdown of Phase 3**. It defers what to build to the Requirements, how it presents to the Design Guideline, how it is built to the Specification, and phase sequencing to the Implementation Plan. Enumerated checks live in [Phase3-TestCases.md](Phase3-TestCases.md).

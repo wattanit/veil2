@@ -14,7 +14,7 @@ mod wrap;
 
 pub use error::CryptoError;
 pub use kdf::{KdfAlgorithm, KdfParams, derive_kek};
-pub use keys::{Dek, EntryWrapKey, IndexKey, Kek, MasterKey, Password};
+pub use keys::{Dek, EntryWrapKey, IndexKey, Kek, MIN_PASSWORD_CHARS, MasterKey, Password};
 pub use stream::{
     CHUNK_LEN, ChunkHook, ContentSummary, HASH_LEN, NONCE_PREFIX_LEN, TAG_LEN, decrypt,
     decrypt_watched, encrypt, encrypt_watched, generate_dek, generate_nonce_prefix,

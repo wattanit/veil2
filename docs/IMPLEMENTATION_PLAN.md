@@ -7,7 +7,7 @@
 **Foundation versions this plan is built against (G-14):**
 - Requirements Document **v1.2** — upstream
 - Design Guideline **v1.2** — upstream
-- Technical Specification **v1.3** — upstream
+- Technical Specification **v1.4** — upstream
 
 **Downstream documents:**
 - [Phase 0 To-Do](implementation/Phase0-ToDo.md) v1.0 · [Phase 0 Test Cases](implementation/Phase0-TestCases.md) v1.0
