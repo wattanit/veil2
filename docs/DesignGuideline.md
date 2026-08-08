@@ -1,12 +1,14 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.0 — upstream
-- Technical Specification v1.0 — downstream
+- Requirements Document v1.1 — upstream
+- Technical Specification v1.1 — downstream
+
+*Changes since v1.0 (minor — additive and clarifying, no decision reversed):* the three open questions on replace-matching, whole-vault verification, and CLI compaction scheduling are resolved; §8.6 added for verification; the §7 vocabulary table gains its verb.
 
 This document owns how Veil2 looks, feels, and speaks: identity and anti-goals, visual language, layout, interaction and response policy, the wording of every honesty clause FR-29 requires, and the moments that decide whether the product is trusted. It defers what the product must do to the Requirements Document, and how it is built to the Technical Specification. Working values below — colours, sizes, thresholds — are initial and tunable; they are given so that tuning is a value change rather than a redesign.
 
@@ -223,6 +225,7 @@ The rules below are followed by this document's own prose; a guideline that writ
 | save a copy | export, decrypt, download, unlock |
 | lock | close, seal |
 | reclaim space | compact, vacuum, garbage-collect |
+| check for damage | verify, validate, integrity check, scrub, fsck |
 
 Internal terms — entry, ingest, compaction, master key — belong in these documents and the source code, never on screen. The user-facing verb for retrieval is deliberately "save a copy" rather than "decrypt": it describes what happens to the user's world, and it carries the fact that a second, unprotected copy now exists.
 
@@ -282,6 +285,26 @@ The locked state is a distinct screen, not a greyed-out list. Leaving the file l
 
 ---
 
+### 8.6 Checking a vault for damage
+
+Presented as maintenance the user chooses, alongside reclaiming space and never on a schedule (FR-33). It reads the whole vault, so the control says so before it starts — an estimate in time, not a bare byte count, because the decision being made is whether to wait.
+
+Progress is real and per-entry, and cancellation is always available. A cancelled check reports what it got through rather than discarding the result: knowing that the first 400 files are sound is worth more than knowing nothing.
+
+**A clean result is stated narrowly.** Not "your vault is healthy" — that reads as a standing promise about a vault that is only ever checked at a moment in time. The wording describes what was actually done:
+
+> "Checked 1,284 files. No damage found."
+
+**A failed result names the files and says what it cannot do**, in the same breath, because this is the moment a user is most likely to assume Veil will fix it:
+
+> **3 files are damaged.** Their data in this vault can't be recovered — Veil doesn't keep a spare copy. If you have a backup, restore these files from it.
+>
+> `IMG_4417.raw` · `IMG_4418.raw` · `notes/2019.md`
+
+Damaged entries are marked in the list afterwards using the same treatment as §4.3, so the finding persists past the dialog rather than evaporating when it is dismissed. Every other file stays fully usable, which is S-4 working and must be visible as such rather than presented as a wounded vault.
+
+---
+
 ## 9. Design-Driven Requirements Feedback
 
 Recorded per G-24. This section is a permanent record of what design work sent upstream, and it remains after absorption so the trace stays explicit. All three items were raised while the whole suite was unapproved and converging on a single version 1.0, so the owner absorbed them directly into Requirements v1.0 rather than deferring them to a later bump.
@@ -296,6 +319,7 @@ Recorded per G-24. This section is a permanent record of what design work sent u
 
 ## 10. Open Questions
 
+- **Whether the damage check of §8.6 is reachable from the identity bar or only from a menu.** It is rare enough that prominence would be wrong and important enough that burying it defeats the purpose. Resolver: Design Guideline, next version.
 - **Whether grouping by folder is on or off by default.** It depends on whether real vaults are flat media dumps or structured imports. Resolver: tune with use, once real vaults exist.
 - **Whether the CLI's user-facing strings are shared with the GUI's or maintained separately.** §7 requires identical vocabulary; whether that is enforced mechanically or by review is a build question. Resolver: Technical Specification.
 - **Palette values in §2.2 against real content.** Chosen for contrast on paper, not yet checked against dense lists of long filenames in both themes. Resolver: tune with use.

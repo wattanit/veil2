@@ -1,12 +1,14 @@
 # Veil2 — Requirements Document
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Design Guideline v1.0 — downstream
-- Technical Specification v1.0 — downstream
+- Design Guideline v1.1 — downstream
+- Technical Specification v1.1 — downstream
+
+*Changes since v1.0 (minor — additive and clarifying, no decision reversed):* FR-13 clarified to match on full path; FR-33 added for vault verification; §7's tamper-detection limit updated to name it.
 
 Prior art, not a companion: the original Veil project (`github.com/wattanit/veil`, 2025) and its `Requirements.md`. That document is superseded wholesale rather than amended — Veil2 reverses its central decision (a deliberately plaintext file index) and changes the product form. It carries no identifiers this document continues.
 
@@ -113,7 +115,7 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 
 **FR-12.** Report an ingest as successful only once the stored data is durable. Acceptance: an immediate power loss after the success report does not lose the entry.
 
-**FR-13.** Replace an existing entry by name. The new content is durable before the previous content becomes unreachable, so an interruption leaves one intact version and never zero (HC-4).
+**FR-13.** Replace an existing entry, matched on its full path — folder metadata and name together, so `work/2024/report.pdf` is replaced only by `work/2024/report.pdf` and never by a same-named file from a different folder. The new content is durable before the previous content becomes unreachable, so an interruption leaves one intact version and never zero (HC-4).
 
 **FR-14.** Report progress and accept cancellation for every ingest. A cancelled ingest leaves the vault as though it had not been started.
 
@@ -154,6 +156,16 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 **FR-27.** Detect that a vault changed on disk since it was opened, refuse to write over the change, and offer to reload. Vaults may live in sync folders (§1, motivation 3), so an external writer is an expected condition, not an anomaly.
 
 **FR-28.** Handle the storage medium becoming unavailable mid-operation by failing that operation within HC-4, without crashing and without leaving the application in a state that requires restarting it.
+
+---
+
+### 4.7 Verification
+
+**FR-33.** Verify a whole vault on the user's instruction: read and authenticate all stored data, compare every entry against its recorded content hash, and report by name each entry that fails. Nothing is extracted and nothing is modified.
+
+This is the only way to learn that stored data has decayed *before* needing it. HC-3 detects damage when data is read, and §7 names that limit; without verification, a user discovers bit rot on the day they reach for the file. Verification reads the entire vault, so it is user-initiated, cancellable, and never automatic or scheduled — the same footing as compaction (FR-23), and for the same reason.
+
+*Honesty clause:* verification detects damage and cannot repair it, because Veil2 stores no redundancy. A failed verification tells the user which files are already lost — valuable while backups still hold them, and not a recovery mechanism. The product states this alongside the result rather than letting a clean run be read as a durability guarantee.
 
 ---
 
@@ -216,7 +228,7 @@ This section is itself a requirement: it fixes what Veil2 claims, and FR-29 obli
 - **Originals left behind.** Ingest copies rather than moves (FR-9), so the unprotected original remains until the user removes it.
 - **Volume and timing observation.** An adversary who watches a vault in a sync folder over time learns approximately how much data was added and when. Concealing this is out of scope (§2.3).
 - **Coercion.** There are no hidden volumes and no deniability. A user compelled to give up the password gives up the vault.
-- **Continuous tamper detection.** Modification is detected when the affected data is read (HC-3), not at open. An untouched entry in a tampered vault is not known to be intact until it is retrieved.
+- **Continuous tamper detection.** Modification is detected when the affected data is read (HC-3), not at open. An untouched entry in a tampered vault is not known to be intact until it is retrieved, or until the user runs a verification (FR-33) — which is manual and reads the whole vault. Veil2 never monitors a vault in the background, so a clean verification describes the moment it ran and nothing after it.
 - **Password loss.** HC-7. There is no recovery, by design.
 
 **FR-29.** Surface these limits at the moments they matter rather than only in documentation: unrecoverability at vault creation, the retained original after ingest, the persistence of deleted bytes until compaction, and the unprotected status of any file saved out of a vault. The last is the most frequent of the four and the likeliest route by which data leaves Veil2's protection — a user who extracts a file and forgets it is now ordinary is the failure this requirement exists to prevent. Wording belongs to the Design Guideline; that it must be said is a requirement here.
@@ -241,9 +253,13 @@ Document versions and release versions are independent counters. Foundation docu
 
 - **Exact key-derivation cost parameters satisfying C-3.** Resolver: Technical Specification, measured on real hardware.
 - **Maximum length of the path metadata recorded under FR-10.** Resolver: Technical Specification.
-- **Whether replace-by-name (FR-13) matches on file name alone or on name together with the recorded path metadata of FR-7.** Resolver: Design Guideline.
-- **Whether the product offers a whole-vault verification operation** — reading and checking every entry without extracting — given that HC-3 is per-operation and §7 names this as a non-guarantee. Resolver: Design Guideline.
-- **Whether the command-line application exposes compaction as a schedulable operation**, which would sit awkwardly with FR-23's prohibition on automatic compaction. Resolver: Design Guideline.
+
+### Resolved during v1.1
+
+- **Whether replace-by-name (FR-13) matches on file name alone or on name together with the recorded path metadata of FR-7.** Resolved as full path — folder and name together. FR-13 above carries it; Technical Specification §4.6 defines the comparison.
+- **Whether the product offers a whole-vault verification operation.** Resolved as yes, in both applications — FR-33, with Design Guideline §8.6 for its presentation. The deciding argument: without it, S-4's attribution of damage can only ever be discovered reactively, on the day the file is needed.
+- **Whether the command-line application exposes compaction as a schedulable operation.** Resolved as no. FR-23's prohibition on automatic compaction holds without exception, and a scheduling hook would be that prohibition defeated by a different name.
+
 ### Resolved during v1.0
 
 Answers live in the documents named; these entries remain so the trace does not evaporate.

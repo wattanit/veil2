@@ -1,12 +1,14 @@
 # Veil2 — Technical Specification
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.0 — upstream
-- Design Guideline v1.0 — upstream
+- Requirements Document v1.1 — upstream
+- Design Guideline v1.1 — upstream
+
+*Changes since v1.0 (minor — additive and clarifying, no decision reversed):* §4.6 fixes replace-matching to the full path; §4.8 added for verification; §5.1 and §5.2 gain the operation; §6 gains its error variant.
 
 This document owns how Veil2 is built: system structure, execution model, data formats, the cryptographic construction, dependencies, build and release, testing, and milestones. It defers what the product must do to the Requirements Document and how it presents itself to the Design Guideline. Every choice that satisfies an upstream requirement cites that requirement's identifier. Values given as defaults are initial and tunable unless a requirement fixes them.
 
@@ -206,6 +208,7 @@ Reconciliation is a write during open, so it is conditional on the vault being w
 
 - **Stored form: Unicode NFC, UTF-8.** Names are normalised on ingest. macOS presents NFD from its filesystem APIs and Linux stores whatever bytes it was given; without normalisation two visually identical names differ in bytes depending on where the vault was written, which breaks both FR-13 matching and HC-8.
 - **Comparison is exact and case-sensitive** after normalisation. The vault is the authority, not the host filesystem — case-insensitive matching would make a vault's contents depend on which machine last touched it.
+- **Identity is the full path**: the `folder` field and `name` together (FR-13). Two entries sharing a name in different folders are unrelated, and a replace targets exactly one of them. Matching on name alone would let an ingest into one folder silently overwrite a file in another.
 - **Path separators are not stored in names.** The `folder` field holds `/`-separated segments regardless of platform; the separator is a serialisation detail, never the host's.
 - **Extraction reconciles with platform limits rather than silently mangling.** A name that is legal in a vault but not on the extracting platform — reserved device names or characters on Windows, a case collision on a case-insensitive filesystem — stops and asks for an alternative. Silent rewriting would produce a file whose name does not match the vault's, which is the confusion HC-8 exists to prevent. See §11.2, feedback item 1.
 
@@ -226,6 +229,16 @@ Reconciliation is a write during open, so it is conditional on the vault being w
 **Cancellation** (FR-14) is checked at chunk boundaries. Because the index has not advanced, cancelling an ingest leaves only unreferenced pack bytes, and the vault is indistinguishable from one where the operation never started — which is precisely what the Design Guideline promises the user when it says so.
 
 **Extraction verifies before it succeeds** (FR-16, FR-17). Chunk authentication fails fast on tampering, and the BLAKE3 hash is compared against the index after the final chunk. On either failure the partial output is removed and the error names the affected entry.
+
+### 4.8 Verification
+
+Verification (FR-33) reuses the extraction path of §4.7 with the output discarded: every entry's chunks are decrypted and authenticated in order, and the BLAKE3 hash is compared against the index. Nothing is written, so verification runs on a read-only vault and takes no more than a shared lock.
+
+Failure is per entry, not per vault. A failing entry is recorded and verification continues, so one damaged pack yields a complete list of what it cost rather than stopping at the first casualty — which is the attribution S-4 requires and what §8.6 of the Design Guideline presents.
+
+Progress is reported per entry rather than per byte, because the Design Guideline's estimate is in time and entry counts are what a user can hold in their head. Cancellation returns the entries verified so far and their results; a partial verification is a partial answer, not a discarded one.
+
+Verification reads the entire vault and is therefore never scheduled, never automatic, and never triggered at open (FR-33, FR-23).
 
 ---
 
@@ -249,6 +262,7 @@ Vault::replace(&mut self, id, src, …) -> Result<EntryId>     // FR-13
 Vault::extract(&self, id, dst: &mut dyn Write, …) -> Result<()>
 Vault::delete(&mut self, id) -> Result<()>                   // FR-21
 Vault::compact(&mut self, &mut dyn Progress, &Cancel) -> Result<Reclaimed>
+Vault::verify(&self, &mut dyn Progress, &Cancel) -> Result<VerifyReport>  // FR-33, §4.8
 ```
 
 `extract` writes to a `Write` rather than returning bytes, which is what makes S-1 structural rather than a discipline the caller must maintain. The whole index is resident once opened, so browsing is memory-speed (FR-6) and statistics are a field read rather than a scan (FR-22).
@@ -259,7 +273,9 @@ Vault::compact(&mut self, &mut dyn Progress, &Cancel) -> Result<Reclaimed>
 
 Non-interactive invocation is detected rather than assumed: where a password is required and no terminal is available, the command fails naming the missing input instead of blocking on a prompt. The password may be supplied by an environment variable or a file path for scripted use, never as a command-line argument — arguments are visible in process listings and shell history.
 
-Exit codes distinguish the §6 error classes, so scripts can tell a wrong password from a damaged vault without parsing text.
+Exit codes distinguish the §6 error classes, so scripts can tell a wrong password from a damaged vault without parsing text. Verification (§4.8) exits non-zero when any entry fails, so it is usable as a check in a backup script without parsing its output.
+
+**Compaction is not exposed as a schedulable operation** (FR-23, resolving that Requirements open question). No timer flag, no daemon mode, no "run if reclaimable exceeds N" switch. FR-23 forbids automatic compaction, and a scheduling hook would be that prohibition defeated under another name — a user who wires it into cron has automatic compaction whatever the manual page calls it. Verification carries no such restriction: it only reads, so running it from a scheduled backup script is legitimate and supported.
 
 ### 5.3 Graphical application
 
@@ -298,6 +314,7 @@ The taxonomy distinguishes, at minimum:
 | `VaultInUse`, `ChangedOnDisk`, `StorageUnavailable` | FR-26, FR-27, FR-28 |
 | `LimitExceeded { limit, value }` | FR-15 — carries both numbers the message must name |
 | `Cancelled { rolled_back: bool }` | FR-14, FR-19 — states what the cancel left behind |
+| `VerificationFailed { entries }` | FR-33, S-4 — carries every failing entry, not just the first |
 
 Two prohibitions, each with its reason:
 

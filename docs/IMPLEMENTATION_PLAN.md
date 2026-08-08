@@ -1,13 +1,15 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.0
-**Status:** draft
+**Version:** 1.1
+**Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
 **Foundation versions this plan is built against (G-14):**
-- Requirements Document **v1.0** (approved) — upstream
-- Design Guideline **v1.0** (approved) — upstream
-- Technical Specification **v1.0** (approved) — upstream
+- Requirements Document **v1.1** — upstream
+- Design Guideline **v1.1** — upstream
+- Technical Specification **v1.1** — upstream
+
+*Changes since v1.0:* re-pinned to the v1.1 suite; the three blocked tasks are unblocked; verification scheduled into Phases 2, 3 and 7.
 
 This document owns the **sequencing** of the work: ordered phases expanding the Technical Specification's milestones (Spec §10), each with entry and exit conditions, and each task citing the foundation item that put it there. It defers what to build to the Requirements, how it presents to the Design Guideline, and how it is built to the Specification.
 
@@ -33,7 +35,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 
 *Proves nothing about the product; makes every later proof possible.*
 
-**Entry:** foundation suite approved at v1.0.
+**Entry:** foundation suite approved at v1.1.
 
 | Task | Work | Cites |
 |---|---|---|
@@ -93,13 +95,14 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | P2.3 | Ingest pipeline with copy semantics and the fsync ordering that makes durability true | Spec §4.7, FR-9, FR-12 |
 | P2.4 | Folder walk over regular files only; symlinks not followed, recorded as skipped | Spec §4.7, FR-10, FR-11 |
 | P2.5 | Extraction to a caller `Write`, verified, partial output removed on failure | Spec §4.7, FR-16, FR-17, FR-20 |
-| P2.6 | Replace by name — new content durable before the old becomes unreachable ⚠️ *blocked, see Sequencing Risks* | Spec §4.7, FR-13 |
+| P2.6 | Replace matched on full path — folder and name together — with new content durable before the old becomes unreachable | Spec §4.6, §4.7, FR-13 |
 | P2.7 | Delete as index removal plus reclaimable accounting | Spec §4.5, FR-21 |
 | P2.8 | Statistics maintained incrementally, never scanned | Spec §4.3, FR-8, FR-22 |
 | P2.9 | Limit enforcement naming both the limit and the actual value | FR-15, C-1, C-2 |
 | P2.10 | Password change rewrapping the master key only | Spec §3.1, FR-4 |
 | P2.11 | Integration tests driving `veil-core` directly — no process, no terminal | Spec §9, A-1 |
 | P2.12 | Property tests: any byte sequence at any length survives round-trip | Spec §9 |
+| P2.13 | Whole-vault verification over the extraction path with output discarded; continues past a failing entry and returns every failure | Spec §4.8, FR-33, S-4 |
 
 **Exit:**
 - The full lifecycle runs with no terminal present, which is A-1 made observable.
@@ -117,7 +120,8 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 
 | Task | Work | Cites |
 |---|---|---|
-| P3.1 | `clap` surface covering every core capability — parity is the requirement, not a goal ⚠️ *partly blocked* | A-4 |
+| P3.1 | `clap` surface covering every core capability — parity is the requirement, not a goal. Compaction carries no scheduling flag, timer, or threshold switch | A-4, FR-23, Spec §5.2 |
+| P3.1a | Verification command exiting non-zero when any entry fails, so it is usable in a backup script without parsing output | Spec §4.8, §5.2, FR-33 |
 | P3.2 | Human-readable table output in the GUI's column order | Design §3.4 |
 | P3.3 | Machine-readable output mode for scripting | Design §3.4 |
 | P3.4 | Password input from environment variable or file; **never** from a command-line argument; non-interactive invocation detected and failed with the missing input named | Spec §5.2, HC-2 |
@@ -211,8 +215,9 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | P7.10 | Lock action and a locked screen distinct from a greyed-out list | Design §8.5, FR-3, HC-1 |
 | P7.11 | Three-part error presentation — what happened, what state things are in, what you can do | Design §4.2 |
 | P7.12 | Constrained conditions: vault in use, changed on disk, storage gone, destination full, limits exceeded, damaged region marked per-entry | Design §4.3, FR-15, FR-26, FR-27, FR-28, S-4 |
-| P7.13 | Vocabulary audit against the Design §7 table across GUI and CLI alike | Design §7 |
-| P7.14 | Packaging: macOS bundle UTI, signing and notarisation; Windows installer and association; Linux AppImage with the WebKitGTK version check | Spec §8.2, HC-8 |
+| P7.13 | Damage check: time estimate before starting, per-entry progress, cancellation returning partial results, and a result that names failing files and states plainly that Veil cannot recover them | Design §8.6, FR-33, S-4 |
+| P7.14 | Vocabulary audit against the Design §7 table across GUI and CLI alike | Design §7 |
+| P7.15 | Packaging: macOS bundle UTI, signing and notarisation; Windows installer and association; Linux AppImage with the WebKitGTK version check | Spec §8.2, HC-8 |
 
 **Exit:** every functional requirement is reachable from the GUI; the vocabulary audit is clean in both applications; all three packages install and open a vault created on a different platform.
 
@@ -231,13 +236,7 @@ These apply to every task in every phase and are part of the definition of done,
 
 ## Sequencing Risks and Blocked Tasks
 
-**Three Design Guideline open questions block scheduled work.** They need answers before the phase that depends on them, and the Design Guideline must bump to v1.1 to carry them:
-
-| Open question | Blocks | Needed by |
-|---|---|---|
-| Whether replace-by-name matches on name alone or name plus folder metadata | P2.6 | Phase 2 |
-| Whether the product offers a whole-vault verification operation | P3.1, P7 scope | Phase 3 |
-| Whether the CLI exposes compaction as a schedulable operation | P3.1 | Phase 3 |
+**No task is currently blocked.** The three open questions that held up Phase 2 and Phase 3 were resolved in the v1.1 suite: replace matches on full path (FR-13), whole-vault verification is in scope for both applications (FR-33), and compaction gains no scheduling hook (FR-23). Their answers are recorded in the Requirements' resolved ledger.
 
 **Ordering choices worth defending:**
 
