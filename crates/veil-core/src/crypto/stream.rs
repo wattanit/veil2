@@ -99,6 +99,15 @@ fn read_fully(src: &mut impl Read, buf: &mut [u8]) -> Result<usize, CryptoError>
     Ok(filled)
 }
 
+/// Called after each chunk is committed, with the cumulative plaintext byte
+/// count.
+///
+/// Returning an error stops the operation at that boundary. This is the only
+/// seam progress reporting and cooperative cancellation need (A-3), and it is
+/// stated as a plain callback so that `crypto` keeps depending on no sibling
+/// module: the meaning of stopping belongs to the caller, not here.
+pub type ChunkHook<'a> = &'a mut dyn FnMut(u64) -> Result<(), CryptoError>;
+
 /// Encrypts `src` into `dst`, hashing the plaintext as it goes.
 ///
 /// # Errors
@@ -110,6 +119,29 @@ pub fn encrypt(
     entry_id: u64,
     src: &mut impl Read,
     dst: &mut impl Write,
+) -> Result<ContentSummary, CryptoError> {
+    encrypt_watched(dek, nonce_prefix, entry_id, src, dst, &mut |_| Ok(()))
+}
+
+/// Encrypts as [`encrypt`] does, calling `on_chunk` at every chunk boundary.
+///
+/// **Cancellation latency is bounded by the lookahead, not by one chunk.**
+/// Knowing which chunk is last requires reading the next one first, so a hook
+/// that stops at the boundary after chunk *n* has caused chunk *n+1* to be
+/// read. That is a constant of at most one extra chunk, and it is stated here
+/// rather than left for a caller to discover from a test.
+///
+/// # Errors
+///
+/// Fails on an I/O error, if the AEAD refuses a chunk, or with
+/// [`CryptoError::Stopped`] when the hook asks to stop.
+pub fn encrypt_watched(
+    dek: &Dek,
+    nonce_prefix: &[u8; NONCE_PREFIX_LEN],
+    entry_id: u64,
+    src: &mut impl Read,
+    dst: &mut impl Write,
+    on_chunk: ChunkHook<'_>,
 ) -> Result<ContentSummary, CryptoError> {
     let aad = associated_data(entry_id);
     let cipher = XChaCha20Poly1305::new(dek.expose().into());
@@ -153,6 +185,10 @@ pub fn encrypt(
                 .map_err(|_| CryptoError::Authentication)?;
             dst.write_all(&sealed).map_err(|_| CryptoError::Io)?;
             ciphertext_len += sealed.len() as u64;
+            // The final chunk is reported too. A file small enough to fit in
+            // one chunk reaches the hook only here, and a limit that never saw
+            // it would not be a limit (FR-15).
+            on_chunk(plaintext_len)?;
             break;
         }
 
@@ -164,6 +200,7 @@ pub fn encrypt(
             .map_err(|_| CryptoError::Authentication)?;
         dst.write_all(&sealed).map_err(|_| CryptoError::Io)?;
         ciphertext_len += sealed.len() as u64;
+        on_chunk(plaintext_len)?;
 
         std::mem::swap(&mut current, &mut lookahead);
         current_len = next_len;
@@ -196,6 +233,32 @@ pub fn decrypt(
     expected_hash: Option<&[u8; HASH_LEN]>,
     src: &mut impl Read,
     dst: &mut impl Write,
+) -> Result<u64, CryptoError> {
+    decrypt_watched(
+        dek,
+        nonce_prefix,
+        entry_id,
+        expected_hash,
+        src,
+        dst,
+        &mut |_| Ok(()),
+    )
+}
+
+/// Decrypts as [`decrypt`] does, calling `on_chunk` at every chunk boundary.
+///
+/// # Errors
+///
+/// As [`decrypt`], plus [`CryptoError::Stopped`] when the hook asks to stop.
+#[allow(clippy::too_many_arguments)]
+pub fn decrypt_watched(
+    dek: &Dek,
+    nonce_prefix: &[u8; NONCE_PREFIX_LEN],
+    entry_id: u64,
+    expected_hash: Option<&[u8; HASH_LEN]>,
+    src: &mut impl Read,
+    dst: &mut impl Write,
+    on_chunk: ChunkHook<'_>,
 ) -> Result<u64, CryptoError> {
     let aad = associated_data(entry_id);
     let cipher = XChaCha20Poly1305::new(dek.expose().into());
@@ -242,6 +305,7 @@ pub fn decrypt(
             hasher.update(&opened);
             plaintext_len += opened.len() as u64;
             dst.write_all(&opened).map_err(|_| CryptoError::Io)?;
+            on_chunk(plaintext_len)?;
             break;
         }
 
@@ -254,6 +318,7 @@ pub fn decrypt(
         hasher.update(&opened);
         plaintext_len += opened.len() as u64;
         dst.write_all(&opened).map_err(|_| CryptoError::Io)?;
+        on_chunk(plaintext_len)?;
 
         std::mem::swap(&mut current, &mut lookahead);
         current_len = next_len;

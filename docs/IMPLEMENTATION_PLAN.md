@@ -1,6 +1,6 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** approved
 **Date:** 2026-08-08
 **Owner:** wattanit
@@ -12,6 +12,9 @@
 **Downstream documents:**
 - [Phase 0 To-Do](implementation/Phase0-ToDo.md) v1.0 · [Phase 0 Test Cases](implementation/Phase0-TestCases.md) v1.0
 - [Phase 1 To-Do](implementation/Phase1-ToDo.md) v1.0 · [Phase 1 Test Cases](implementation/Phase1-TestCases.md) v1.0
+- [Phase 2 To-Do](implementation/Phase2-ToDo.md) v1.0 · [Phase 2 Test Cases](implementation/Phase2-TestCases.md) v1.0
+
+*Changes since v1.2 (minor — additive, no decision reversed):* the Phase 2 to-do list and test cases are written and pinned above.
 
 *Changes since v1.1 (minor — additive, no decision reversed):* the open question on when per-phase to-do lists are written is resolved and moved to the ledger; the Phase 0 and Phase 1 documents it resolves are pinned above.
 

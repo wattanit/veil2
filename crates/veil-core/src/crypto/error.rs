@@ -32,4 +32,13 @@ pub enum CryptoError {
     /// Reading or writing failed underneath the cryptographic layer.
     #[error("a storage operation failed")]
     Io,
+
+    /// The caller's chunk hook asked the operation to stop.
+    ///
+    /// This layer does not know why — cancellation and a limit being exceeded
+    /// look identical from here, and both belong to the caller. The caller
+    /// records its own reason before returning it from the hook and restores it
+    /// when this arrives back (A-3, FR-14, FR-15).
+    #[error("stopped by the caller")]
+    Stopped,
 }

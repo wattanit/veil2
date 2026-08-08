@@ -255,6 +255,12 @@ impl From<crate::crypto::CryptoError> for Error {
             C::Io => Self::Io {
                 kind: std::io::ErrorKind::Other,
             },
+            // The crypto layer does not know why a caller's hook stopped it.
+            // Every caller that uses a hook records its own reason and restores
+            // it before converting; this arm is the conservative default for a
+            // caller that does not, and cancellation is the only reading that
+            // does not overstate what happened.
+            C::Stopped => Self::Cancelled { rolled_back: false },
         }
     }
 }

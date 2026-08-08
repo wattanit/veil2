@@ -64,6 +64,25 @@ pub fn existing_pack_ids(vault_dir: &Path) -> Result<Vec<u32>> {
     Ok(ids)
 }
 
+/// Total bytes held by every pack file on disk.
+///
+/// **A diagnostic and a test oracle, not a source for the statistics of
+/// FR-22.** FR-22 requires the totals to be maintained incrementally and never
+/// scanned; this function is the independent measurement those totals are
+/// checked against, which is the only way an incremental counter's slow
+/// divergence is ever caught.
+///
+/// # Errors
+///
+/// [`Error::Io`] if the packs directory cannot be listed.
+pub fn total_pack_bytes(vault_dir: &Path) -> Result<u64> {
+    let mut total = 0;
+    for id in existing_pack_ids(vault_dir)? {
+        total += fs::metadata(pack_path(vault_dir, id))?.len();
+    }
+    Ok(total)
+}
+
 /// Every entry with at least one extent in the given pack (S-4).
 ///
 /// This is the attribution S-4 requires: a partial failure presented as a list
@@ -89,6 +108,9 @@ pub struct PackSink<'a> {
     offset: u64,
     file: Option<fs::File>,
     extents: Vec<Extent>,
+    /// Where the sink started, so an abandoned write can be undone exactly.
+    start_pack_id: u32,
+    start_offset: u64,
 }
 
 impl<'a> PackSink<'a> {
@@ -116,6 +138,8 @@ impl<'a> PackSink<'a> {
             offset,
             file: None,
             extents: Vec::new(),
+            start_pack_id: pack_id,
+            start_offset: offset,
         })
     }
 
@@ -141,6 +165,52 @@ impl<'a> PackSink<'a> {
             file.sync_all()?;
         }
         Ok(self.extents)
+    }
+
+    /// Abandons everything this sink wrote, returning the packs to the state
+    /// they were in when it opened.
+    ///
+    /// **Why truncate rather than leave the bytes as garbage.** §4.7 requires a
+    /// cancelled ingest to leave a vault indistinguishable from one where the
+    /// operation never started, and §4.5's reconciliation (FR-32, Phase 4)
+    /// reclaims orphans only at the next open. Between those two facts sits a
+    /// vault whose statistics disagree with its packs. Undoing the write here
+    /// is safe because packs are append-only and the vault's exclusive lock
+    /// means nobody else appended in the meantime — so the only bytes above the
+    /// starting offset are this sink's own.
+    ///
+    /// Reconciliation is still needed: a *crash* leaves orphans that no
+    /// rollback ran for. This narrows the window rather than closing it.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Io`] if a pack cannot be truncated or removed. The caller is
+    /// already on a failure path; a failure here means the packs hold bytes the
+    /// index does not reference, which Phase 4's reconciliation removes.
+    pub fn rollback(mut self) -> Result<()> {
+        if let Some(file) = self.file.take() {
+            drop(file);
+        }
+
+        // Every pack created after the starting one is entirely this sink's.
+        for id in (self.start_pack_id + 1)..=self.pack_id {
+            let path = pack_path(self.vault_dir, id);
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+
+        let path = pack_path(self.vault_dir, self.start_pack_id);
+        if path.exists() {
+            if self.start_offset == 0 {
+                fs::remove_file(path)?;
+            } else {
+                let file = fs::OpenOptions::new().write(true).open(path)?;
+                file.set_len(self.start_offset)?;
+                file.sync_all()?;
+            }
+        }
+        Ok(())
     }
 
     fn ensure_open(&mut self) -> std::io::Result<()> {

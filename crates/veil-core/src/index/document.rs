@@ -46,6 +46,24 @@ pub struct IndexDocument {
     pub generation: u64,
     /// The totals of FR-8.
     pub statistics: Statistics,
+
+    /// The next identifier to issue, never decreasing.
+    ///
+    /// **This is a cryptographic field wearing bookkeeping clothes.** The entry
+    /// identifier is bound into the DEK-wrapping nonce and into the content
+    /// associated data (§3.2, §3.3). Deriving the next identifier from the
+    /// highest *live* one would reissue the identifier of a deleted entry, and
+    /// a wrapped key from the dead entry would then decrypt under a live one's
+    /// nonce. The counter must therefore outlive the entries it counted, which
+    /// means it is stored rather than computed.
+    ///
+    /// `#[serde(default)]` so a document written before this field existed
+    /// still reads; the vault repairs the value upward from its live entries on
+    /// load, which is correct for every case except a vault whose highest entry
+    /// was deleted before this field existed. No such vault has been released.
+    #[serde(default)]
+    pub next_entry_id: u64,
+
     /// Every entry.
     pub entries: Vec<Entry>,
 
@@ -63,6 +81,7 @@ impl IndexDocument {
             index_version: CURRENT_INDEX_VERSION,
             generation: 0,
             statistics: Statistics::default(),
+            next_entry_id: 1,
             entries: Vec::new(),
             unknown: BTreeMap::new(),
         }

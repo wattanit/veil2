@@ -18,4 +18,4 @@ pub mod vault;
 
 pub use error::{Damaged, Error, Limit, Result};
 pub use index::EntryId;
-pub use vault::Vault;
+pub use vault::{Cancel, Limits, NoProgress, Progress, ProgressReport, Unit, Vault};

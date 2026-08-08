@@ -7,5 +7,5 @@ mod pack;
 
 pub use pack::{
     DEFAULT_PACK_CAP, PACKS_DIR, PackSink, PackSource, damaged_pack, entries_in_pack,
-    existing_pack_ids, pack_path,
+    existing_pack_ids, pack_path, total_pack_bytes,
 };

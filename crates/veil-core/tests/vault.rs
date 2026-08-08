@@ -10,6 +10,7 @@ use veil_core::crypto::{KdfParams, Password};
 use veil_core::index::EntryId;
 use veil_core::store::{entries_in_pack, existing_pack_ids, pack_path};
 use veil_core::vault::Vault;
+use veil_core::{Cancel, NoProgress};
 use veil_core::{Damaged, Error};
 
 /// Names and content of the shape HC-1 exists to protect.
@@ -56,7 +57,7 @@ fn create(dir: &Path, cap: u64) -> Vault {
 
 fn read_back(vault: &Vault, id: EntryId) -> Result<Vec<u8>, Error> {
     let mut out = Vec::new();
-    vault.extract(id, &mut out)?;
+    vault.extract(id, &mut out, &mut NoProgress, &Cancel::new())?;
     Ok(out)
 }
 
@@ -69,7 +70,13 @@ fn t1_26_an_entry_spans_packs_and_reconstructs() {
 
     let content = pattern(SMALL_CAP as usize * 5 + 123);
     let id = vault
-        .add("big.bin", "media", &mut content.as_slice())
+        .add(
+            "big.bin",
+            "media",
+            &mut content.as_slice(),
+            &mut NoProgress,
+            &Cancel::new(),
+        )
         .unwrap();
 
     let entry = vault.entries().iter().find(|e| e.id == id).unwrap();
@@ -99,9 +106,23 @@ fn t1_27_one_entry_reads_without_unrelated_packs() {
 
     let first = pattern(SMALL_CAP as usize * 2);
     let second = pattern(700);
-    let first_id = vault.add("first.bin", "a", &mut first.as_slice()).unwrap();
+    let first_id = vault
+        .add(
+            "first.bin",
+            "a",
+            &mut first.as_slice(),
+            &mut NoProgress,
+            &Cancel::new(),
+        )
+        .unwrap();
     let second_id = vault
-        .add("second.bin", "b", &mut second.as_slice())
+        .add(
+            "second.bin",
+            "b",
+            &mut second.as_slice(),
+            &mut NoProgress,
+            &Cancel::new(),
+        )
         .unwrap();
 
     let second_packs: Vec<u32> = vault
@@ -155,7 +176,13 @@ fn t1_28_pack_damage_is_confined_and_named() {
     for i in 0..6u8 {
         let content = pattern(1500 + usize::from(i) * 200);
         let id = vault
-            .add(&format!("file{i}.bin"), "docs", &mut content.as_slice())
+            .add(
+                &format!("file{i}.bin"),
+                "docs",
+                &mut content.as_slice(),
+                &mut NoProgress,
+                &Cancel::new(),
+            )
             .unwrap();
         ids.push(id);
         contents.push(content);
@@ -228,14 +255,26 @@ fn t1_29_adding_an_entry_dirties_one_pack() {
     for i in 0..5u8 {
         let content = pattern(3000 + usize::from(i));
         vault
-            .add(&format!("file{i}.bin"), "docs", &mut content.as_slice())
+            .add(
+                &format!("file{i}.bin"),
+                "docs",
+                &mut content.as_slice(),
+                &mut NoProgress,
+                &Cancel::new(),
+            )
             .unwrap();
     }
 
     let before = snapshot(&dir);
     let small = pattern(64);
     vault
-        .add("tiny.txt", "docs", &mut small.as_slice())
+        .add(
+            "tiny.txt",
+            "docs",
+            &mut small.as_slice(),
+            &mut NoProgress,
+            &Cancel::new(),
+        )
         .unwrap();
     let after = snapshot(&dir);
 
@@ -303,7 +342,13 @@ fn t1_30_vertical_slice_round_trips_across_reopen() {
     let id = {
         let mut vault = create(&dir, SMALL_CAP);
         let id = vault
-            .add(MARKER_NAME, MARKER_FOLDER, &mut content.as_slice())
+            .add(
+                MARKER_NAME,
+                MARKER_FOLDER,
+                &mut content.as_slice(),
+                &mut NoProgress,
+                &Cancel::new(),
+            )
             .unwrap();
         assert_eq!(read_back(&vault, id).unwrap(), content);
         id
@@ -318,6 +363,12 @@ fn t1_30_vertical_slice_round_trips_across_reopen() {
     assert_eq!(entry.size, content.len() as u64);
     assert_eq!(entry.unknown, BTreeMap::new());
     assert_eq!(read_back(&vault, id).unwrap(), content);
+
+    // Closed before the next open. Since Phase 2 the vault holds an advisory
+    // lock for its lifetime (FR-26), so a second open of a vault still held
+    // here would report `VaultInUse` and this case would stop testing what it
+    // is named for.
+    drop(vault);
 
     // A wrong password on a real vault is still a wrong password.
     let wrong = Password::new("some other long password".to_owned());
@@ -346,10 +397,18 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
     let content = pattern(9000);
     let mut vault = create(&dir, SMALL_CAP);
     let id = vault
-        .add(MARKER_NAME, MARKER_FOLDER, &mut content.as_slice())
+        .add(
+            MARKER_NAME,
+            MARKER_FOLDER,
+            &mut content.as_slice(),
+            &mut NoProgress,
+            &Cancel::new(),
+        )
         .unwrap();
     let mut sink = Vec::new();
-    vault.extract(id, &mut sink).unwrap();
+    vault
+        .extract(id, &mut sink, &mut NoProgress, &Cancel::new())
+        .unwrap();
     drop(vault);
 
     let after = snapshot(&scratch.0);
@@ -359,7 +418,10 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
         .filter(|(name, _)| {
             // Everything the vault legitimately owns lives under its own
             // directory; these are its file names.
-            name != "veil.header" && !name.starts_with("index.") && !name.ends_with(".pack")
+            name != "veil.header"
+                && name != "veil.lock"
+                && !name.starts_with("index.")
+                && !name.ends_with(".pack")
         })
         .collect();
 
@@ -388,7 +450,13 @@ fn t1_32_a_closed_vault_discloses_nothing() {
         let mut content = MARKER_CONTENT.as_bytes().to_vec();
         content.extend_from_slice(&pattern(4000));
         vault
-            .add(MARKER_NAME, MARKER_FOLDER, &mut content.as_slice())
+            .add(
+                MARKER_NAME,
+                MARKER_FOLDER,
+                &mut content.as_slice(),
+                &mut NoProgress,
+                &Cancel::new(),
+            )
             .unwrap();
     }
 
