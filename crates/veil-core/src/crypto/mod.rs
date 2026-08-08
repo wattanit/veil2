@@ -2,13 +2,21 @@
 //!
 //! This module depends on no sibling module, so that splitting it into a
 //! separate crate for independent audit stays a mechanical move (Spec §1).
-//! Phase 0 to-do item P0.1.d enforces that with a check rather than with
-//! intent; test case T0.4 is the check.
-//!
-//! Phase 0 defines the key types only. The hierarchy that fills them —
-//! Argon2id, the wrapped master key, HKDF subkeys, and STREAM content
-//! encryption — is Phase 1.
+//! It carries its own error type for the same reason; the conversion into the
+//! crate taxonomy lives in `error`, pointing the dependency the other way.
+//! Phase 0 to-do item P0.1.d enforces the rule with a check rather than with
+//! intent, and test case T0.4 is the check.
 
+mod error;
+mod kdf;
 mod keys;
+mod subkeys;
+mod wrap;
 
+pub use error::CryptoError;
+pub use kdf::{KdfAlgorithm, KdfParams, derive_kek};
 pub use keys::{Dek, EntryWrapKey, IndexKey, Kek, MasterKey, Password};
+pub use subkeys::{entry_wrap_key, index_key};
+pub use wrap::{
+    WRAP_NONCE_LEN, WRAPPED_KEY_LEN, generate_master_key, unwrap_master_key, wrap_master_key,
+};

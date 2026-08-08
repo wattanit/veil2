@@ -18,7 +18,7 @@
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Length of every key in the hierarchy, in bytes.
-pub(crate) const KEY_LEN: usize = 32;
+pub const KEY_LEN: usize = 32;
 
 macro_rules! secret_key {
     ($(#[$doc:meta])* $name:ident) => {

@@ -206,3 +206,48 @@ impl From<std::io::Error> for Error {
         Self::Io { kind: e.kind() }
     }
 }
+
+impl From<crate::format::HeaderError> for Error {
+    fn from(e: crate::format::HeaderError) -> Self {
+        use crate::format::HeaderError as H;
+        match e {
+            H::NotAVault => Self::NotAVault,
+            H::TooNew {
+                required,
+                supported,
+            } => Self::FormatTooNew {
+                required,
+                supported,
+            },
+            H::Superseded { version } => Self::FormatSuperseded {
+                version,
+                // No format version has been superseded yet, and support is
+                // not withdrawn while the migration path of Requirements §2.2
+                // remains unbuilt. This arm exists so the taxonomy is complete,
+                // not because it is reachable.
+                last_supported_by: env!("CARGO_PKG_VERSION"),
+            },
+            H::Damaged => Self::Corrupt {
+                what: Damaged::Header,
+                affected: Vec::new(),
+            },
+        }
+    }
+}
+
+impl From<crate::crypto::CryptoError> for Error {
+    fn from(e: crate::crypto::CryptoError) -> Self {
+        use crate::crypto::CryptoError as C;
+        match e {
+            // Authentication failure alone does not say whether the password
+            // was wrong or the data was altered. Every caller that can tell
+            // the difference classifies it before converting; this arm is the
+            // conservative default for callers that cannot.
+            C::Authentication => Self::WrongPassword,
+            C::Derivation | C::ParametersOutOfRange => Self::Corrupt {
+                what: Damaged::Header,
+                affected: Vec::new(),
+            },
+        }
+    }
+}
