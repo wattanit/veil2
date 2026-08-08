@@ -199,12 +199,9 @@ impl Vault {
             pack_cap,
             limits: Limits::default(),
             lock,
-            // A vault being created has no residue; `open` overwrites this with
-            // what reconciliation actually found.
-            reconciled: Reconciled::Done {
-                packs_removed: 0,
-                bytes_recovered: 0,
-            },
+            // A vault being created has no residue; `open` overwrites this
+            // with what reconciliation actually found.
+            reconciled: Reconciled::Clean,
         }
     }
 }

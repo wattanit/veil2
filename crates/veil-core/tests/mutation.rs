@@ -381,30 +381,14 @@ fn t2_26_statistics_match_a_full_recount() {
     assert_statistics_match_recount(&vault, "after a shrinking replace");
 
     // And across a reopen, since the figures live in the index rather than in
-    // the process.
-    //
-    // **Amended in Phase 4.** This asserted that the figures were byte-for-byte
-    // identical across a reopen. Open now reconciles (FR-32), and a pack that
-    // the deletes above emptied completely is stored data no entry references,
-    // so it is removed and the figures fall by exactly what it held. The
-    // property T2.26 is about — the totals are true — is unchanged and still
-    // asserted; what is no longer true is that a reopen cannot alter them.
-    let before = vault.statistics();
+    // the process. Reconciliation runs at open from Phase 4 on and changes
+    // nothing here: it discards the residue of an interrupted operation, and
+    // nothing above was interrupted.
+    let expected = vault.statistics();
     drop(vault);
     let vault = open(&dir).unwrap();
-    let recovered = vault.reconciled().bytes_recovered();
-    assert_eq!(
-        vault.statistics().physical_bytes,
-        before.physical_bytes - recovered,
-        "physical bytes fell by something other than what reconciliation reported"
-    );
-    assert_eq!(
-        vault.statistics().reclaimable_bytes,
-        before.reclaimable_bytes - recovered,
-        "reclaimable bytes fell by something other than what reconciliation reported"
-    );
-    assert_eq!(vault.statistics().entry_count, before.entry_count);
-    assert_eq!(vault.statistics().logical_bytes, before.logical_bytes);
+    assert_eq!(vault.reconciled().residue_bytes(), 0);
+    assert_eq!(vault.statistics(), expected);
     assert_statistics_match_recount(&vault, "after a reopen");
 }
 

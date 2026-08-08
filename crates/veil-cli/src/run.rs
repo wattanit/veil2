@@ -85,13 +85,12 @@ fn announce(vault: &Vault) {
             "This vault is read-only. You can look at it and check it for damage, \
              but nothing can be added to it or changed in it.",
         ),
-        Reconciled::Done {
-            bytes_recovered, ..
-        } if bytes_recovered > 0 => output::note(&format!(
-            "Recovered {} that an operation left behind when it did not finish.",
-            output::human_size(bytes_recovered)
+        Reconciled::Residue { bytes } => output::note(&format!(
+            "{} in this vault was left behind by an operation that did not finish. \
+             It counts\nas space you can reclaim: run `veil reclaim-space` when you want it back.",
+            output::human_size(bytes)
         )),
-        Reconciled::Done { .. } => {}
+        Reconciled::Clean => {}
     }
 
     let unreadable = vault.unreadable_entries().len();

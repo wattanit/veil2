@@ -1,63 +1,81 @@
 //! Reconciling stored data against the index at open (Spec §4.5; FR-32, HC-4,
 //! S-4).
 //!
-//! A crash leaves residue. An interrupted ingest leaves pack bytes no index
-//! ever named; an interrupted reclaim leaves either the new pack the index had
-//! not adopted yet or the old one it had already let go of. Both are packs that
-//! nothing references, and both are removed here.
+//! A crash leaves residue. An interrupted ingest leaves a tail of pack bytes no
+//! index ever named; an interrupted reclaim leaves either the new pack the
+//! index had not adopted yet or the old one it had already let go of.
+//!
+//! **Residue is found here and reported. It is not destroyed here.** FR-32 asks
+//! for it to be discarded at open, and that is a step this refuses to take, for
+//! a reason HC-4 settles: whether unreferenced bytes are residue is a *guess*,
+//! and the guess can be wrong in a way that costs the user data.
+//!
+//! The case that decides it is the one §1 names as a motivation for the product
+//! — a vault in a sync folder. A daemon replicating a vault can deliver an
+//! older index before the packs that a newer one describes. Opened at that
+//! moment, the vault sees bytes its index does not account for, which is
+//! indistinguishable from the residue of a killed ingest. Discarding them
+//! destroys content the newer index, arriving seconds later, still points at.
+//! No interruption occurred and data was lost anyway, which is precisely what
+//! HC-4 forbids. FR-32's own words name the target as "the residue an
+//! interrupted ingest or compaction leaves behind under HC-4", so where the
+//! identification is uncertain, HC-4 governs.
+//!
+//! What happens instead: the residue is counted into the space the user can
+//! reclaim, and reclaiming it is the deliberate act FR-23 already requires for
+//! recovering space. Nothing accumulates invisibly — `info` shows it — and
+//! nothing is destroyed on a guess. Recorded as *Notes for Upstream*, item 7.
+//!
+//! **Telling residue from a deleted file's bytes needs no new field.** Both are
+//! unreferenced; the statistics count what committed operations put on disk and
+//! the filesystem counts what is there, so the difference is exactly the
+//! residue. A delete leaves its bytes counted; a killed ingest leaves bytes
+//! nothing counted.
+//!
+//! **Nothing here writes the index**, and that matters more than it looks. An
+//! index write at open advances the generation, and the generation is FR-27's
+//! whole mechanism: a vault opened from a stale copy would come away holding a
+//! number higher than the newer index a daemon then delivers, and every later
+//! write would sail past the check that exists to refuse it.
 //!
 //! Residue and damage are different things and are never confused: a pack that
 //! is *missing* is referenced by definition, so it is damage, and this module
 //! reports it rather than adjusting the vault to match it.
-//!
-//! **A pack that deleting emptied completely is removed here too, and that is a
-//! reading rather than an oversight.** FR-32 says to discard stored data no
-//! index entry references, and such a pack is exactly that. It looks at first
-//! like FR-23's prohibition on automatic compaction being broken, and it is
-//! not: nothing live is rewritten, no extent moves, and none of FR-23's stated
-//! cost — competing for I/O, risking an interruption the user did not choose —
-//! applies to unlinking a file with nothing live in it. What the product
-//! promises about deleted bytes (FR-21, FR-29) is that they *may* persist until
-//! space is reclaimed, so a user is never told those bytes are gone when they
-//! are not; here they really are gone. The alternative — telling residue from
-//! garbage — needs the index to record which packs it has ever known about,
-//! and that is a format field bought to preserve bytes the user asked to be
-//! rid of. Recorded as *Notes for Upstream*, item 7 of the Phase 4 to-do list.
 
 use std::collections::BTreeSet;
 
 use crate::error::Result;
 use crate::index::EntryId;
-use crate::store::{existing_pack_ids, pack_path, remove_pack};
+use crate::store::{pack_path, total_pack_bytes};
 
 use super::{Access, Vault};
 
-/// What reconciliation did when the vault was opened (FR-32).
+/// What reconciliation found when the vault was opened (FR-32).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reconciled {
-    /// The vault opened read-only, so nothing was examined and nothing removed.
-    /// Reconciliation is a write, and read-only media must still open (§4.5).
+    /// The vault opened read-only, so nothing was examined. Reconciliation
+    /// reads the filesystem and would report a change; read-only media must
+    /// still open (§4.5).
     Skipped,
-    /// Reconciliation ran. Both figures are zero for an intact vault, which is
-    /// the ordinary case and writes nothing.
-    Done {
-        /// How many packs nothing referenced and were removed.
-        packs_removed: usize,
-        /// The bytes those packs held, which FR-32 requires be reported rather
-        /// than absorbed.
-        bytes_recovered: u64,
+    /// Every byte on disk is accounted for. The ordinary case.
+    Clean,
+    /// Bytes on disk that no committed operation put there — what an
+    /// interrupted ingest or reclaim left behind. They are counted into the
+    /// space the user can reclaim rather than destroyed on the spot, and this
+    /// is the report FR-32 requires instead of absorbing them silently.
+    Residue {
+        /// How many such bytes were found.
+        bytes: u64,
     },
 }
 
 impl Reconciled {
-    /// The bytes recovered, or zero when reconciliation was skipped.
+    /// The residue found, or zero when there was none or nothing was examined.
     #[must_use]
-    pub fn bytes_recovered(self) -> u64 {
+    pub fn residue_bytes(self) -> u64 {
         match self {
-            Self::Skipped => 0,
-            Self::Done {
-                bytes_recovered, ..
-            } => bytes_recovered,
+            Self::Skipped | Self::Clean => 0,
+            Self::Residue { bytes } => bytes,
         }
     }
 }
@@ -110,59 +128,37 @@ impl Vault {
         ids.into_iter().collect()
     }
 
-    /// Removes every pack nothing references and makes the figures true again.
+    /// Finds the residue an interrupted operation left, and counts it into the
+    /// space the user can reclaim.
     ///
-    /// Called once, at open. Writes nothing when there was nothing to remove:
-    /// an open that changes a vault is an open that can fail, and every read of
-    /// a vault would become a durability event.
+    /// Called once, at open. Writes nothing at all — not the index, not a pack
+    /// — so opening a vault stays a read, and the generation FR-27 depends on
+    /// is never advanced behind the user's back.
     pub(super) fn reconcile(&mut self) -> Result<Reconciled> {
-        // Reconciliation is a write, and read-only media must open anyway
-        // (FR-32). Refusing here would turn an interrupted reclaim on a drive
-        // that later became read-only into permanent data loss, which HC-4
-        // forbids.
+        // Reading the filesystem is all this does, but reporting a figure the
+        // caller will offer to act on is pointless where acting is impossible,
+        // and read-only media must open regardless (§4.5, FR-32).
         if self.lock.access() == Access::ReadOnly {
             return Ok(Reconciled::Skipped);
         }
 
-        let referenced: BTreeSet<u32> = self.referenced_packs().into_iter().collect();
-        let orphans: Vec<u32> = existing_pack_ids(&self.dir)?
-            .into_iter()
-            .filter(|id| !referenced.contains(id))
-            .collect();
+        // File sizes, never stored content, so FR-22's prohibition on scanning
+        // is untouched and open time does not follow vault size (S-2).
+        let on_disk = total_pack_bytes(&self.dir)?;
+        let committed = self.document.statistics.physical_bytes;
 
-        if orphans.is_empty() {
-            return Ok(Reconciled::Done {
-                packs_removed: 0,
-                bytes_recovered: 0,
-            });
-        }
+        // Less on disk than was committed means a pack is gone. That is damage,
+        // not residue, and adjusting the figures to match it would be damage
+        // covering its own tracks (S-4) — `missing_packs` reports it instead.
+        let Some(residue) = on_disk.checked_sub(committed).filter(|n| *n > 0) else {
+            return Ok(Reconciled::Clean);
+        };
 
-        let mut bytes_recovered = 0;
-        for id in &orphans {
-            bytes_recovered += remove_pack(&self.dir, *id)?;
-        }
+        // In memory only. The figures are true for this session and derived
+        // again at the next open; writing them would cost FR-27 its detector.
+        self.document.statistics.physical_bytes = on_disk;
+        self.document.statistics.reclaimable_bytes += residue;
 
-        // The statistics are incremental by FR-22, and a crash is exactly the
-        // event that breaks an incremental counter: bytes written that no
-        // commit learned of, or a pack written off before it was removed. Which
-        // of those happened is not knowable after the fact, so the totals are
-        // set to what is actually on disk. That reads file sizes, never stored
-        // content, so FR-22's prohibition on scanning is untouched and open
-        // time still does not follow vault size (S-2).
-        //
-        // Not done when a referenced pack is missing: those bytes are damage,
-        // not residue, and writing a smaller vault into the index would be
-        // damage covering its own tracks (S-4).
-        if self.missing_packs().is_empty() {
-            let counted = self.recount_statistics()?;
-            self.document.statistics.physical_bytes = counted.physical_bytes;
-            self.document.statistics.reclaimable_bytes = counted.reclaimable_bytes;
-        }
-
-        self.commit()?;
-        Ok(Reconciled::Done {
-            packs_removed: orphans.len(),
-            bytes_recovered,
-        })
+        Ok(Reconciled::Residue { bytes: residue })
     }
 }
