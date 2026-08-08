@@ -222,7 +222,7 @@ The Implementation Plan's Phase 1 exit conditions govern. Restated as the checkl
 - Round-trip byte-identical for empty, single-chunk, and multi-chunk content (T1.10).
 - Every row of the Specification's corruption table fails as required, including the truncated-final-chunk case the original accepted while reporting success (T1.3, T1.12–T1.16, T1.28).
 - A corrupted pack fails only the entries with extents in it, and names them (T1.28).
-- Argon2id parameters measured on the weakest supported target and recorded (T1.34).
+- ~~Argon2id parameters measured on the weakest supported target and recorded (T1.34).~~ **Waived by the owner.** P1.12 is not done and no parameter set is claimed to be measured; see Open Questions.
 
 ---
 
@@ -240,6 +240,8 @@ Recorded per G-24, decided by the owner, absorbed as Specification bumps or drop
 
 ## Open Questions
 
+- **What Argon2id cost parameters satisfy C-3, and on what hardware.** P1.12 was waived rather than completed, so nothing in the build has been measured against C-3's one-second budget. `KdfParams` has no default: every vault records what it was created with, so choosing a set later orphans nothing (HC-5). Until it is measured, the value a vault gets is whatever its creator passes in, and the Specification's §11.1 open item stands unresolved. Resolver: owner, when hardware is available.
+- **Whether `cargo-fuzz` targets are added for the header and index parsers.** Spec §9 calls for them. T1.33 covers the same two entry points with seeded randomised testing at lower depth; proper fuzzing needs a nightly toolchain and a tool installed on the machine. Resolver: owner.
 - **Whether the corruption suite runs on every push or on a scheduled job.** It is the gate on Phase 2, so it must run before any merge that touches `veil-core`; whether the full parameterised matrix of mutation positions runs every time is a cost decision. Resolver: owner, at P1.11.
 - **Whether fuzz targets (P1.4.f, P1.7.e) run in CI with a time budget or only on a schedule.** Both are defensible; the choice affects how quickly a parser regression is caught. Resolver: owner, at P1.11.
 </content>

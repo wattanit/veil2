@@ -126,6 +126,12 @@ fn t0_3_veil_core_has_no_interactive_dependency() {
 /// The Specification's claim that splitting `crypto` into its own crate for
 /// independent audit stays a mechanical move is only true while this holds,
 /// and it stops being true the first time it is violated by accident.
+///
+/// **`super::` is not checked, and must not be.** Inside `crypto`'s own source
+/// files `super::` refers to `crypto` itself, so `super::error` is
+/// `crypto::error` — crypto's own error type, which is what keeps it free of
+/// the crate taxonomy in the first place. Only `crate::` and `super::super::`
+/// escape the module.
 #[test]
 fn t0_4_crypto_module_has_no_sibling_imports() {
     const SIBLINGS: &[&str] = &["format", "store", "index", "vault", "error"];
@@ -138,8 +144,7 @@ fn t0_4_crypto_module_has_no_sibling_imports() {
         for sibling in SIBLINGS {
             for pattern in [
                 format!("crate::{sibling}"),
-                format!("super::{sibling}"),
-                format!("use crate::{sibling}"),
+                format!("super::super::{sibling}"),
             ] {
                 assert!(
                     !source.contains(&pattern),
