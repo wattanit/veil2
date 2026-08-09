@@ -3,9 +3,37 @@ name = "veil-gui"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+build = "build.rs"
+
+[lib]
+name = "veil_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "veil-gui"
+path = "src/main.rs"
 
 [lints]
 workspace = true
 
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
 [dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 veil-core.workspace = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
+# DevTools compiled out of release (Spec §5.3, P5.3.c). `cfg(debug_assertions)`
+# in `[target]` dependency tables is a platform selector, not a profile one —
+# Cargo warns and ignores it (confirmed by running the build, not assumed) —
+# so the feature is gated explicitly instead: `cargo tauri dev` passes
+# `--features devtools`; `cargo tauri build` never does, and nothing about
+# the release profile could accidentally turn it back on.
+[features]
+devtools = ["tauri/devtools"]

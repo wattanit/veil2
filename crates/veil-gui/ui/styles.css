@@ -1,0 +1,163 @@
+/* Design Guideline §2.2 (colour) and §2.3 (typography and density). Light
+   values on :root, dark values only where the system prefers dark — this is
+   the whole rule; there is no in-app theme toggle to build in Phase 5. */
+:root {
+  --surface: #ffffff;
+  --surface-raised: #f5f5f7;
+  --text: #1c1c1e;
+  --text-muted: #6e6e73;
+  --border: #d8d8dc;
+  --accent: #2f6feb;
+  --caution: #c4341c;
+
+  --row-height: 28px;
+  --font-body: 13px;
+  --font-metadata: 11px;
+  --font-heading: 15px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1c1c1e;
+    --surface-raised: #2c2c2e;
+    --text: #f2f2f7;
+    --text-muted: #98989d;
+    --border: #3a3a3c;
+    --accent: #4c8dff;
+    --caution: #ff6b52;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  /* System UI font throughout; monospace is never used (§2.3). */
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  font-size: var(--font-body);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+#status {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--font-metadata);
+}
+
+#status:empty {
+  display: none;
+}
+
+/* §3.1: one panel, no second panel for a local filesystem view. */
+#list-viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+#list-header {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1fr;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  height: var(--row-height);
+  align-items: center;
+}
+
+#list-header > span {
+  padding: 0 8px;
+}
+
+#list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+#list-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.entry-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1fr;
+  height: var(--row-height);
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  /* A row is a control (double-click extracts it), not a text document —
+     without this the text cursor on hover suggests selection, which is not
+     what a double-click here does. */
+  cursor: default;
+  user-select: none;
+}
+
+/* `accent` is already the token for selection and in-progress states
+   (Design §2.2); reusing it here rather than introducing a new colour. */
+.entry-row:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.entry-row > span {
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* §2.3: numerals in size and date columns are tabular, fixed regardless of
+   the other tunable values. */
+.col-size,
+.col-added {
+  font-variant-numeric: tabular-nums;
+}
+
+.col-folder {
+  color: var(--text-muted);
+}
+
+/* §3.3: the whole window is a drop target once a vault is open. */
+#drop-affordance {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 2px dashed var(--accent);
+  color: var(--text);
+  font-size: var(--font-heading);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+#drop-affordance[hidden] {
+  display: none;
+}

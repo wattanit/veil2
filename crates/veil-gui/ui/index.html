@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Veil2</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="drop-affordance" hidden></div>
+      <div id="status" role="status"></div>
+      <div id="list-viewport">
+        <div id="list-header" role="row">
+          <span class="col-name">Name</span>
+          <span class="col-folder">Folder</span>
+          <span class="col-size">Size</span>
+          <span class="col-added">Added</span>
+        </div>
+        <div id="list-scroll">
+          <div id="list-spacer"></div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

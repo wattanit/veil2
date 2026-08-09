@@ -411,7 +411,7 @@ The original Veil's `sled` is not carried forward: it has been unmaintained sinc
 
 Rust 2024 edition. Release versions begin at 2.0.0 per Requirements §8.
 
-No CI pipeline. The gates run locally before every commit: `cargo fmt --check`, `cargo clippy --workspace --all-targets` at `-D warnings`, `cargo test`, `cargo deny check`, `cargo audit`. All must pass.
+No CI pipeline. The gates run locally before every commit: `cargo fmt --check`, `cargo clippy --workspace --all-targets` at `-D warnings`, `cargo test`, `cargo deny check`, `cargo audit`, and, once `crates/veil-gui/ui` exists to have one, `npm audit` — §7's "audited by the same gates" for the frontend toolchain meant this, and this section is where it should have been named alongside the Rust gates rather than left implicit. All must pass.
 
 **macOS is the only platform this ships for, builds for, or is run on** (Requirements §2.1). Windows and Linux are not built and not scheduled (§2.2); if either is taken up later, it is evaluated and verified on its own machine at that time, with no portability guarantee assumed in advance.
 

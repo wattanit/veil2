@@ -16,9 +16,40 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-# No advisory is ignored. An ignore entry here is a decision that needs a
-# reason recorded next to it and an owner who made it.
-ignore = []
+# No advisory is ignored without a reason recorded next to it and an owner
+# who made the call. Every entry below arrived with Tauri v2 (Phase 5) and
+# is reachable only through `[graph].targets`' Windows/Linux entries — this
+# project ships macOS only (Requirements §2.1), and neither release is
+# scheduled (§2.2). Owner: wattanit, Phase 5.
+ignore = [
+    # `tao`/`wry`'s Linux webview backend uses the gtk-rs GTK3 bindings,
+    # unmaintained. Compiled only under `cfg(target_os = "linux")`; this
+    # entry exists so a hypothetical Linux build is checked at all, and a
+    # Linux release (if one is ever built) re-evaluates this properly rather
+    # than inheriting a waiver written for a platform nobody was building.
+    "RUSTSEC-2024-0411",
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0414",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0417",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
+    # `tauri-macros`' proc-macro error handling. Runs only at compile time,
+    # in this project's own build and nowhere near a running vault.
+    "RUSTSEC-2024-0370",
+    # `tauri-utils`' URL parsing (`urlpattern`) pulls the `unic-*` Unicode
+    # crates for identifier classification, unmaintained since the whole
+    # `rust-unic` project stopped. Build-time codegen input validation, not
+    # a runtime path this project's own code reaches.
+    "RUSTSEC-2025-0075",
+    "RUSTSEC-2025-0080",
+    "RUSTSEC-2025-0081",
+    "RUSTSEC-2025-0098",
+    "RUSTSEC-2025-0100",
+]
 
 [licenses]
 version = 2
@@ -30,6 +61,16 @@ allow = [
     "BSD-3-Clause",
     "Unicode-3.0",
     "CC0-1.0",
+    # Added for Tauri v2 (Phase 5): `cssparser`, `selectors`, `dtoa-short`,
+    # and `option-ext` (Tauri's build-time HTML/CSS parsing for CSP-hash
+    # computation, and directory lookup) are MPL-2.0 only, with no MIT or
+    # Apache-2.0 alternative in their license expression. File-level
+    # copyleft, not a viral license — no obligation this project does not
+    # already meet by shipping its own source.
+    "MPL-2.0",
+    # `foldhash`'s sole license — more permissive than MIT, not merely
+    # equivalent to it.
+    "Zlib",
 ]
 confidence-threshold = 0.93
 # The workspace crates are unpublished and carry no licence field yet; that is
@@ -47,7 +88,14 @@ deny = [
     # Spec §6 permits it at a binary's top level, and as of Phase 3 the command
     # line is that binary. The wrapper list is the enforcement: anything else
     # reaching for it — `veil-core` above all — still fails this gate.
-    { name = "anyhow", wrappers = ["veil-cli"] },
+    #
+    # `veil-gui` never uses `anyhow` itself; `tauri`, `tauri-build`,
+    # `tauri-plugin`, and `tauri-plugin-fs` do, for their own build-script and
+    # plugin-registration errors, unrelated to a vault's error taxonomy. They
+    # are Tauri's internal implementation, not this codebase's, so they are
+    # wrappers in the same sense `veil-cli` is — the direct parent, not the
+    # workspace member three hops up.
+    { name = "anyhow", wrappers = ["veil-cli", "tauri", "tauri-build", "tauri-plugin", "tauri-plugin-fs", "tauri-utils"] },
     # Spec §7: `sled` is not carried forward — unmaintained since 2021.
     { name = "sled" },
     # A-1: the core never prompts. These are the dependencies that would make
@@ -64,14 +112,29 @@ deny = [
 # would mean pinning `clap_derive` and `serde_derive` against
 # `tracing-attributes` for no gain HC-6 recognises. Every cryptographic crate
 # resolves to a single version.
-skip-tree = [{ name = "syn", version = "=2.0.119", depth = 1 }]
+skip-tree = [
+    { name = "syn", version = "=2.0.119", depth = 1 },
+    # Tauri v2 (Spec §5.3, Phase 5) is its own large, independently-versioned
+    # dependency tree — proc-macro codegen, the wry/tao webview and windowing
+    # layer, native dialogs. It needs different major versions of common
+    # utility crates (`toml`, `thiserror`, `syn`, `indexmap`, `sha2`, and
+    # others) than veil-core's and veil-cli's own trees do, none of them
+    # reachable from veil-core's dependency edges. Rooting the exemption at
+    # Tauri's three direct entry points from `veil-gui`, pinned to the exact
+    # versions this was checked against, so a version bump re-triggers this
+    # gate rather than being covered by a standing waiver.
+    { name = "tauri", version = "=2.11.5" },
+    { name = "tauri-build", version = "=2.6.3" },
+    { name = "tauri-plugin-dialog", version = "=2.7.2" },
+]
 
-# `rpassword` reaches the Windows API bindings one version behind `clap`. The
-# crate is a Windows-only FFI shim, it is not cryptographic, and neither copy
-# is reachable on the platform this project is verified on. It costs bytes in a
-# Windows binary and nothing else. Pinned to the exact version so that a future
-# drift fails this gate again rather than being covered by a standing waiver.
-skip = [{ name = "windows-sys", version = "=0.59.0" }]
+
+# The `rpassword`/`clap` `windows-sys` skip this used to need is gone: Tauri
+# v2's own dependency tree (Phase 5) now pulls the same version they do, so
+# there is only one `windows-sys` in the graph and cargo-deny said so —
+# "unnecessary-skip" — rather than the drift this comment used to promise
+# would be caught silently passing. Removed rather than left as a stale
+# waiver for a situation that no longer exists.
 
 [sources]
 unknown-registry = "deny"
