@@ -21,6 +21,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.11.0"
 thiserror = "2.0.20"
 tracing = "0.1.44"
+unicode-normalization = "0.1.25"
 zeroize = { version = "1.9.0", features = ["derive"] }
 
 [dev-dependencies]

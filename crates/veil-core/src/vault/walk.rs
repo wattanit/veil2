@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
+use super::normalize;
+
 /// Why a path in an ingested folder was not stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
@@ -108,7 +110,10 @@ pub fn walk(root: &Path) -> Result<Walk> {
                 });
                 continue;
             };
-            let name = name.to_owned();
+            // NFC now, not later: macOS's filesystem APIs hand back NFD, and
+            // normalising here means everything downstream — including the
+            // sort below — already sees the form the vault will store (§4.6).
+            let name = normalize::nfc(name).into_owned();
 
             let Some(folder) = relative_folder(root, &path) else {
                 out.skipped.push(Skipped {
@@ -117,6 +122,7 @@ pub fn walk(root: &Path) -> Result<Walk> {
                 });
                 continue;
             };
+            let folder = normalize::nfc(&folder).into_owned();
 
             out.files.push(Found { path, folder, name });
         }

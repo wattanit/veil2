@@ -5,14 +5,17 @@ use std::io::Read;
 use crate::error::{Error, Result};
 use crate::index::EntryId;
 
-use super::{Cancel, Progress, Vault};
+use super::{Cancel, Progress, Vault, normalize};
 
 impl Vault {
     /// Replaces the entry at one full path with new content (FR-13).
     ///
-    /// New content is written and made durable first, then **one** generation
-    /// step both points the path at it and marks the old extents reclaimable.
-    /// Remove-then-add would leave a window with zero intact versions (HC-4).
+    /// `folder` and `name` are normalised before the match, so either
+    /// spelling of the same visible name finds the entry it identifies
+    /// (§4.6). New content is written and made durable first, then **one**
+    /// generation step both points the path at it and marks the old extents
+    /// reclaimable. Remove-then-add would leave a window with zero intact
+    /// versions (HC-4).
     ///
     /// # Errors
     ///
@@ -28,12 +31,12 @@ impl Vault {
     ) -> Result<EntryId> {
         self.begin_write()?;
 
-        let Some(position) = self
-            .document
-            .entries
-            .iter()
-            .position(|e| e.folder == folder && e.name == name)
-        else {
+        let normalized_folder = normalize::nfc(folder);
+        let normalized_name = normalize::nfc(name);
+        let Some(position) = self.document.entries.iter().position(|e| {
+            e.folder.as_str() == normalized_folder.as_ref()
+                && e.name.as_str() == normalized_name.as_ref()
+        }) else {
             return Err(Error::NotFound);
         };
 

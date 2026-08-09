@@ -1,8 +1,9 @@
 //! Public API: create, open, ingest, extract, replace, delete, verify, reclaim
 //! (Spec §2, §5.1). Nothing here needs a terminal or a prompt (A-1).
 //!
-//! Not built yet: NFC name normalisation (Phase 5) — so name comparison here is
-//! exact on stored bytes.
+//! `name` and `folder` are normalised to NFC wherever a caller supplies one —
+//! `normalize` — so comparison (`find`, `add`, `replace`) is exact equality on
+//! an already-normalised form (Spec §4.6, HC-8).
 //!
 //! This file holds the type and the read-only accessors. The operations are
 //! split by what they do to a vault: `session` opens and closes one and owns
@@ -22,6 +23,7 @@ mod ingest;
 mod limits;
 mod lock;
 mod mutate;
+mod normalize;
 mod progress;
 mod read;
 mod reclaim;
@@ -97,13 +99,17 @@ impl Vault {
     /// The entry at one full path — folder and name together (FR-13, §4.6).
     ///
     /// Identity is the full path: matching on name alone would let an ingest
-    /// into one folder overwrite a file in another.
+    /// into one folder overwrite a file in another. `folder` and `name` are
+    /// normalised before comparison, so either spelling of the same visible
+    /// name finds it (§4.6).
     #[must_use]
     pub fn find(&self, folder: &str, name: &str) -> Option<&Entry> {
+        let folder = normalize::nfc(folder);
+        let name = normalize::nfc(name);
         self.document
             .entries
             .iter()
-            .find(|e| e.folder == folder && e.name == name)
+            .find(|e| e.folder.as_str() == folder.as_ref() && e.name.as_str() == name.as_ref())
     }
 
     /// The vault's totals, read rather than computed (FR-8, FR-22).

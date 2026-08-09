@@ -9,7 +9,7 @@ use crate::error::{Error, Limit, Result};
 use crate::index::{Entry, EntryId};
 use crate::store::PackSink;
 
-use super::{Cancel, NoProgress, Progress, ProgressReport, Skipped, Unit, Vault, walk};
+use super::{Cancel, NoProgress, Progress, ProgressReport, Skipped, Unit, Vault, normalize, walk};
 
 /// One entry written to the packs and not yet referenced by the index.
 ///
@@ -160,6 +160,10 @@ impl Vault {
     /// Streams one source into the packs, producing an entry nothing yet
     /// references.
     ///
+    /// `name` and `folder` are normalised to NFC here, so every entry this
+    /// vault ever stores is normalised regardless of which caller reached it
+    /// (§4.6, HC-8) — `add` and `replace` both go through this one point.
+    ///
     /// Advances no generation, so a failure or cancellation rolls the packs back
     /// and the index never learned of the attempt. Shared with `replace`.
     pub(super) fn stage(
@@ -171,6 +175,8 @@ impl Vault {
         progress: &mut impl Progress,
         cancel: &Cancel,
     ) -> Result<Staged> {
+        let name = normalize::nfc(name);
+        let folder = normalize::nfc(folder);
         if cancel.is_cancelled() {
             return Err(Error::Cancelled { rolled_back: true });
         }
@@ -227,8 +233,8 @@ impl Vault {
 
         let entry = Entry {
             id,
-            name: name.to_owned(),
-            folder: folder.to_owned(),
+            name: name.into_owned(),
+            folder: folder.into_owned(),
             size: summary.plaintext_len,
             source_mtime: now(),
             added_at: now(),
