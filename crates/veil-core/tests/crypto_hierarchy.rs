@@ -1,5 +1,5 @@
 //! Phase 1 test cases T1.1 through T1.9 — the key hierarchy and the header
-//! (HC-3, HC-5, HC-6, HC-7, FR-2, FR-5, FR-30, A-6).
+//! (HC-3, HC-5, HC-6, HC-7, FR-2, FR-5, FR-6, A-6).
 //!
 //! Every mutation below is applied to the header's **bytes**, not to a parsed
 //! structure. The attacker's position is the file; a suite that mutates
@@ -212,7 +212,7 @@ fn t1_5_unknown_kdf_algorithm_is_refused() {
     );
 }
 
-/// T1.6 — the writer's version never gates access (HC-5, FR-30).
+/// T1.6 — the writer's version never gates access (HC-5, FR-6).
 ///
 /// Format version and application version have separate lifecycles precisely
 /// so that shipping a new release never invalidates a compatibility check. The

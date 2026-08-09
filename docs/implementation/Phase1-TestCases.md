@@ -203,6 +203,8 @@ Perform a sequence of committed mutations and record the generation after each.
 
 ## Entry files
 
+**Status.** `store/entry_file.rs` and the entry model exist and compile. T1.26 through T1.31 below all drive `Vault::add`/`Vault::extract`, which still call the deleted pack API in `vault/ingest.rs` and `vault/read.rs` — these cases are written correctly for the new model but cannot compile, let alone pass, until Phase 2 rewrites those two files.
+
 ### T1.26 — Reading one entry touches no other entry's file
 *Covers P1.9.c · Verifies A-5, Spec §4.1*
 
@@ -273,6 +275,36 @@ Attempt to select the low-cost test parameter set from a release build.
 
 ---
 
+## Name normalisation
+
+*Not new work — these four cases already existed, originally labelled Phase 5 (T5.1–T5.4). Relabelled here rather than left stranded under a phase that no longer exists. They drive `Vault::add`/`add_path`/`add_folder`/`replace`/`find` through the Phase 2 shared harness, so — like the entry-file cases above — they are written correctly but blocked on Phase 2.*
+
+### T1.35 — An NFD name and its NFC spelling store as one entry
+*Covers P1.10.a · Verifies Spec §4.6*
+
+Add the same name through a literal NFC spelling, a literal NFD spelling, and a source file whose on-disk name is NFD.
+**Verdict:** all three store as the identical NFC name.
+
+### T1.36 — Matching a stored name by its other spelling
+*Covers P1.10.b · Verifies Spec §4.6, FR-13*
+
+Store a name in NFC, then `find` and `replace` it using its NFD spelling.
+**Verdict:** both resolve to the same entry; replace does not insert a second one.
+
+### T1.37 — Case sensitivity is unaffected by normalisation
+*Covers P1.10.b · Verifies Spec §4.6*
+
+Add two names differing only by case.
+**Verdict:** both are stored as distinct entries.
+
+### T1.38 — A folder walk over NFD-yielding paths produces NFC folder metadata
+*Covers P1.10.a · Verifies Spec §4.6, FR-10*
+
+Walk a folder whose on-disk folder segment and file name are both NFD.
+**Verdict:** both the stored name and the stored folder segment are NFC.
+
+---
+
 ## Coverage
 
 | Identifier | Cases |
@@ -287,6 +319,8 @@ Attempt to select the low-cost test parameter set from a release build.
 | FR-2 | T1.2, T1.4 |
 | FR-5 | T1.5 |
 | FR-6 | T1.6, T1.21 |
+| FR-10 | T1.38 |
+| FR-13 | T1.36 |
 | FR-18 | T1.18 |
 | FR-24 | T1.25 |
 | A-2 | T1.10, T1.11 |
@@ -295,6 +329,8 @@ Attempt to select the low-cost test parameter set from a release build.
 | C-3 | T1.33, T1.34 |
 | S-1 | T1.11 |
 | S-3 | T1.27, T1.28 |
+
+**Blocked on Phase 2, and reachable only once it lands:** T1.26 through T1.31, T1.35 through T1.38 — every case that drives `Vault::add` or `Vault::extract`.
 
 ### What Phase 1 does not prove
 

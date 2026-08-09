@@ -1,5 +1,5 @@
-//! Phase 5 test cases T5.1 through T5.4 — NFC name normalisation
-//! (Spec §4.6; HC-8, FR-13, FR-10).
+//! Phase 1 test cases T1.35 through T1.38 — NFC name normalisation
+//! (Spec §4.6; FR-13, FR-10).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -14,10 +14,9 @@ const NFC_CAFE: &str = "caf\u{e9}.txt";
 /// Visually identical to [`NFC_CAFE`] and byte-for-byte different.
 const NFD_CAFE: &str = "cafe\u{301}.txt";
 
-/// T5.1 — An NFD name and its NFC spelling store as one entry
-/// (Spec §4.6, HC-8).
+/// T1.35 — An NFD name and its NFC spelling store as one entry (Spec §4.6).
 #[test]
-fn t5_1_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
+fn t1_35_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
     assert_ne!(
         NFC_CAFE.as_bytes(),
         NFD_CAFE.as_bytes(),
@@ -60,10 +59,9 @@ fn t5_1_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
     );
 }
 
-/// T5.2 — Matching a stored name by its other spelling
-/// (Spec §4.6, FR-13).
+/// T1.36 — Matching a stored name by its other spelling (Spec §4.6, FR-13).
 #[test]
-fn t5_2_matching_a_stored_name_by_its_other_spelling() {
+fn t1_36_matching_a_stored_name_by_its_other_spelling() {
     let scratch = harness::Scratch::new("nfc-match");
     let dir = scratch.vault_dir();
     let mut vault = create(&dir, SMALL_CAP);
@@ -93,9 +91,9 @@ fn t5_2_matching_a_stored_name_by_its_other_spelling() {
     assert_eq!(harness::read_back(&vault, new_id).unwrap(), replacement);
 }
 
-/// T5.3 — Case sensitivity is unaffected by normalisation (Spec §4.6).
+/// T1.37 — Case sensitivity is unaffected by normalisation (Spec §4.6).
 #[test]
-fn t5_3_case_sensitivity_is_unaffected_by_normalisation() {
+fn t1_37_case_sensitivity_is_unaffected_by_normalisation() {
     let scratch = harness::Scratch::new("nfc-case");
     let dir = scratch.vault_dir();
     let mut vault = create(&dir, SMALL_CAP);
@@ -112,10 +110,10 @@ fn t5_3_case_sensitivity_is_unaffected_by_normalisation() {
     assert!(vault.find("d", "report.pdf").is_some());
 }
 
-/// T5.4 — A folder walk over NFD-yielding paths produces NFC folder metadata
-/// (Spec §4.6, FR-10).
+/// T1.38 — A folder walk over NFD-yielding paths produces NFC folder
+/// metadata (Spec §4.6, FR-10).
 #[test]
-fn t5_4_a_folder_walk_over_nfd_yielding_paths_produces_nfc_folder_metadata() {
+fn t1_38_a_folder_walk_over_nfd_yielding_paths_produces_nfc_folder_metadata() {
     let scratch = harness::Scratch::new("nfc-walk");
     let dir = scratch.vault_dir();
     let mut vault = create(&dir, SMALL_CAP);

@@ -1,5 +1,5 @@
 //! Phase 1 test cases T1.20 through T1.25 — the index (HC-1, HC-3, HC-4,
-//! FR-27, FR-30, Spec §4.3, §4.4).
+//! FR-24, FR-6, Spec §4.3, §4.4).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use veil_core::crypto::{
     HASH_LEN, NONCE_PREFIX_LEN, WRAPPED_KEY_LEN, generate_master_key, index_key,
 };
-use veil_core::index::{Entry, EntryId, Extent, IndexDocument, Statistics, generations};
+use veil_core::index::{Entry, EntryId, IndexDocument, Statistics, generations};
 use veil_core::{Damaged, Error};
 
 /// A distinctive name of the shape HC-1 exists to protect, taken from the
@@ -49,11 +49,6 @@ fn marked_entry(id: u64) -> Entry {
         content_hash: [0xAB; HASH_LEN],
         wrapped_dek: [0xCD; WRAPPED_KEY_LEN],
         nonce_prefix: [0xEF; NONCE_PREFIX_LEN],
-        extents: vec![Extent {
-            pack_id: 1,
-            offset: 0,
-            length: 4112,
-        }],
         unknown: BTreeMap::new(),
     }
 }
@@ -135,10 +130,10 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// T1.21 — unknown fields survive a read and write cycle (FR-30, §4.3).
+/// T1.21 — unknown fields survive a read and write cycle (FR-6, §4.3).
 ///
 /// This is the reader's half of the migration door that Requirements §2.2
-/// defers and HC-5 and FR-30 hold open. A reader that drops what it does not
+/// defers and HC-5 and FR-6 hold open. A reader that drops what it does not
 /// understand turns a future migration into a reconstruction.
 #[test]
 fn t1_21_unknown_fields_are_preserved() {
@@ -311,9 +306,9 @@ fn t1_24_a_wrong_key_does_not_yield_an_empty_index() {
 }
 
 /// T1.25 — the generation counter advances by one and never repeats
-/// (FR-27, §4.4).
+/// (FR-24, §4.4).
 ///
-/// FR-27's detection of external modification is built on this counter, so a
+/// FR-24's detection of external modification is built on this counter, so a
 /// skipped or reused generation is a defect in the detector rather than a
 /// cosmetic issue.
 #[test]

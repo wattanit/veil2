@@ -1,5 +1,5 @@
 //! Phase 1 test cases T1.10 through T1.19 — content encryption and the
-//! adversarial corruption suite (HC-3, A-2, S-1, FR-17, Spec §3.3, §9).
+//! adversarial corruption suite (HC-3, A-2, S-1, FR-18, Spec §3.3, §9).
 //!
 //! **Every mutation is applied to the ciphertext bytes**, not through the API.
 //! The attacker's position is the file; a suite that mutates through the API
@@ -269,12 +269,12 @@ fn t1_17_appending_to_the_stream_fails() {
 }
 
 /// T1.18 — a content-hash mismatch fails a read that otherwise authenticated
-/// (FR-17, HC-3).
+/// (FR-18, HC-3).
 ///
 /// Chunk authentication proves each chunk is what was written under this
-/// entry's key. It does not prove the index still points at the right extents
-/// or that the recorded hash was not swapped. FR-17 is the second, independent
-/// statement, and this is the only case that exercises it in isolation.
+/// entry's key. It does not prove the recorded hash was not swapped in the
+/// index. FR-18 is the second, independent statement, and this is the only
+/// case that exercises it in isolation.
 #[test]
 fn t1_18_content_hash_mismatch_fails() {
     let f = seal(pattern(CHUNK_LEN + 11));

@@ -1,8 +1,5 @@
-//! Pack files, extents, and space accounting (Spec §4.5).
+//! Entry file read and write (Spec §4.5).
 
-mod pack;
+mod entry_file;
 
-pub use pack::{
-    DEFAULT_PACK_CAP, PACKS_DIR, PackSink, PackSource, damaged_pack, entries_in_pack,
-    existing_pack_ids, pack_path, remove_pack, total_pack_bytes,
-};
+pub use entry_file::{ENTRIES_DIR, EntryWriter, entry_path, exists, open_for_read, remove};

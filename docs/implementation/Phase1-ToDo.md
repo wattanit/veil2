@@ -119,7 +119,7 @@ The cryptographic construction (key hierarchy, STREAM encryption, hashing) is un
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P1.7.a | Built, needs rewrite | Entry and index document types matching the Specification's model, serialised as CBOR — the `Extent` type and `IndexDocument.next_pack_id` are removed | Spec §4.3 | T1.20 |
+| P1.7.a | Done | Entry and index document types matching the Specification's model, serialised as CBOR — the `Extent` type and `IndexDocument.next_pack_id` are removed | Spec §4.3 | T1.20 |
 | P1.7.b | Built, carries forward | Unknown fields preserved across a decode/re-encode cycle, at both document and entry level | FR-6, Spec §4.3 | T1.21 |
 | P1.7.c | Built, carries forward | The whole index encrypted under the index subkey; no field reaches disk in the clear | HC-1, Spec §4.3 | T1.20, T1.31 |
 | P1.7.d | Built, carries forward | No absolute source path stored, in any field | HC-1, Spec §4.3 | T1.20 |
@@ -147,11 +147,11 @@ The cryptographic construction (key hierarchy, STREAM encryption, hashing) is un
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P1.9.a | Built, remove entirely | `PackSink`/`PackSource`, pack rollover, extent bookkeeping, `next_pack_id` allocation, and the pack-facing exports of `store/mod.rs` | superseded | — |
-| P1.9.b | Not yet built | One file per entry under `entries/`, named by its id, created on ingest, opened for read on extraction | Spec §4.1, §4.5 | T1.26, T1.28 |
-| P1.9.c | Not yet built | Reading one entry opens only that entry's file — no other entry's file is touched | A-5, Spec §4.1 | T1.26 |
-| P1.9.d | Not yet built | Damage to one entry's file fails only that entry, and names it — no pack-level attribution to build, since damage cannot spread past its own file | S-3, Spec §4.5 | T1.27 |
-| P1.9.e | Not yet built | Adding one entry creates exactly one new file, plus one index generation step | S-3, Spec §4.5 | T1.28 |
+| P1.9.a | Done | `PackSink`/`PackSource`, pack rollover, extent bookkeeping, `next_pack_id` allocation, and the pack-facing exports of `store/mod.rs` | superseded | — |
+| P1.9.b | Done | One file per entry under `entries/`, named by its id (`store/entry_file.rs`: `EntryWriter`, `open_for_read`) — compiles and is unit-testable on its own; nothing in `veil-core`'s src calls it yet | Spec §4.1, §4.5 | T1.26, T1.28 |
+| P1.9.c | Written, blocked on Phase 2 | Reading one entry opens only that entry's file — no other entry's file is touched. The test drives `Vault::extract` (`vault/read.rs`, Phase 2) | A-5, Spec §4.1 | T1.26 |
+| P1.9.d | Written, blocked on Phase 2 | Damage to one entry's file fails only that entry, and names it — no pack-level attribution to build, since damage cannot spread past its own file. Same blocker as P1.9.c | S-3, Spec §4.5 | T1.27 |
+| P1.9.e | Written, blocked on Phase 2 | Adding one entry creates exactly one new file, plus one index generation step. The test drives `Vault::add` (`vault/ingest.rs`, Phase 2) | S-3, Spec §4.5 | T1.28 |
 
 ---
 
@@ -161,10 +161,10 @@ The cryptographic construction (key hierarchy, STREAM encryption, hashing) is un
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P1.10.a | Built, carries forward | NFC normalisation on ingest | Spec §4.6 | — |
-| P1.10.b | Built, carries forward | Comparison is exact and case-sensitive after normalisation | Spec §4.6 | — |
+| P1.10.a | Built, carries forward | NFC normalisation on ingest | Spec §4.6 | T1.35, T1.38 |
+| P1.10.b | Built, carries forward | Comparison is exact and case-sensitive after normalisation | Spec §4.6 | T1.36, T1.37 |
 
-Covered structurally here; exercised functionally by Phase 2's replace/identity tests (Plan P2.7).
+Already had a dedicated test file (originally labelled Phase 5, T5.1–T5.4); relabelled T1.35–T1.38 rather than left stranded under a phase that no longer exists.
 
 ---
 
@@ -174,9 +174,9 @@ Covered structurally here; exercised functionally by Phase 2's replace/identity 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P1.11.a | Built, needs rewrite | Create a vault, store one file, drop everything, reopen from a fresh instance, read the content back — exercised over the entry-file path rather than packs | Spec §4.1–§4.5 | T1.29 |
-| P1.11.b | Built, carries forward | Confirm the slice writes nothing outside the vault directory | HC-2 | T1.30 |
-| P1.11.c | Built, carries forward | Confirm a closed vault discloses no planted name or content anywhere in its own bytes | HC-1 | T1.31 |
+| P1.11.a | Written, blocked on Phase 2 | Create a vault, store one file, drop everything, reopen from a fresh instance, read the content back — exercised over the entry-file path rather than packs. Drives `Vault::add`/`extract`, so it cannot compile until Phase 2 rewrites `vault/ingest.rs` and `vault/read.rs` | Spec §4.1–§4.5 | T1.29 |
+| P1.11.b | Written, blocked on Phase 2 | Confirm the slice writes nothing outside the vault directory | HC-2 | T1.30 |
+| P1.11.c | Written, blocked on Phase 2 | Confirm a closed vault discloses no planted name or content anywhere in its own bytes | HC-1 | T1.31 |
 
 ---
 
@@ -186,7 +186,7 @@ Covered structurally here; exercised functionally by Phase 2's replace/identity 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P1.12.a | Built, needs rewrite | Every row of the Specification's corruption table has a case, and each fails as that row requires — "corrupted pack" becomes "corrupted entry file" | HC-3, Spec §9 | T1.3, T1.12–T1.16, T1.27 |
+| P1.12.a | Done at the level Phase 1 owns | Every row of the Specification's corruption table has a case, and each fails as that row requires — "corrupted pack" becomes "corrupted entry file" (T1.27, driven through `Vault`, blocked on Phase 2 like T1.28–T1.29 above) | HC-3, Spec §9 | T1.3, T1.12–T1.16, T1.27 |
 | P1.12.b | Built, carries forward | Mutations applied to bytes on disk, not to in-memory structures | HC-3, Spec §9 | T1.12–T1.17 |
 | P1.12.c | Built, carries forward | Each case asserts the specific error, not any error | HC-3, FR-2, S-3 | T1.12–T1.17, T1.27 |
 
@@ -212,6 +212,10 @@ Covered structurally here; exercised functionally by Phase 2's replace/identity 
 - Every row of the Specification's corruption table fails as required, including the truncated-final-chunk case (T1.3, T1.12–T1.16).
 - A corrupted entry file fails only that entry, and names it (T1.27).
 - Argon2id parameters measured on the weakest supported target and recorded (T1.33).
+
+**Not met yet, and not met by this pass:** T1.13's measurement needs a real low-end machine, which this session does not have. The exit condition stays open until that hardware is available — it is not something a code change can close.
+
+**`cargo check --workspace` still fails, and fails in more places than after Phase 0.** This phase deleted `store/pack.rs` and its exports and removed `Extent`/`next_pack_id` from the entry model — every file in `vault/` that called the old storage API (`ingest.rs`, `read.rs`, `mutate.rs`, `session.rs`, `damage.rs`, `reclaim.rs`, plus the already-broken `representable.rs`) now fails to compile. All 38 errors from `cargo check -p veil-core --lib` are confined to `crates/veil-core/src/vault/`, i.e. Phase 2, 3, and 4's files — none in `crypto/`, `format/`, `index/`, `store/`, or `durable.rs`. Phase 1's own new test file (`tests/vault.rs`) and the rewritten `tests/index.rs` are written correctly for the new model but cannot run until Phase 2 rewrites the `vault/` call sites they exercise through the public API.
 
 ---
 

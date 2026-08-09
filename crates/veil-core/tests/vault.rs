@@ -1,5 +1,5 @@
-//! Phase 1 test cases T1.26 through T1.32 — packs, extents, and the vertical
-//! slice (HC-1, HC-2, HC-3, A-5, C-2, S-3, S-4, Spec §4.1–§4.5, §9).
+//! Phase 1 test cases T1.26 through T1.31 — entry files and the vertical
+//! slice (HC-1, HC-2, HC-3, A-5, S-3, Spec §4.1–§4.5, §9).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use veil_core::Error;
 use veil_core::crypto::{KdfParams, Password};
 use veil_core::index::EntryId;
-use veil_core::store::{entries_in_pack, existing_pack_ids, pack_path};
 use veil_core::vault::Vault;
 use veil_core::{Cancel, NoProgress};
 
@@ -18,9 +17,11 @@ const MARKER_NAME: &str = "exec_compensation_2024.csv";
 const MARKER_FOLDER: &str = "HR/salaries";
 const MARKER_CONTENT: &str = "SALARY-ROW-MARKER-9c1f";
 
-/// Small enough that a multi-pack vault costs kilobytes rather than gigabytes.
-/// The cap being a parameter is the reason this suite runs at all (P1.9.e).
-const SMALL_CAP: u64 = 4096;
+/// `Vault::create` still takes a capacity parameter — a leftover of the pack
+/// cap this phase's rewrite makes meaningless. Removing the parameter belongs
+/// to Phase 2, which owns `vault/session.rs`; this suite passes an arbitrary
+/// value and does not test it.
+const UNUSED_CAP: u64 = 4096;
 
 fn password() -> Password {
     Password::new("a sufficiently long password".to_owned())
@@ -51,8 +52,8 @@ fn pattern(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i % 251) as u8).collect()
 }
 
-fn create(dir: &Path, cap: u64) -> Vault {
-    Vault::create(dir, &password(), KdfParams::for_tests(), cap).unwrap()
+fn create(dir: &Path) -> Vault {
+    Vault::create(dir, &password(), KdfParams::for_tests(), UNUSED_CAP).unwrap()
 }
 
 fn read_back(vault: &Vault, id: EntryId) -> Result<Vec<u8>, Error> {
@@ -61,50 +62,20 @@ fn read_back(vault: &Vault, id: EntryId) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-/// T1.26 — an entry larger than the pack cap spans packs and reconstructs
-/// exactly (C-2, A-2, Spec §4.5).
-#[test]
-fn t1_26_an_entry_spans_packs_and_reconstructs() {
-    let scratch = Scratch::new("spanning");
-    let mut vault = create(&scratch.vault_dir(), SMALL_CAP);
-
-    let content = pattern(SMALL_CAP as usize * 5 + 123);
-    let id = vault
-        .add(
-            "big.bin",
-            "media",
-            &mut content.as_slice(),
-            &mut NoProgress,
-            &Cancel::new(),
-        )
-        .unwrap();
-
-    let entry = vault.entries().iter().find(|e| e.id == id).unwrap();
-    assert!(
-        entry.extents.len() > 1,
-        "the entry did not span packs: {:?}",
-        entry.extents
-    );
-    let packs: Vec<u32> = entry.extents.iter().map(|x| x.pack_id).collect();
-    assert!(
-        packs.windows(2).all(|w| w[1] == w[0] + 1),
-        "packs not in order"
-    );
-
-    assert_eq!(read_back(&vault, id).unwrap(), content);
-}
-
-/// T1.27 — reading one entry touches no unrelated pack (A-5, Spec §4.5).
+/// T1.26 — reading one entry touches no other entry's file (A-5, Spec §4.1).
 ///
 /// A-5 is the door held open for the mount deferral and the basis of the
 /// product's first motivation: retrieving one file from a several-hundred-
-/// gigabyte vault without touching the rest.
+/// gigabyte vault without touching the rest. Under one-file-per-entry
+/// storage this is structural — there is no shared container to seek within
+/// — and this case makes it observable rather than only argued.
 #[test]
-fn t1_27_one_entry_reads_without_unrelated_packs() {
+fn t1_26_reading_one_entry_touches_no_other_entry_file() {
     let scratch = Scratch::new("locality");
-    let mut vault = create(&scratch.vault_dir(), SMALL_CAP);
+    let dir = scratch.vault_dir();
+    let mut vault = create(&dir);
 
-    let first = pattern(SMALL_CAP as usize * 2);
+    let first = pattern(2000);
     let second = pattern(700);
     let first_id = vault
         .add(
@@ -125,55 +96,35 @@ fn t1_27_one_entry_reads_without_unrelated_packs() {
         )
         .unwrap();
 
-    let second_packs: Vec<u32> = vault
-        .entries()
-        .iter()
-        .find(|e| e.id == second_id)
-        .unwrap()
-        .extents
-        .iter()
-        .map(|x| x.pack_id)
-        .collect();
-
-    // Destroy a pack the second entry has no extent in.
-    let victim = vault
-        .entries()
-        .iter()
-        .find(|e| e.id == first_id)
-        .unwrap()
-        .extents[0]
-        .pack_id;
-    assert!(!second_packs.contains(&victim), "the fixture overlapped");
-
-    let path = pack_path(&scratch.vault_dir(), victim);
-    let ruined = vec![0u8; std::fs::metadata(&path).unwrap().len() as usize];
-    std::fs::write(&path, ruined).unwrap();
+    // Destroy the file backing an entry other than the one being read.
+    let victim = veil_core::store::entry_path(&dir, first_id);
+    let ruined = vec![0u8; std::fs::metadata(&victim).unwrap().len() as usize];
+    std::fs::write(&victim, ruined).unwrap();
 
     assert_eq!(
         read_back(&vault, second_id).unwrap(),
         second,
-        "an unrelated pack's damage prevented a read"
+        "an unrelated entry's damaged file prevented a read"
     );
 }
 
-/// T1.28 — pack damage is confined and attributed (S-4, HC-3, Spec §4.5) —
-/// §9 corruption table, row 7.
+/// T1.27 — a corrupted entry file fails only that entry (S-3, HC-3, Spec
+/// §4.5) — §9 corruption table, row 7.
 ///
-/// **Naming the affected entries is half the requirement.** S-4 rejects two
-/// failures at once: one bad region losing everything, and one bad region
-/// being indistinguishable from total loss. A case that only asserts "some
-/// entries failed" leaves the second half untested, and the second half is
-/// what turns a partial failure into a list of files a user can restore from
-/// a backup.
+/// **Naming the affected entry is half the requirement.** S-3 rejects two
+/// failures at once: one bad file losing everything, and one bad file being
+/// indistinguishable from total loss. With one file per entry, damage cannot
+/// spread past its own file — there is no pack-level attribution to compute,
+/// only the confinement itself.
 #[test]
-fn t1_28_pack_damage_is_confined_and_named() {
-    let scratch = Scratch::new("locality-attribution");
-    let mut vault = create(&scratch.vault_dir(), SMALL_CAP);
+fn t1_27_a_corrupted_entry_file_fails_only_that_entry() {
+    let scratch = Scratch::new("confinement");
+    let dir = scratch.vault_dir();
+    let mut vault = create(&dir);
 
-    // Several entries spread over at least three packs.
     let mut ids = Vec::new();
     let mut contents = Vec::new();
-    for i in 0..6u8 {
+    for i in 0..4u8 {
         let content = pattern(1500 + usize::from(i) * 200);
         let id = vault
             .add(
@@ -188,69 +139,35 @@ fn t1_28_pack_damage_is_confined_and_named() {
         contents.push(content);
     }
 
-    let packs = existing_pack_ids(&scratch.vault_dir()).unwrap();
-    assert!(
-        packs.len() >= 3,
-        "the fixture produced only {} packs",
-        packs.len()
-    );
-
-    // Damage the middle pack.
-    let victim = packs[packs.len() / 2];
-    let path = pack_path(&scratch.vault_dir(), victim);
+    let victim = ids[1];
+    let path = veil_core::store::entry_path(&dir, victim);
     let mut bytes = std::fs::read(&path).unwrap();
     for byte in &mut bytes {
         *byte ^= 0xFF;
     }
     std::fs::write(&path, &bytes).unwrap();
 
-    // Attribution, computed from the extents alone.
-    let named = entries_in_pack(vault.entries(), victim);
-    assert!(
-        !named.is_empty(),
-        "no entry was attributed to the damaged pack"
-    );
-
-    // And observed behaviour matches the attribution exactly — not a superset,
-    // not the first casualty, not "the vault".
-    let mut observed_failures = Vec::new();
     for (id, content) in ids.iter().zip(&contents) {
         match read_back(&vault, *id) {
-            Ok(out) => assert_eq!(&out, content, "{id} read back wrong bytes"),
-            Err(Error::Corrupt { affected, .. }) => {
-                assert_eq!(affected, vec![*id], "the failure named the wrong entry");
-                observed_failures.push(*id);
+            Ok(out) if *id != victim => assert_eq!(&out, content, "{id} read back wrong bytes"),
+            Ok(_) => panic!("the damaged entry read back successfully"),
+            Err(Error::Corrupt { affected, .. }) if *id == victim => {
+                assert_eq!(affected, vec![victim], "the failure named the wrong entry");
             }
             Err(other) => panic!("{id} failed with {other:?} rather than damage"),
         }
     }
-
-    observed_failures.sort();
-    let mut expected = named;
-    expected.sort();
-    assert_eq!(
-        observed_failures, expected,
-        "the entries that failed are not the entries the extents name"
-    );
-
-    // Every other entry survives: one bad pack is not total loss.
-    assert!(
-        observed_failures.len() < ids.len(),
-        "damaging one pack cost every entry"
-    );
 }
 
-/// T1.29 — adding one entry dirties one pack and the index (S-3, Spec §4.5).
+/// T1.28 — adding one entry writes exactly one new file (S-3, Spec §4.5).
 ///
-/// S-3's acceptance standard is that adding a small file to a large vault
-/// causes a sync client to transfer megabytes rather than the vault. This is
-/// that standard observed at the filesystem rather than inferred from the
-/// format's design.
+/// No other entry's file is touched, and the change to the vault is bounded
+/// by the size of what was added, not the size of what was already there.
 #[test]
-fn t1_29_adding_an_entry_dirties_one_pack() {
+fn t1_28_adding_one_entry_writes_exactly_one_file() {
     let scratch = Scratch::new("change-locality");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     for i in 0..5u8 {
         let content = pattern(3000 + usize::from(i));
@@ -284,12 +201,13 @@ fn t1_29_adding_an_entry_dirties_one_pack() {
         .map(|(name, _)| name.clone())
         .collect();
 
-    let packs_changed: Vec<&String> = changed.iter().filter(|n| n.ends_with(".pack")).collect();
+    let entry_files_changed: Vec<&String> =
+        changed.iter().filter(|n| n.ends_with(".entry")).collect();
     assert_eq!(
-        packs_changed.len(),
+        entry_files_changed.len(),
         1,
-        "adding one small file changed {} packs: {changed:?}",
-        packs_changed.len()
+        "adding one small file changed {} entry files: {changed:?}",
+        entry_files_changed.len()
     );
     assert!(
         changed.iter().any(|n| n.starts_with("index.")),
@@ -327,20 +245,20 @@ fn snapshot(dir: &Path) -> Vec<(String, [u8; 32])> {
     out
 }
 
-/// T1.30 — the vertical slice round-trips across a close and reopen
-/// (HC-3, Spec §4.1–§4.5).
+/// T1.29 — the vertical slice round-trips across a close and reopen (HC-3,
+/// Spec §4.1–§4.5).
 ///
-/// The first point at which header, key hierarchy, index persistence, packs,
-/// and content encryption are proven to compose rather than to work
-/// individually.
+/// The first point at which header, key hierarchy, index persistence,
+/// entry-file storage, and content encryption are proven to compose rather
+/// than to work individually.
 #[test]
-fn t1_30_vertical_slice_round_trips_across_reopen() {
+fn t1_29_vertical_slice_round_trips_across_reopen() {
     let scratch = Scratch::new("slice");
     let dir = scratch.vault_dir();
 
     let content = pattern(9000);
     let id = {
-        let mut vault = create(&dir, SMALL_CAP);
+        let mut vault = create(&dir);
         let id = vault
             .add(
                 MARKER_NAME,
@@ -364,10 +282,10 @@ fn t1_30_vertical_slice_round_trips_across_reopen() {
     assert_eq!(entry.unknown, BTreeMap::new());
     assert_eq!(read_back(&vault, id).unwrap(), content);
 
-    // Closed before the next open. Since Phase 2 the vault holds an advisory
-    // lock for its lifetime (FR-26), so a second open of a vault still held
-    // here would report `VaultInUse` and this case would stop testing what it
-    // is named for.
+    // Closed before the next open: the vault holds an advisory lock for its
+    // lifetime (FR-23), so a second open of a vault still held here would
+    // report `VaultInUse` and this case would stop testing what it is named
+    // for.
     drop(vault);
 
     // A wrong password on a real vault is still a wrong password.
@@ -378,7 +296,7 @@ fn t1_30_vertical_slice_round_trips_across_reopen() {
     ));
 }
 
-/// T1.31 — nothing is written outside the vault directory (HC-2).
+/// T1.30 — nothing is written outside the vault directory (HC-2).
 ///
 /// **Regression test.** The original Veil's extraction wrote into the current
 /// working directory, which is how a truncated decryption came to overwrite
@@ -386,7 +304,7 @@ fn t1_30_vertical_slice_round_trips_across_reopen() {
 /// anywhere the user has not designated, and the cost of asserting it is one
 /// directory comparison.
 #[test]
-fn t1_31_nothing_is_written_outside_the_vault_directory() {
+fn t1_30_nothing_is_written_outside_the_vault_directory() {
     let scratch = Scratch::new("containment");
     let dir = scratch.vault_dir();
 
@@ -395,7 +313,7 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
     let before = snapshot(&scratch.0);
 
     let content = pattern(9000);
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = vault
         .add(
             MARKER_NAME,
@@ -421,7 +339,7 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
             name != "veil.header"
                 && name != "veil.lock"
                 && !name.starts_with("index.")
-                && !name.ends_with(".pack")
+                && !name.ends_with(".entry")
         })
         .collect();
 
@@ -431,7 +349,7 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
     );
 }
 
-/// T1.32 — a closed vault discloses nothing (HC-1).
+/// T1.31 — a closed vault discloses nothing (HC-1).
 ///
 /// **Regression test for the original's defining flaw**, at the level of the
 /// whole vault rather than the index alone: `strings` over the original's
@@ -441,12 +359,12 @@ fn t1_31_nothing_is_written_outside_the_vault_directory() {
 /// the fact that this is a Veil vault remain observable. This asserts the
 /// prohibition, not the accepted disclosures.
 #[test]
-fn t1_32_a_closed_vault_discloses_nothing() {
+fn t1_31_a_closed_vault_discloses_nothing() {
     let scratch = Scratch::new("disclosure");
     let dir = scratch.vault_dir();
 
     {
-        let mut vault = create(&dir, SMALL_CAP);
+        let mut vault = create(&dir);
         let mut content = MARKER_CONTENT.as_bytes().to_vec();
         content.extend_from_slice(&pattern(4000));
         vault
@@ -509,15 +427,16 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// T1.28 — asking for an entry that does not exist is not damage.
+/// Asking for an entry that does not exist is not damage.
 ///
-/// This case asserted the opposite until Phase 3: the vault reported an unknown
-/// identifier as damaged content, which is FR-2's conflation one level down —
-/// a mistyped name and a corrupted vault send a user to different remedies.
+/// This is FR-2's conflation one level down: a mistyped name and a corrupted
+/// vault send a user to different remedies. Not tied to the storage-layer
+/// rewrite this file otherwise covers; kept here because it exercises the
+/// same lifecycle as the cases above.
 #[test]
-fn t1_28_an_unknown_entry_is_not_reported_as_damage() {
+fn unknown_entry_is_not_reported_as_damage() {
     let scratch = Scratch::new("unknown-entry");
-    let vault = create(&scratch.vault_dir(), SMALL_CAP);
+    let vault = create(&scratch.vault_dir());
 
     match read_back(&vault, EntryId::new(999)) {
         Err(Error::NotFound) => {}

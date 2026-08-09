@@ -32,21 +32,6 @@ impl core::fmt::Display for EntryId {
     }
 }
 
-/// Where one run of an entry's content lives (Spec §4.5).
-///
-/// An entry larger than the pack cap spans packs through its extent list.
-/// Because extents map packs to entries, the entries affected by a damaged
-/// pack are enumerable, which is the attribution S-4 requires.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Extent {
-    /// Which pack holds it.
-    pub pack_id: u32,
-    /// Byte offset within that pack.
-    pub offset: u64,
-    /// Length in bytes, as stored.
-    pub length: u64,
-}
-
 /// One stored file.
 ///
 /// **No absolute source path is recorded, in any field.** The original Veil
@@ -54,12 +39,13 @@ pub struct Extent {
 /// needed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entry {
-    /// Identity within this vault.
+    /// Identity within this vault. Also names this entry's file:
+    /// `entries/{id}.entry` (§4.1).
     pub id: EntryId,
     /// File name, NFC, UTF-8 (§4.6).
     pub name: String,
     /// Path relative to the added root — descriptive metadata, not structure
-    /// (FR-7). Together with `name` this is the entry's identity for the
+    /// (FR-8). Together with `name` this is the entry's identity for the
     /// purposes of replacement (FR-13).
     pub folder: String,
     /// Plaintext length in bytes.
@@ -68,7 +54,7 @@ pub struct Entry {
     pub source_mtime: u64,
     /// When it was added to the vault.
     pub added_at: u64,
-    /// BLAKE3 of the plaintext (FR-17).
+    /// BLAKE3 of the plaintext (FR-18).
     #[serde(with = "super::byte_array")]
     pub content_hash: [u8; HASH_LEN],
     /// This entry's data key, wrapped under the entry-wrap subkey.
@@ -77,12 +63,10 @@ pub struct Entry {
     /// This entry's STREAM nonce prefix.
     #[serde(with = "super::byte_array")]
     pub nonce_prefix: [u8; NONCE_PREFIX_LEN],
-    /// Where the content lives.
-    pub extents: Vec<Extent>,
 
     /// Fields written by a version this build does not know.
     ///
-    /// **Preserved across a read and write cycle** (FR-30). This is the
+    /// **Preserved across a read and write cycle** (FR-6). This is the
     /// reader's half of the migration door that Requirements §2.2 defers and
     /// HC-5 holds open: a reader that drops what it does not understand turns
     /// a future migration from a translation into a reconstruction.
