@@ -80,12 +80,12 @@ Store one entry for each of `CON`, `PRN`, `AUX`, `NUL`, `COM1`, `COM9`, `LPT1`, 
 
 **Verdict:** every name in the first group is refused with a reason matching what makes it illegal; every name in the second group extracts normally. `CONSOLE.txt` and `CON-fig.txt` exist specifically to catch a check implemented as "starts with a reserved prefix" rather than "matches a reserved name exactly" — Windows reserves `CON`, not everything that begins with those three letters.
 
-### T5.7 — A case collision is refused only where it matters
+### T5.7 — A case collision is refused
 *Covers P5.2.b, P5.2.e, P5.2.f · Verifies FR-31, HC-8*
 
-Store `Photo.jpg` and `photo.jpg` as two entries in the same folder. Extract each into a fresh destination folder.
+Store `Photo.jpg` and `photo.jpg` as two entries in the same folder. Check representability for each.
 
-**Verdict:** the check that runs for a case-insensitive destination (P5.2.f) refuses whichever of the two would extract second, naming the collision; a check running for a case-sensitive destination allows both. The two entries are both legitimate, distinct contents of the vault — this is the case Spec §4.6 exists to prevent producing an ambiguous or overwritten result from, not a case the vault should have refused to store in the first place.
+**Verdict:** both are refused, naming the collision — unconditionally, per P5.2.f's revision, rather than only when today's destination happens to be case-insensitive. The two entries are both legitimate, distinct contents of the vault; refusing both regardless of the destination is deliberately more conservative than the destination strictly requires, and is the price P5.2.f's rationale pays for the check's own answer not depending on which volume it is asked about.
 
 ### T5.8 — The collision check looks at the vault, not at what is already on disk
 *Covers P5.2.e · Verifies Spec §4.6, HC-8*
@@ -126,12 +126,12 @@ Extract every entry in the fixture and compare each against the manifest's recor
 
 **Verdict:** byte-for-byte match for all of them, and the NFC/NFD pair resolves to exactly one entry in the fixture's list, not two (P5.3.c) — proof, not argument, that Spec §4.6's normalisation claim holds for the exact pair the specification's own rationale names.
 
-### T5.13 — The manifest states which reserved names refuse here
+### T5.13 — The manifest states which reserved names refuse, and why
 *Covers P5.3.d · Verifies FR-31, Spec §4.6*
 
-Extract each of the fixture's reserved-name entries into a destination folder and compare the outcome against the manifest's per-entry expectation.
+Check representability for each of the fixture's reserved-name entries and compare the outcome against the manifest's per-entry expectation.
 
-**Verdict:** each matches its recorded expectation — refused with the reason the manifest states, on this platform, with the case-sensitive destination this development machine's filesystem provides. The manifest also records what each entry's outcome would be on a case-insensitive or Windows destination, unverified here and unverifiable without one; P8.2 is where that half is checked.
+**Verdict:** each matches its recorded expectation — refused with the reason the manifest states. P5.2.f's union means every one of them refuses on every platform, so unlike the fixture's script coverage (T5.11, T5.12), this half of the manifest needs no second run on a different platform to mean anything: P8.2 re-running it is confirmation that the check ported unchanged, not a search for a platform-specific difference.
 
 ---
 
