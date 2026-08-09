@@ -1,4 +1,4 @@
-//! Phase 3 test cases T3.29 and T3.30 — the two audits over everything the
+//! Phase 3 test cases T3.31 and T3.32 — the two audits over everything the
 //! command line says (Design §7; HC-1, HC-2, Spec §6).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -7,7 +7,7 @@ mod harness;
 
 use harness::{Scratch, run};
 
-const COMMANDS: [&str; 10] = [
+const COMMANDS: [&str; 9] = [
     "create",
     "add",
     "list",
@@ -17,9 +17,6 @@ const COMMANDS: [&str; 10] = [
     "check",
     "info",
     "password",
-    // Arrived in Phase 4 (P4.3). Design §7 calls it reclaiming space and never
-    // compaction, and this audit is what holds that at the process boundary.
-    "reclaim-space",
 ];
 
 /// Everything the command line says: every help text, and both streams of a
@@ -44,7 +41,7 @@ fn everything_it_says(scratch: &Scratch) -> String {
             "--folder".into(),
             "docs".into(),
         ],
-        // Refused: the path is already held (FR-34).
+        // Refused: the path is already held (FR-14).
         vec![
             "add".into(),
             vault.clone(),
@@ -63,7 +60,7 @@ fn everything_it_says(scratch: &Scratch) -> String {
             "--to".into(),
             destination.display().to_string(),
         ],
-        // Refused: the destination exists (FR-18).
+        // Refused: the destination exists (FR-19).
         vec![
             "save-copy".into(),
             vault.clone(),
@@ -74,7 +71,6 @@ fn everything_it_says(scratch: &Scratch) -> String {
         // Refused: no such file.
         vec!["delete".into(), vault.clone(), "docs/ghost.pdf".into()],
         vec!["delete".into(), vault.clone(), "docs/report.pdf".into()],
-        vec!["reclaim-space".into(), vault.clone()],
     ];
     for args in runs {
         said.push_str(
@@ -93,13 +89,13 @@ fn everything_it_says(scratch: &Scratch) -> String {
     said
 }
 
-/// T3.29 — the fixed vocabulary holds across the whole surface.
+/// T3.31 — the fixed vocabulary holds across the whole surface.
 ///
 /// One word per thing, GUI and command line alike, is a product decision. The
 /// command line is where it erodes first, because the implementation's own
 /// vocabulary is right there in the source.
 #[test]
-fn t3_29_no_forbidden_word_reaches_the_surface() {
+fn t3_31_no_forbidden_word_reaches_the_surface() {
     const FORBIDDEN: [&str; 20] = [
         // The left column of Design §7's table.
         "container",
@@ -158,15 +154,22 @@ fn t3_29_no_forbidden_word_reaches_the_surface() {
     for claim in FORBIDDEN_CLAIMS {
         assert!(!said.contains(claim), "the surface claims \"{claim}\"");
     }
+
+    // No requirement supports reclaiming space under one-file-per-entry
+    // storage; the command must not exist at all, not merely avoid the word.
+    assert!(
+        !said.contains("reclaim-space"),
+        "a reclaim-space command still exists on the surface"
+    );
 }
 
-/// T3.30 — no output discloses what it must not.
+/// T3.32 — no output discloses what it must not.
 ///
 /// Error text is where key material escapes, because the failure paths are the
 /// ones nobody reads. The markers are shaped like the things HC-1 and HC-2
 /// exist to keep out of sight.
 #[test]
-fn t3_30_nothing_leaks_into_any_output() {
+fn t3_32_nothing_leaks_into_any_output() {
     const CONTENT_MARKER: &str = "SALARY-ROW-MARKER-9c1f";
     const PASSWORD_MARKER: &str = "PASSWORD-MARKER-4d2e-long-enough";
 

@@ -1,5 +1,5 @@
-//! Phase 3 test cases T3.1–T3.5 and T3.31 — the command surface
-//! (A-4, FR-2, FR-10, FR-11, FR-13, FR-23, FR-34, HC-2).
+//! Phase 3 test cases T3.1–T3.6 — the command surface
+//! (A-4, FR-2, FR-10, FR-11, FR-13, FR-14, FR-23, HC-2).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -137,14 +137,13 @@ fn t3_2_no_command_takes_a_password_as_an_argument() {
 /// is that prohibition defeated under another name.
 #[test]
 fn t3_3_nothing_can_be_scheduled() {
-    const FORBIDDEN: [&str; 8] = [
+    const FORBIDDEN: [&str; 7] = [
         "--schedule",
         "--daemon",
         "--watch",
         "--interval",
         "--cron",
         "--every",
-        "--if-reclaimable",
         "--threshold",
     ];
 
@@ -159,7 +158,6 @@ fn t3_3_nothing_can_be_scheduled() {
         "check",
         "info",
         "password",
-        "reclaim-space",
     ] {
         help.push_str(&run(&[command, "--help"]).everything());
     }
@@ -167,18 +165,9 @@ fn t3_3_nothing_can_be_scheduled() {
     for flag in FORBIDDEN {
         assert!(!help.contains(flag), "the surface carries {flag}");
     }
-
-    // **Amended in Phase 4.** This used to assert that reclaiming space had not
-    // arrived early. It has now arrived (P4.3), which is what makes the check
-    // above worth running: until this phase there was no operation for those
-    // flags to schedule, so FR-23 was being asserted against nothing.
-    assert!(
-        help.contains("reclaim-space"),
-        "the operation FR-23 is about is missing from the surface"
-    );
 }
 
-/// T3.4 — a path the vault already holds is refused (FR-34).
+/// T3.4 — a path the vault already holds is refused (FR-14).
 #[test]
 fn t3_4_a_path_already_held_is_refused() {
     let scratch = Scratch::new("already-held");
@@ -245,12 +234,12 @@ fn t3_5_a_path_matching_nothing_is_not_damage() {
     }
 }
 
-/// T3.31 — a folder add reports what it skipped.
+/// T3.6 — a folder add reports what it skipped.
 ///
 /// A link silently omitted is a file the user believes is in the vault.
 #[test]
 #[cfg(unix)]
-fn t3_31_a_folder_add_names_what_it_skipped() {
+fn t3_6_a_folder_add_names_what_it_skipped() {
     let scratch = Scratch::new("folder-skips");
     let vault = scratch.vault_arg();
     assert_eq!(scratch.veil(&["create", &vault]).code, 0);

@@ -1,5 +1,5 @@
 //! The commands whose result is a listing rather than a change: what a vault
-//! holds, what it takes up, and whether it is intact (FR-6, FR-7, FR-8, FR-33).
+//! holds, what it takes up, and whether it is intact (FR-7, FR-8, FR-26).
 
 use std::path::PathBuf;
 
@@ -33,7 +33,7 @@ impl From<&Skipped> for SkippedRow {
     }
 }
 
-/// Lists the files a vault holds, filtered and optionally grouped (FR-6, FR-7).
+/// Lists the files a vault holds, filtered and optionally grouped (FR-7, FR-8).
 pub fn list(
     vault: &Vault,
     folder: Option<&str>,
@@ -57,59 +57,32 @@ pub fn list(
     }
 }
 
-/// Reports what a vault holds and what it occupies (FR-8, FR-22).
+/// Reports what a vault holds and what it stores (FR-7).
 ///
-/// This is the one command that measures the packs rather than reading the
-/// figures the index maintains, and it does so because it is the command whose
-/// entire purpose is those figures. Opening a vault does not walk the packs
-/// (S-2), so the index's totals count what committed operations put on disk and
-/// miss what an interrupted one left behind. The difference is space the user
-/// can reclaim, and this is where they came to find out about it.
-///
-/// It is reported as one number. Design §3.2 forbids splitting deleted files'
-/// bytes from an interrupted operation's: both are space the vault is holding
-/// and not using, both come back from the same command, and naming the second
-/// makes it sound like damage.
+/// Derived from the resident entry list, the same way `statistics()` always
+/// is — there is no separate figure this command walks the vault to measure.
 pub fn info(vault: &Vault, format: Format) -> Run<()> {
-    let stats = vault.recount_statistics().unwrap_or_else(|_| {
-        // A pack that cannot be measured is damage, and `check` is where damage
-        // is diagnosed. Reporting the index's own figures is the honest
-        // fallback: they are what the vault believes, and the vault opening at
-        // all means they are readable.
-        vault.statistics()
-    });
-    let share = if stats.physical_bytes == 0 {
-        0.0
-    } else {
-        stats.reclaimable_bytes as f64 / stats.physical_bytes as f64 * 100.0
-    };
+    let stats = vault.statistics();
 
     match format {
         Format::Json => output::json(&serde_json::json!({
             "files": stats.entry_count,
             "logical_bytes": stats.logical_bytes,
-            "physical_bytes": stats.physical_bytes,
-            "reclaimable_bytes": stats.reclaimable_bytes,
-            "reclaimable_share": share,
         })),
         Format::Table => output::say(
             format,
             &format!(
-                "Files         {:>12}\n\
-                 Stored        {:>12}\n\
-                 On disk       {:>12}\n\
-                 Reclaimable   {:>12}  ({share:.1}%)",
+                "Files    {:>12}\n\
+                 Stored   {:>12}",
                 output::count(stats.entry_count),
                 output::human_size(stats.logical_bytes),
-                output::human_size(stats.physical_bytes),
-                output::human_size(stats.reclaimable_bytes),
             ),
         ),
     }
 }
 
 /// Reads and authenticates everything, and reports every file that fails
-/// (FR-33, S-4).
+/// (FR-26, S-3).
 ///
 /// Exits non-zero when anything failed, so a backup script can use it as a
 /// check without parsing what it printed (Spec §5.2).
@@ -170,7 +143,7 @@ pub fn check(vault: &Vault, format: Format) -> Run<()> {
                 string(failure, "damage")
             ));
         }
-        // S-4: the next thing this person does is decide whether to go looking
+        // S-3: the next thing this person does is decide whether to go looking
         // for a backup, and that decision needs the plain fact.
         text.push_str("\nVeil2 cannot repair these. Restore them from a backup if you have one.");
         output::say(format, &text)?;
@@ -186,7 +159,7 @@ pub fn check(vault: &Vault, format: Format) -> Run<()> {
     }
 }
 
-/// Reports what an add stored and what it declined (FR-9, FR-10, FR-11, FR-29).
+/// Reports what an add stored and what it declined (FR-9, FR-10, FR-11, FR-27).
 pub fn added(
     rows: &[FileRow],
     skipped: &[SkippedRow],
@@ -214,7 +187,7 @@ pub fn added(
         output::say(format, &text)?;
     }
 
-    // FR-29, at the moment it happens: an unprotected copy the user has
+    // FR-27, at the moment it happens: an unprotected copy the user has
     // forgotten about is the likeliest route by which data leaves Veil2.
     let where_from = sources
         .iter()

@@ -1,4 +1,4 @@
-//! Phase 3 test cases T3.10–T3.15 and T3.33 — where the password comes from
+//! Phase 3 test cases T3.13–T3.19 — where the password comes from
 //! (HC-2, HC-7, FR-1, FR-2, C-4, Spec §5.2).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -9,10 +9,10 @@ use std::time::Instant;
 
 use harness::{PASSWORD, Scratch, run, run_with_env};
 
-/// T3.10 — a password file works, and no prompt is attempted without a
+/// T3.13 — a password file works, and no prompt is attempted without a
 /// terminal.
 #[test]
-fn t3_10_a_password_file_opens_the_vault() {
+fn t3_13_a_password_file_opens_the_vault() {
     let scratch = Scratch::new("password-file");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -22,10 +22,10 @@ fn t3_10_a_password_file_opens_the_vault() {
     assert!(listed.out.contains("a.txt"));
 }
 
-/// T3.11 — the environment variable works, and the file wins when both are
+/// T3.14 — the environment variable works, and the file wins when both are
 /// present.
 #[test]
-fn t3_11_the_environment_variable_works() {
+fn t3_14_the_environment_variable_works() {
     let scratch = Scratch::new("password-env");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -51,13 +51,13 @@ fn t3_11_the_environment_variable_works() {
     );
 }
 
-/// T3.12 — a non-interactive invocation with no password fails fast.
+/// T3.15 — a non-interactive invocation with no password fails fast.
 ///
 /// The timeout is the assertion. Blocking on a prompt nobody can answer is the
 /// failure this case exists to catch, and it is the one that costs a scripted
 /// run at three in the morning.
 #[test]
-fn t3_12_no_password_and_no_terminal_fails_immediately() {
+fn t3_15_no_password_and_no_terminal_fails_immediately() {
     let scratch = Scratch::new("no-password");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -78,12 +78,12 @@ fn t3_12_no_password_and_no_terminal_fails_immediately() {
     );
 }
 
-/// T3.13 — the password never appears in the process.
+/// T3.16 — the password never appears in the process.
 ///
 /// What makes T3.2 more than an argument-parser check: the password is in a
 /// file, and the command line of the running process does not contain it.
 #[test]
-fn t3_13_the_password_is_not_in_the_command_line() {
+fn t3_16_the_password_is_not_in_the_command_line() {
     let scratch = Scratch::new("argv");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -106,13 +106,13 @@ fn t3_13_the_password_is_not_in_the_command_line() {
     );
 }
 
-/// T3.14 — a wrong password is distinguishable from a damaged vault.
+/// T3.17 — a wrong password is distinguishable from a damaged vault.
 ///
 /// The original Veil's defining failure, and the reason FR-2 is worded as it
 /// is. A script that cannot tell them apart sends its user to the wrong
 /// remedy, and so does a person.
 #[test]
-fn t3_14_a_wrong_password_is_not_a_damaged_vault() {
+fn t3_17_a_wrong_password_is_not_a_damaged_vault() {
     let scratch = Scratch::new("wrong-password");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -147,13 +147,13 @@ fn t3_14_a_wrong_password_is_not_a_damaged_vault() {
     );
 }
 
-/// T3.15 — a password file is trimmed exactly once.
+/// T3.18 — a password file is trimmed exactly once.
 ///
 /// Trimming all trailing whitespace would silently change a password that
 /// legitimately ends in a space, and a password its owner cannot reproduce is
 /// HC-7 arriving by accident.
 #[test]
-fn t3_15_a_password_file_loses_one_newline_and_nothing_else() {
+fn t3_18_a_password_file_loses_one_newline_and_nothing_else() {
     let scratch = Scratch::new("trailing-newline");
     let vault = scratch.vault_arg();
 
@@ -194,10 +194,10 @@ fn t3_15_a_password_file_loses_one_newline_and_nothing_else() {
     );
 }
 
-/// T3.33 — creation states unrecoverability before it creates, and refuses a
+/// T3.19 — creation states unrecoverability before it creates, and refuses a
 /// password below C-4's minimum.
 #[test]
-fn t3_33_creation_says_what_it_costs_to_forget() {
+fn t3_19_creation_says_what_it_costs_to_forget() {
     let scratch = Scratch::new("creation");
     let vault = scratch.vault_arg();
 

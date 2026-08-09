@@ -94,9 +94,9 @@ impl Scratch {
         run(&all.iter().map(String::as_str).collect::<Vec<_>>())
     }
 
-    /// Every pack file in the vault, in order.
-    pub fn packs(&self) -> Vec<PathBuf> {
-        let mut paths: Vec<PathBuf> = std::fs::read_dir(self.vault().join("packs"))
+    /// Every entry file in the vault, in order.
+    pub fn entry_files(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(self.vault().join("entries"))
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
@@ -104,14 +104,14 @@ impl Scratch {
         paths
     }
 
-    /// Flips every byte of one pack, which is total damage to everything
-    /// stored in it.
-    pub fn ruin(&self, pack: &Path) {
-        let mut bytes = std::fs::read(pack).unwrap();
+    /// Flips every byte of one entry's file, which is total damage to it —
+    /// and to nothing else, under one-file-per-entry storage.
+    pub fn ruin(&self, entry_file: &Path) {
+        let mut bytes = std::fs::read(entry_file).unwrap();
         for byte in &mut bytes {
             *byte ^= 0xFF;
         }
-        std::fs::write(pack, bytes).unwrap();
+        std::fs::write(entry_file, bytes).unwrap();
     }
 }
 

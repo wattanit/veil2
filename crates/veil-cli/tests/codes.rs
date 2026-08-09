@@ -1,6 +1,6 @@
-//! Phase 3 test cases T3.19–T3.28 — one exit code per condition, and the
-//! refusals that carry them (Spec §5.2, §6; FR-2, FR-15, FR-17, FR-18, FR-21,
-//! FR-26, FR-29, FR-33, S-4).
+//! Phase 3 test cases T3.7 and T3.23–T3.30 — one exit code per condition, and
+//! the refusals that carry them (Spec §5.2, §6; FR-2, FR-16, FR-18, FR-19,
+//! FR-22, FR-23, FR-26, FR-27, S-3).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -8,18 +8,18 @@ mod harness;
 
 use harness::{PASSWORD, Scratch, run};
 
-/// T3.19 — every condition this phase can provoke has its own code, and the
+/// T3.23 — every condition this phase can provoke has its own code, and the
 /// codes are documented where a script author will find them.
 ///
 /// The conditions **not** provoked here are named rather than quietly omitted.
 /// Changed-on-disk (7) cannot be reached from a command line whose every
 /// invocation opens and commits within one process. Storage-unavailable (11)
-/// needs a disk to be pulled out mid-write. Cancelled (10) is T3.18's. The
+/// needs a disk to be pulled out mid-write. Cancelled (10) is T3.22's. The
 /// mapping for all three is checked by the compiler instead: the match in
 /// `Failure::code` is exhaustive over an error type that is deliberately not
 /// `#[non_exhaustive]`, so a variant without a code does not build.
 #[test]
-fn t3_19_each_condition_has_its_own_code() {
+fn t3_23_each_condition_has_its_own_code() {
     let scratch = Scratch::new("codes");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -74,12 +74,12 @@ fn t3_19_each_condition_has_its_own_code() {
     }
 }
 
-/// T3.20 — damage is found, named in full, and exits non-zero.
+/// T3.7 — damage is found, named in full, and exits non-zero.
 ///
-/// Not stopping at the first casualty is half of S-4: the user is deciding
+/// Not stopping at the first casualty is half of S-3: the user is deciding
 /// whether to go looking for a backup, and that decision needs the whole cost.
 #[test]
-fn t3_20_damage_is_found_and_every_casualty_named() {
+fn t3_7_damage_is_found_and_every_casualty_named() {
     let scratch = Scratch::new("damage");
     let vault = scratch.vault_arg();
     scratch.with_files(&[
@@ -92,8 +92,8 @@ fn t3_20_damage_is_found_and_every_casualty_named() {
     assert_eq!(clean.code, 0, "{}", clean.everything());
     assert!(clean.out.contains("No damage found"), "{}", clean.out);
 
-    for pack in scratch.packs() {
-        scratch.ruin(&pack);
+    for entry_file in scratch.entry_files() {
+        scratch.ruin(&entry_file);
     }
 
     let damaged = scratch.veil(&["check", &vault]);
@@ -112,9 +112,9 @@ fn t3_20_damage_is_found_and_every_casualty_named() {
     );
 }
 
-/// T3.21 — a vault already open is reported as in use, not as damage.
+/// T3.24 — a vault already open is reported as in use, not as damage.
 #[test]
-fn t3_21_a_vault_in_use_says_so() {
+fn t3_24_a_vault_in_use_says_so() {
     let scratch = Scratch::new("in-use");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content")]);
@@ -137,14 +137,14 @@ fn t3_21_a_vault_in_use_says_so() {
     assert_eq!(scratch.veil(&["list", &vault]).code, 0);
 }
 
-/// T3.23 — a read-only vault reads but does not write.
+/// T3.25 — a read-only vault reads but does not write.
 ///
 /// Nothing is wrong with it, and the message must not suggest a failing disk:
 /// the operation that diagnoses a bad drive has to be the one operation a bad
 /// drive can still run.
 #[test]
 #[cfg(unix)]
-fn t3_23_a_read_only_vault_reads_but_does_not_write() {
+fn t3_25_a_read_only_vault_reads_but_does_not_write() {
     use std::os::unix::fs::PermissionsExt;
 
     let scratch = Scratch::new("read-only");
@@ -170,12 +170,12 @@ fn t3_23_a_read_only_vault_reads_but_does_not_write() {
     std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o644)).unwrap();
 }
 
-/// T3.24 — a destination file is never overwritten unasked (FR-18).
+/// T3.26 — a destination file is never overwritten unasked (FR-19).
 ///
 /// The original Veil overwrote silently, and a failed save destroyed the
 /// user's only good copy.
 #[test]
-fn t3_24_an_existing_destination_is_not_overwritten_unasked() {
+fn t3_26_an_existing_destination_is_not_overwritten_unasked() {
     let scratch = Scratch::new("overwrite");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "the stored content")]);
@@ -212,12 +212,12 @@ fn t3_24_an_existing_destination_is_not_overwritten_unasked() {
     assert_eq!(scratch.read("existing.txt"), "the stored content");
 }
 
-/// T3.25 — a failed save leaves nothing at the destination (FR-17).
+/// T3.27 — a failed save leaves nothing at the destination (FR-18).
 ///
 /// A truncated plaintext on disk is indistinguishable from a short file, and
 /// the user finds out when they need it.
 #[test]
-fn t3_25_a_failed_save_leaves_no_partial_file() {
+fn t3_27_a_failed_save_leaves_no_partial_file() {
     let scratch = Scratch::new("partial");
     let vault = scratch.vault_arg();
     scratch.with_files(&[(
@@ -226,8 +226,8 @@ fn t3_25_a_failed_save_leaves_no_partial_file() {
         &"content that is long enough to matter. ".repeat(64),
     )]);
 
-    for pack in scratch.packs() {
-        scratch.ruin(&pack);
+    for entry_file in scratch.entry_files() {
+        scratch.ruin(&entry_file);
     }
 
     let destination = scratch.path("recovered.txt");
@@ -246,9 +246,9 @@ fn t3_25_a_failed_save_leaves_no_partial_file() {
     );
 }
 
-/// T3.26 — adding says the original is still there (FR-9, FR-29).
+/// T3.28 — adding says the original is still there (FR-9, FR-27).
 #[test]
-fn t3_26_adding_says_the_original_is_kept() {
+fn t3_28_adding_says_the_original_is_kept() {
     let scratch = Scratch::new("original-kept");
     let vault = scratch.vault_arg();
     assert_eq!(scratch.veil(&["create", &vault]).code, 0);
@@ -266,12 +266,13 @@ fn t3_26_adding_says_the_original_is_kept() {
     );
 }
 
-/// T3.27 — deleting says the bytes remain (FR-21, FR-29).
+/// T3.29 — deleting says the bytes are gone (FR-22, FR-27).
 ///
-/// A user who deletes a file and then hands the vault to someone else must
-/// not believe those bytes are gone.
+/// Deletion is immediate under one-file-per-entry storage: there is no
+/// reclaim step for the message to defer to, and no claim that the bytes
+/// persist anywhere for the CLI to make.
 #[test]
-fn t3_27_deleting_says_the_bytes_remain() {
+fn t3_29_deleting_says_the_bytes_are_gone() {
     let scratch = Scratch::new("delete-clause");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "content"), ("docs", "b.txt", "more")]);
@@ -279,18 +280,19 @@ fn t3_27_deleting_says_the_bytes_remain() {
     let deleted = scratch.veil(&["delete", &vault, "docs/a.txt"]);
     assert_eq!(deleted.code, 0, "{}", deleted.err);
     assert!(
-        deleted.out.contains("stay in the vault"),
-        "the persistence of deleted bytes was not stated: {}",
+        !deleted.out.to_lowercase().contains("stay")
+            && !deleted.out.to_lowercase().contains("reclaim"),
+        "deleting claimed the bytes persist somewhere: {}",
         deleted.out
     );
     assert!(!scratch.veil(&["list", &vault]).out.contains("a.txt"));
 }
 
-/// T3.28 — a limit names both numbers (FR-15).
+/// T3.30 — a limit names both numbers (FR-16).
 ///
 /// "Too large" without the two numbers leaves the user to guess what would fit.
 #[test]
-fn t3_28_a_limit_names_both_numbers() {
+fn t3_30_a_limit_names_both_numbers() {
     // The per-file limit is 64 GiB, which no test writes. The refusal is
     // provoked through the library, whose message the command line prints
     // verbatim — printing it is the part this phase owns.

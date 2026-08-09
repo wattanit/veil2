@@ -1,5 +1,5 @@
-//! Phase 3 test cases T3.6–T3.9 and T3.32 — what the commands write
-//! (Design §3.4, §7; FR-6, FR-7, FR-8, FR-22, HC-8).
+//! Phase 3 test cases T3.8–T3.12 — what the commands write
+//! (Design §3.4, §7; FR-7, FR-8).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,9 +7,9 @@ mod harness;
 
 use harness::Scratch;
 
-/// T3.6 — the table is in the fixed column order, and the filters filter.
+/// T3.8 — the table is in the fixed column order, and the filters filter.
 #[test]
-fn t3_6_the_table_is_in_the_fixed_column_order() {
+fn t3_8_the_table_is_in_the_fixed_column_order() {
     let scratch = Scratch::new("columns");
     let vault = scratch.vault_arg();
     scratch.with_files(&[
@@ -52,13 +52,13 @@ fn t3_6_the_table_is_in_the_fixed_column_order() {
     assert!(grouped.out.contains("photos"), "{}", grouped.out);
 }
 
-/// T3.7 — stored names are printed exactly, in every script.
+/// T3.9 — stored names are printed exactly, in every script.
 ///
 /// Column alignment for double-width scripts is deliberately not asserted:
-/// a test that demanded it would push the implementation toward padding names,
-/// and HC-8 makes the stored name authoritative.
+/// a test that demanded it would push the implementation toward padding
+/// names, which is not something this product does to a stored name.
 #[test]
-fn t3_7_names_come_back_exactly_as_stored() {
+fn t3_9_names_come_back_exactly_as_stored() {
     const NAMES: [&str; 5] = [
         "report.pdf",
         "รายงานประจำปี.pdf",
@@ -98,9 +98,9 @@ fn t3_7_names_come_back_exactly_as_stored() {
     assert_eq!(run.code, 0, "{}", run.everything());
 }
 
-/// T3.8 — machine output carries the same facts, in machine form.
+/// T3.10 — machine output carries the same facts, in machine form.
 #[test]
-fn t3_8_machine_output_carries_the_same_facts() {
+fn t3_10_machine_output_carries_the_same_facts() {
     let scratch = Scratch::new("json");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "report.pdf", "0123456789")]);
@@ -119,7 +119,6 @@ fn t3_8_machine_output_carries_the_same_facts() {
     let stats: serde_json::Value = serde_json::from_str(&info.out).unwrap();
     assert_eq!(stats["files"], 1);
     assert_eq!(stats["logical_bytes"], 10);
-    assert!(stats["physical_bytes"].as_u64().unwrap() >= 10);
 
     // A failure in machine mode is reported in machine mode. A script that
     // meets prose only when something goes wrong has no error handling.
@@ -130,9 +129,9 @@ fn t3_8_machine_output_carries_the_same_facts() {
     assert!(reported["error"].as_str().unwrap().contains("ghost.pdf"));
 }
 
-/// T3.9 — the streams stay separated.
+/// T3.11 — the streams stay separated.
 #[test]
-fn t3_9_standard_output_carries_results_alone() {
+fn t3_11_standard_output_carries_results_alone() {
     let scratch = Scratch::new("streams");
     let vault = scratch.vault_arg();
     scratch.with_files(&[("docs", "a.txt", "one"), ("docs", "b.txt", "two")]);
@@ -156,9 +155,9 @@ fn t3_9_standard_output_carries_results_alone() {
     assert!(table.out.contains("Name"), "{}", table.out);
 }
 
-/// T3.32 — the reported statistics are the vault's own.
+/// T3.12 — the reported statistics are the vault's (FR-7).
 #[test]
-fn t3_32_the_statistics_are_the_vaults() {
+fn t3_12_the_statistics_are_the_vaults() {
     let scratch = Scratch::new("statistics");
     let vault = scratch.vault_arg();
     scratch.with_files(&[
@@ -169,23 +168,21 @@ fn t3_32_the_statistics_are_the_vaults() {
     let before: serde_json::Value =
         serde_json::from_str(&scratch.veil(&["info", &vault, "--format", "json"]).out).unwrap();
     assert_eq!(before["files"], 2);
-    assert_eq!(before["reclaimable_bytes"], 0);
 
     assert_eq!(scratch.veil(&["delete", &vault, "docs/b.txt"]).code, 0);
 
     let after: serde_json::Value =
         serde_json::from_str(&scratch.veil(&["info", &vault, "--format", "json"]).out).unwrap();
     assert_eq!(after["files"], 1);
-    assert!(
-        after["reclaimable_bytes"].as_u64().unwrap() > 0,
-        "the deleted file's bytes were reported as gone rather than reclaimable"
-    );
     assert_eq!(
         after["logical_bytes"].as_u64().unwrap(),
         "one hundred bytes or so of content here".len() as u64
     );
+    // No reclaimable figure is printed — there is nothing left to reclaim
+    // once delete has already freed the file.
+    assert!(after.get("reclaimable_bytes").is_none());
 
-    // And the same figures the library reports for the same vault (FR-22).
+    // And the same figures the library reports for the same vault (FR-7).
     let opened = veil_core::vault::Vault::open(
         &scratch.vault(),
         &veil_core::crypto::Password::new(harness::PASSWORD.to_owned()),
@@ -196,9 +193,5 @@ fn t3_32_the_statistics_are_the_vaults() {
     assert_eq!(
         after["logical_bytes"].as_u64().unwrap(),
         stats.logical_bytes
-    );
-    assert_eq!(
-        after["physical_bytes"].as_u64().unwrap(),
-        stats.physical_bytes
     );
 }

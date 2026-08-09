@@ -2,8 +2,8 @@
 //!
 //! Every user-facing word here comes from the Design Guideline's vocabulary
 //! table: *file*, *folder*, *add*, *save a copy*, *lock*, *check for damage*.
-//! The words this repository uses internally — entry, ingest, extract, verify,
-//! compaction — stop at the process boundary.
+//! The words this repository uses internally — entry, ingest, extract, verify —
+//! stop at the process boundary.
 
 use std::path::PathBuf;
 
@@ -27,7 +27,6 @@ Exit codes:
   11  the vault's storage went away
   12  a password was needed and there was no way to ask for one
   13  no file at that path, or a file is already there
-  14  a file's name in the vault cannot be written here as it is
 
 The password is never taken as an argument: arguments are visible in process
 listings and shell history. Use --password-file, or the VEIL_PASSWORD
@@ -139,16 +138,6 @@ pub enum Command {
 
     /// Show what a vault holds and what it takes up.
     Info {
-        /// The vault.
-        vault: PathBuf,
-    },
-
-    /// Reclaim the space deleted and replaced files still occupy.
-    ///
-    /// Runs only when you ask. There is no flag to schedule it, time it, or
-    /// start it when a vault passes some size — `veil info` shows the figures
-    /// the decision rests on.
-    ReclaimSpace {
         /// The vault.
         vault: PathBuf,
     },

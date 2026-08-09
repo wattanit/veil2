@@ -40,7 +40,7 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P3.1.a | Built, needs rewrite | One command per core capability, spelled in Design §7's vocabulary — `reclaim-space` removed, since delete already frees the file | A-4, Design §7 | T3.1, T3.31 |
+| P3.1.a | Done | One command per core capability, spelled in Design §7's vocabulary — `reclaim-space` removed, since delete already frees the file | A-4, Design §7 | T3.1, T3.31 |
 | P3.1.b | Built, carries forward | Files addressed by their stored path, never by an internal identifier | FR-13, Design §7 | T3.1 |
 | P3.1.c | Built, carries forward | A path matching nothing reported as naming nothing, distinct from damage and from a wrong password | FR-2, HC-3, Spec §6 | T3.5 |
 | P3.1.d | Built, carries forward | `add` refusing a path the vault already holds, naming it and pointing at `replace` | FR-14, Spec §6 | T3.4 |
@@ -74,7 +74,7 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 | P3.2.b | Built, carries forward | Sizes human-readable, counts exact and never rounded | Design §7 | T3.8, T3.12 |
 | P3.2.c | Built, carries forward | Stored names printed exactly as stored, whatever the script | — | T3.9 |
 | P3.2.d | Built, carries forward | Column widths computed on character count; misalignment for double-width scripts stated rather than hidden | Design §7 | T3.9 |
-| P3.2.e | Built, needs rewrite | `info` printing entry count and total size — no reclaimable figure, since there is none | FR-7 | T3.12 |
+| P3.2.e | Done | `info` printing entry count and total size — no reclaimable figure, since there is none | FR-7 | T3.12 |
 
 ---
 
@@ -128,7 +128,7 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P3.6.a | Built, carries forward | One exit code per Spec §6 error class | Spec §5.2, §6, FR-2 | T3.23 |
-| P3.6.b | Built, needs rewrite | The mapping exhaustive over the error enum — code 14 (`NotRepresentable`) retired, nothing takes its place | Spec §6 | T3.23 |
+| P3.6.b | Done | The mapping exhaustive over the error enum — code 14 (`NotRepresentable`) retired, nothing takes its place | Spec §6 | T3.23 |
 | P3.6.c | Built, carries forward | The codes documented in `--help` | Design §3.4 | T3.23 |
 
 ---
@@ -139,10 +139,10 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P3.7.a | Built, remove entirely | `run.rs`'s `reclaim_space()` handler and `cli.rs`'s `Command::ReclaimSpace` | superseded | — |
-| P3.7.b | Built, remove entirely | `check_representable`/`unrepresentable()` call sites in `run.rs` | superseded | — |
-| P3.7.c | Built, remove entirely | `failure.rs`'s `Failure::NotRepresentable` | superseded | — |
-| P3.7.d | Built, remove entirely | `examples/reclaim_subject.rs` | superseded | — |
+| P3.7.a | Done | `run.rs`'s `reclaim_space()` handler and `cli.rs`'s `Command::ReclaimSpace` | superseded | — |
+| P3.7.b | Done | `check_representable`/`unrepresentable()` call sites in `run.rs` | superseded | — |
+| P3.7.c | Done | `failure.rs`'s `Failure::NotRepresentable` | superseded | — |
+| P3.7.d | Done | `examples/reclaim_subject.rs` | superseded | — |
 
 ---
 
@@ -157,7 +157,7 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 | P3.8.c | Built, carries forward | Non-interactive cases run with no terminal attached | Design §3.4 | T3.15, T3.21 |
 | P3.8.d | Built, carries forward | An audit over every command's help text and every message for the Design §7 forbidden words | Design §7 | T3.31 |
 | P3.8.e | Built, carries forward | An audit that no output contains a password, key material, or file content | HC-2, Spec §6 | T3.32 |
-| P3.8.f | Built, remove entirely | `tests/reclaim.rs` and `tests/representability.rs` | superseded | — |
+| P3.8.f | Done | `tests/reclaim.rs` and `tests/representability.rs` | superseded | — |
 
 ---
 
@@ -172,6 +172,12 @@ The user-facing words are fixed by Design §7 and are not negotiable per command
 ## Exit
 
 Every core capability is reachable from the CLI; a scripted invocation with no tty succeeds; exit codes let a script tell a wrong password from a damaged vault without parsing text.
+
+**`cargo check --workspace` is now clean everywhere except Phase 4's file.** `cargo check -p veil-cli --tests --examples` passes outright except `tests/crashes.rs` (Phase 4, untouched by design). All 6 CLI test binaries (`audits`, `codes`, `output`, `passwords`, `streams`, `surface` — 31 cases total) pass under `cargo test --release`. `cargo clippy -D warnings` and `cargo fmt --check` are clean across the crate.
+
+**One test needed a content fix, not just a rewrite.** `codes.rs`'s delete-message test asserted the CLI said deleted bytes *stay in the vault until you reclaim space* — true under the old architecture, false now that delete frees the file immediately. It now asserts the opposite: the message names no persistence claim at all. `streams.rs`'s cancelled-add test asserted zero bytes were left in any pack; rewritten to check only what the vault's own API exposes, since the cancelled write's entry file may exist on disk as harmless residue (Spec §4.5) — the same fix already applied in Phase 2.
+
+**Every `T3.x` case across the CLI test files was renumbered to match the current `Phase3-TestCases.md`**, since the source carried a different, older numbering (e.g. `codes.rs` had T3.19–T3.28 for what are now T3.7 and T3.23–T3.30; `passwords.rs`'s T3.33 is now T3.19). The CLI's `packs()`/`ruin()` test harness helpers became `entry_files()`/`ruin()`, operating on `entries/` instead of a `packs/` directory.
 
 ---
 

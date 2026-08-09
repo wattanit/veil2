@@ -37,8 +37,8 @@ pub fn json(value: &impl serde::Serialize) -> Run<()> {
 /// Widths are counted in characters. For scripts whose characters are drawn
 /// double-width — Han, Hangul, Kana — the column edge will not line up. The
 /// name is still printed exactly as stored, which is the half that matters:
-/// padding a name to straighten a column would alter what the vault reports it
-/// holds, and HC-8 makes the stored name authoritative.
+/// padding a name to straighten a column would alter what the vault reports
+/// it holds.
 pub fn table(rows: &[FileRow]) -> Run<()> {
     let mut out = std::io::stdout().lock();
     if rows.is_empty() {
@@ -134,10 +134,10 @@ pub fn say(format: Format, message: &str) -> Run<()> {
 ///
 /// Standard output carries results, and a script reading it must find valid
 /// output or nothing — never a sentence where a listing was expected. But some
-/// things have to be said whatever the caller asked for: FR-32 requires the
-/// space reconciliation recovered to be reported rather than absorbed, and a
-/// read-only vault to say so. Neither is a result of the command that was
-/// asked for, so neither belongs on standard output.
+/// things have to be said whatever the caller asked for: a read-only vault
+/// saying so at open (FR-23), and a partial loss saying which files (S-3).
+/// Neither is a result of the command that was asked for, so neither belongs
+/// on standard output.
 pub fn note(message: &str) {
     let _ = writeln!(std::io::stderr().lock(), "{message}");
 }

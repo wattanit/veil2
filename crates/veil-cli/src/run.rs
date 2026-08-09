@@ -1,15 +1,14 @@
 //! What each command does (Spec §5.2).
 //!
-//! The honesty clauses FR-29 requires are attached here, at the moments that
+//! The honesty clauses FR-27 requires are attached here, at the moments that
 //! produce them: unrecoverability before a vault exists, the retained original
-//! after adding, the persistence of deleted bytes, the unprotected copy.
+//! after adding, and the unprotected copy at extraction.
 
 use std::path::{Path, PathBuf};
 
 use veil_core::Error;
 use veil_core::crypto::KdfParams;
 use veil_core::index::{Entry, EntryId};
-use veil_core::store::DEFAULT_PACK_CAP;
 use veil_core::vault::{Access, Vault};
 
 use crate::cli::{Cli, Command, Format};
@@ -50,7 +49,6 @@ pub fn dispatch(cli: &Cli) -> Run<()> {
         Command::Delete { vault, file } => delete(vault, file, cli),
         Command::Check { vault } => report::check(&open(vault, cli)?, cli.format),
         Command::Info { vault } => report::info(&open(vault, cli)?, cli.format),
-        Command::ReclaimSpace { vault } => reclaim_space(vault, cli),
         Command::Password {
             vault,
             new_password_file,
@@ -74,15 +72,10 @@ fn open(dir: &Path, cli: &Cli) -> Run<Vault> {
 /// Says what opening the vault found, before the command's own result.
 ///
 /// Both of these are conditions the user has not asked about and needs to know
-/// anyway: FR-26 and FR-32 require a vault that cannot be written to say so
-/// rather than let the first write discover it, and S-4 requires a partial loss
-/// to be presented as a list of files rather than found later. They go to
-/// standard error, because neither is the result of the command that was run.
-///
-/// Space an interrupted operation left behind is deliberately **not** announced
-/// here. Finding it means walking the packs, opening a vault does not, and a
-/// figure nobody asked for is not worth putting vault size into the cost of
-/// every command. `veil info` reports it, and `veil reclaim-space` takes it.
+/// anyway: FR-23 requires a vault that cannot be written to say so rather than
+/// let the first write discover it, and S-3 requires a partial loss to be
+/// presented as a list of files rather than found later. They go to standard
+/// error, because neither is the result of the command that was run.
 fn announce(vault: &Vault) {
     if vault.access() == Access::ReadOnly {
         output::note(
@@ -103,7 +96,7 @@ fn announce(vault: &Vault) {
 }
 
 fn create(dir: &Path, cli: &Cli) -> Run<()> {
-    // Before the vault exists, not after (HC-7, FR-29). A warning that arrives
+    // Before the vault exists, not after (HC-7, FR-27). A warning that arrives
     // once the password is already set is a warning about a decision already
     // made.
     output::say(
@@ -120,7 +113,7 @@ fn create(dir: &Path, cli: &Cli) -> Run<()> {
         true,
     )?;
 
-    let vault = Vault::create(dir, &secret, KdfParams::for_new_vaults(), DEFAULT_PACK_CAP)?;
+    let vault = Vault::create(dir, &secret, KdfParams::for_new_vaults())?;
     vault.lock();
 
     match cli.format {
@@ -165,21 +158,14 @@ fn save_copy(dir: &Path, file: &str, to: &Path, force: bool, cli: &Cli) -> Run<(
     let vault = open(dir, cli)?;
     let id = locate(&vault, file)?;
 
-    // `--to a-folder` means "into it", which is what anyone typing it expects
-    // — and the one place the vault's own name becomes a filename the caller
-    // did not choose every character of, which is exactly what FR-31's check
-    // exists for. Naming an exact destination file names every character
-    // yourself, so there is nothing here for it to catch (Spec §4.6).
+    // `--to a-folder` means "into it", which is what anyone typing it expects.
     let destination = if to.is_dir() {
-        vault
-            .check_representable(id)
-            .map_err(|e| unrepresentable(e, file))?;
         to.join(split(file).1)
     } else {
         to.to_path_buf()
     };
 
-    // FR-18: named, and never silent. The original Veil overwrote quietly, and
+    // FR-19: named, and never silent. The original Veil overwrote quietly, and
     // a failed save destroyed the user's only good copy.
     if destination.exists() && !force {
         return Err(Failure::Usage(format!(
@@ -247,61 +233,8 @@ fn delete(dir: &Path, file: &str, cli: &Cli) -> Run<()> {
     vault.delete(id)?;
 
     match cli.format {
-        Format::Table => output::say(
-            cli.format,
-            &format!(
-                "Deleted {file}\nIts stored bytes stay in the vault until you reclaim space, so \
-                 anyone with this\nvault could still recover them until then. \
-                 Run `veil reclaim-space` to remove them.",
-            ),
-        ),
-        Format::Json => output::json(&serde_json::json!({
-            "deleted": file,
-            "bytes_still_stored": true,
-        })),
-    }
-}
-
-/// Recovers the space deleted and replaced files still occupy (FR-23, FR-25).
-///
-/// Never scheduled and never conditional: the command exists, the figures are
-/// in `info`, and the person reading them decides. A flag that started this on
-/// a threshold would be FR-23's prohibition wearing a different hat.
-fn reclaim_space(dir: &Path, cli: &Cli) -> Run<()> {
-    let mut vault = open(dir, cli)?;
-    let mut progress = Stderr::new("reclaiming");
-    let outcome = vault.compact(&mut progress, &cancel_on_interrupt());
-    progress.finish();
-    let reclaimed = outcome?;
-    let after = vault.statistics();
-
-    match cli.format {
-        Format::Table => {
-            let mut text = format!(
-                "Reclaimed {}. The vault now takes {} on disk.",
-                output::human_size(reclaimed.bytes_recovered),
-                output::human_size(after.physical_bytes),
-            );
-            if !reclaimed.complete {
-                text.push_str(
-                    "\nIt stopped before finishing. What it reclaimed is reclaimed; \
-                     run it again to\nfinish the rest.",
-                );
-            }
-            if reclaimed.bytes_recovered > 0 {
-                // The other half of what `delete` promised. Those bytes were
-                // recoverable until now, and now they are not (FR-21, FR-29).
-                text.push_str("\nThe bytes of the files you deleted are gone from the vault now.");
-            }
-            output::say(cli.format, &text)
-        }
-        Format::Json => output::json(&serde_json::json!({
-            "bytes_recovered": reclaimed.bytes_recovered,
-            "packs_rewritten": reclaimed.packs_rewritten,
-            "complete": reclaimed.complete,
-            "physical_bytes": after.physical_bytes,
-            "reclaimable_bytes": after.reclaimable_bytes,
-        })),
+        Format::Table => output::say(cli.format, &format!("Deleted {file}")),
+        Format::Json => output::json(&serde_json::json!({ "deleted": file })),
     }
 }
 
@@ -334,7 +267,7 @@ fn split(file: &str) -> (&str, &str) {
 
 /// Finds the one file at a path.
 ///
-/// The two-or-more arm is a guard rather than a reachable case: FR-34 leaves no
+/// The two-or-more arm is a guard rather than a reachable case: FR-14 leaves no
 /// way to store a second file at one path. It stays because the alternative, if
 /// it is ever reached, is deleting an arbitrary one of two files.
 fn locate(vault: &Vault, file: &str) -> Run<EntryId> {
@@ -359,25 +292,13 @@ fn no_such(file: &str) -> String {
     format!("this vault holds no file at {file}")
 }
 
-/// Names the path in FR-34's refusal. The library will not hold a name (HC-1),
+/// Names the path in FR-14's refusal. The library will not hold a name (HC-1),
 /// so the naming happens here, where the name came from.
 fn already_there(error: Error, source: &str) -> Failure {
     match error {
         Error::AlreadyExists => Failure::AlreadyThere(format!(
             "this vault already holds a file at that path, so {source} was not added. \
              Use `veil replace` to put new content there"
-        )),
-        other => Failure::Vault(other),
-    }
-}
-
-/// Names the path in FR-31's refusal, for the same reason `already_there`
-/// does: the library carries the reason but not the name (HC-1).
-fn unrepresentable(error: Error, file: &str) -> Failure {
-    match error {
-        Error::NameNotRepresentable { reason, .. } => Failure::NotRepresentable(format!(
-            "{file} cannot be saved into that folder under its own name: {reason}. \
-             Choose an exact destination file name instead of a folder"
         )),
         other => Failure::Vault(other),
     }

@@ -21,12 +21,8 @@ pub enum Failure {
     /// refuses to hold a name (HC-1), and this is the layer that already has
     /// it, having been given it.
     NoSuchFile(String),
-    /// A file is already at that path (FR-34).
+    /// A file is already at that path (FR-14).
     AlreadyThere(String),
-    /// The vault's own name for a file cannot be written here as it is
-    /// (FR-31). Carries the path the same way `NoSuchFile` and `AlreadyThere`
-    /// do, for the same reason.
-    NotRepresentable(String),
     /// Anything else, with whatever context the operation could give it.
     Other(anyhow::Error),
 }
@@ -45,7 +41,6 @@ impl Failure {
             Self::Damage(_) => 5,
             Self::NoPassword(_) => 12,
             Self::NoSuchFile(_) | Self::AlreadyThere(_) => 13,
-            Self::NotRepresentable(_) => 14,
             Self::Vault(e) => match e {
                 Error::PasswordTooShort { .. } => 2,
                 Error::WrongPassword => 3,
@@ -58,7 +53,6 @@ impl Failure {
                 Error::Cancelled { .. } => 10,
                 Error::StorageUnavailable => 11,
                 Error::NotFound | Error::AlreadyExists => 13,
-                Error::NameNotRepresentable { .. } => 14,
                 Error::Io { .. } => 1,
             },
         }
@@ -73,8 +67,7 @@ impl Failure {
             | Self::NoPassword(m)
             | Self::Damage(m)
             | Self::NoSuchFile(m)
-            | Self::AlreadyThere(m)
-            | Self::NotRepresentable(m) => m.clone(),
+            | Self::AlreadyThere(m) => m.clone(),
             Self::Other(e) => e.to_string(),
         }
     }

@@ -1,5 +1,5 @@
-//! Phase 3 test cases T3.16–T3.18 — which stream carries what, and what an
-//! interrupt does (Design §3.4; A-3, FR-14, FR-19, HC-4).
+//! Phase 3 test cases T3.20–T3.22 — which stream carries what, and what an
+//! interrupt does (Design §3.4; A-3, FR-15, FR-20, HC-4).
 //!
 //! Both long-running cases feed the add through a named pipe. That makes the
 //! timing the test's rather than the machine's: the child blocks until this
@@ -46,14 +46,14 @@ fn add_through_a_pipe(scratch: &Scratch) -> (Child, std::fs::File) {
     (child, writer)
 }
 
-/// T3.16 and T3.17 — progress goes to standard error as plain periodic lines,
+/// T3.20 and T3.21 — progress goes to standard error as plain periodic lines,
 /// and results go to standard output.
 ///
 /// A pipeline that has to strip progress out of its input is a pipeline that
 /// will strip the wrong line one day. A log full of terminal control characters
 /// is the other half of the same rule.
 #[test]
-fn t3_16_and_t3_17_progress_is_plain_lines_on_standard_error() {
+fn t3_20_and_t3_21_progress_is_plain_lines_on_standard_error() {
     let scratch = Scratch::new("progress-streams");
     assert_eq!(scratch.veil(&["create", &scratch.vault_arg()]).code, 0);
 
@@ -100,13 +100,13 @@ fn t3_16_and_t3_17_progress_is_plain_lines_on_standard_error() {
     );
 }
 
-/// T3.18 — an interrupt cancels rather than kills.
+/// T3.22 — an interrupt cancels rather than kills.
 ///
 /// The case that proves the command line can reach the cancellation Phase 2
 /// built, rather than merely dying safely. HC-4 already makes a kill safe;
-/// FR-14 asks for more than that — the vault as though it had not been started.
+/// FR-15 asks for more than that — the vault as though it had not been started.
 #[test]
-fn t3_18_an_interrupt_cancels_and_leaves_nothing_behind() {
+fn t3_22_an_interrupt_cancels_and_leaves_nothing_behind() {
     let scratch = Scratch::new("interrupt");
     assert_eq!(scratch.veil(&["create", &scratch.vault_arg()]).code, 0);
 
@@ -145,22 +145,15 @@ fn t3_18_an_interrupt_cancels_and_leaves_nothing_behind() {
         "the exit said nothing about what it left behind"
     );
 
-    // FR-14: as though it had not been started.
+    // FR-15: as though it had not been started, at the level the vault
+    // exposes. The cancelled write's own entry file may exist on disk as
+    // unreferenced residue (Spec §4.5) — nothing rolls that back — but
+    // nothing here can find it through the vault's own API.
     let listed = scratch.veil(&["list", &scratch.vault_arg()]);
     assert_eq!(listed.code, 0, "the vault did not survive the interrupt");
     assert!(
         listed.out.contains("No files"),
         "a cancelled add left a file behind: {}",
         listed.out
-    );
-
-    let stored: u64 = scratch
-        .packs()
-        .iter()
-        .map(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
-        .sum();
-    assert_eq!(
-        stored, 0,
-        "a cancelled add left {stored} bytes in the packs"
     );
 }

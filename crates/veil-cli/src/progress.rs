@@ -1,5 +1,5 @@
 //! Progress on standard error, and cancellation from an interrupt
-//! (Design §3.4; A-3, FR-14, FR-19).
+//! (Design §3.4; A-3, FR-15, FR-20).
 
 use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
@@ -93,7 +93,7 @@ impl Progress for Stderr {
 ///
 /// Without this the core's cancellation is unreachable from the command line:
 /// an interrupt would kill the process, which HC-4 makes safe but which leaves
-/// the stronger guarantee — FR-14's *as though it had not been started* —
+/// the stronger guarantee — FR-15's *as though it had not been started* —
 /// unavailable to the only frontend that exists.
 ///
 /// Returns an uncancellable token if the handler cannot be installed. Failing
