@@ -112,13 +112,19 @@ Within the capture layer, deliberately log a distinctive marker as a message and
 Run the full test suite under the capture layer.
 **Verdict:** no captured event contains a planted marker, and the guard is active without any test opting in.
 
+### T0.11 — The guard holds across a real vault lifecycle
+*Covers P0.5.d · Verifies HC-1, Spec §6*
+
+Create a vault and drive add, extract, replace, verify, and delete on an entry whose name, folder, and content are each a distinctive marker, the whole sequence wrapped in the guard.
+**Verdict:** no marker reaches a log line. T0.9 and T0.10 prove the mechanism fires and is on by default; this is the mechanism proving something against real operations rather than a canary, closing the gap those two cases left standing since Phase 0.
+
 ---
 
 ## Coverage
 
 | Identifier | Case |
 |---|---|
-| HC-1 | T0.9, T0.10 |
+| HC-1 | T0.9, T0.10, T0.11 |
 | HC-2 | T0.5, T0.8 |
 | HC-6 | T0.4 |
 | FR-2 | T0.1, T0.7 |

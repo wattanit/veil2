@@ -1,4 +1,4 @@
-//! Phase 0 test cases T0.11 and T0.12 — the error taxonomy (Spec §6).
+//! Phase 0 test cases T0.7 and T0.8 — the error taxonomy (Spec §6).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -44,12 +44,12 @@ fn every_variant() -> Vec<Error> {
     ]
 }
 
-/// T0.11 — a wrong password is never a corruption (FR-2).
+/// T0.7 — a wrong password is never a corruption (FR-2).
 ///
 /// The original Veil surfaced every failure as one cryptography error, which
 /// is what sends a user with a typo to look for a damaged file.
 #[test]
-fn t0_11_wrong_password_is_distinct_from_corruption() {
+fn t0_7_wrong_password_is_distinct_from_corruption() {
     assert!(matches!(Error::WrongPassword, Error::WrongPassword));
     assert!(!matches!(Error::WrongPassword, Error::Corrupt { .. }));
     assert!(!matches!(Error::NotAVault, Error::Corrupt { .. }));
@@ -62,9 +62,9 @@ fn t0_11_wrong_password_is_distinct_from_corruption() {
     assert!(matches!(io, Error::Io { .. }));
 }
 
-/// T0.11 — version errors carry the numbers their messages must name.
+/// T0.7 — version errors carry the numbers their messages must name.
 #[test]
-fn t0_11_version_errors_carry_both_versions() {
+fn t0_7_version_errors_carry_both_versions() {
     let too_new = Error::FormatTooNew {
         required: 7,
         supported: 1,
@@ -80,9 +80,9 @@ fn t0_11_version_errors_carry_both_versions() {
     assert!(rendered.contains('1') && rendered.contains("2.3.0"), "FR-6");
 }
 
-/// T0.11 — a limit failure carries both numbers (FR-16).
+/// T0.7 — a limit failure carries both numbers (FR-16).
 #[test]
-fn t0_11_limit_exceeded_names_the_limit_and_the_value() {
+fn t0_7_limit_exceeded_names_the_limit_and_the_value() {
     let rendered = Error::LimitExceeded {
         limit: Limit::FileSize,
         allowed: 68_719_476_736,
@@ -94,13 +94,13 @@ fn t0_11_limit_exceeded_names_the_limit_and_the_value() {
     assert!(rendered.contains("70000000000"));
 }
 
-/// T0.11 — a cancellation states what it left behind (FR-15, FR-20).
+/// T0.7 — a cancellation states what it left behind (FR-15, FR-20).
 ///
 /// This is the state fact the Design Guideline's three-part message needs. An
 /// error that says only "cancelled" forces the caller to invent the answer to
 /// the user's actual question, which is whether anything changed.
 #[test]
-fn t0_11_cancelled_states_whether_it_rolled_back() {
+fn t0_7_cancelled_states_whether_it_rolled_back() {
     let rolled_back = Error::Cancelled { rolled_back: true }.to_string();
     let stands = Error::Cancelled { rolled_back: false }.to_string();
     assert_ne!(rolled_back, stands);
@@ -108,14 +108,14 @@ fn t0_11_cancelled_states_whether_it_rolled_back() {
     assert!(stands.contains("stands"));
 }
 
-/// T0.11 — damage and verification carry every affected entry, not the first
+/// T0.7 — damage and verification carry every affected entry, not the first
 /// (S-3, FR-26).
 ///
 /// S-3 rejects two failures at once: one bad region losing everything, and one
 /// bad region being indistinguishable from total loss. Carrying the full list
 /// is what turns a partial failure into a list of files a user can restore.
 #[test]
-fn t0_11_failures_carry_every_affected_entry() {
+fn t0_7_failures_carry_every_affected_entry() {
     let Error::Corrupt { affected, .. } = (Error::Corrupt {
         what: Damaged::EntryFile,
         affected: vec![EntryId::new(11), EntryId::new(12), EntryId::new(13)],
@@ -132,10 +132,10 @@ fn t0_11_failures_carry_every_affected_entry() {
     assert_eq!(entries.len(), 2);
 }
 
-/// T0.11 — every variant's `Display` says something, and says what state
+/// T0.7 — every variant's `Display` says something, and says what state
 /// things are in (Design §4.2).
 #[test]
-fn t0_11_every_variant_renders_a_message() {
+fn t0_7_every_variant_renders_a_message() {
     for error in every_variant() {
         let rendered = error.to_string();
         assert!(
@@ -149,7 +149,7 @@ fn t0_11_every_variant_renders_a_message() {
     }
 }
 
-/// T0.12 — no error discloses content, keys, or the password (HC-2).
+/// T0.8 — no error discloses content, keys, or the password (HC-2).
 ///
 /// The markers are planted in the surrounding state, not in the errors: the
 /// test is that there is no field through which they could arrive.
@@ -157,9 +157,9 @@ fn t0_11_every_variant_renders_a_message() {
 /// *Scope note:* entry identity is permitted here and is not a marker. FR-26
 /// and S-3 require failing entries to be named, so an error that cannot
 /// identify an entry cannot satisfy them. The prohibition on entry names
-/// reaching a *log* is a separate rule, covered by T0.7 and T0.8.
+/// reaching a *log* is a separate rule, covered by T0.9 and T0.10.
 #[test]
-fn t0_12_no_error_discloses_content_keys_or_password() {
+fn t0_8_no_error_discloses_content_keys_or_password() {
     const CONTENT_MARKER: &str = "PLAINTEXT-CONTENT-MARKER";
     const KEY_MARKER: &str = "KEY-MATERIAL-MARKER";
     const PASSWORD_MARKER: &str = "correct horse battery staple";
@@ -177,14 +177,14 @@ fn t0_12_no_error_discloses_content_keys_or_password() {
     }
 }
 
-/// T0.12 — an I/O failure carries no path (HC-1, HC-2).
+/// T0.8 — an I/O failure carries no path (HC-1, HC-2).
 ///
 /// An ingest source path is a fact about the user's machine that no error
 /// needs, and the layer that supplied the path is the one that can name it.
 /// The original Veil stored absolute source paths in its index; this is the
 /// same habit in a smaller place.
 #[test]
-fn t0_12_io_errors_carry_no_path() {
+fn t0_8_io_errors_carry_no_path() {
     let underlying = std::io::Error::other("failed opening /Users/someone/Documents/salaries.csv");
     let converted: Error = underlying.into();
     let rendered = format!("{converted} {converted:?}");

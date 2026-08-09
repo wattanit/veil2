@@ -97,7 +97,7 @@ Phase 0 proves nothing about the product. Every item exists to make a later proo
 | P0.5.a | Built, carries forward | A `tracing` capture layer for tests that records every event and its fields | Spec §6 | T0.9 |
 | P0.5.b | Built, carries forward | An assertion helper that fails when a captured event contains any planted marker string, checked against fields as well as message | HC-1, Spec §6 | T0.9 |
 | P0.5.c | Built, carries forward | Canary test: a call site that deliberately logs a marker, asserting the guard reports it | HC-1 | T0.9 |
-| P0.5.d | Not yet built | The guard proves itself (T0.10) but is not wired into `tests/harness/mod.rs` — no vault-operation test currently runs under it. Later phases do not get it by default; each must call `support::guarded`/`support::init` itself until the harness wires it in | HC-1 | T0.10 |
+| P0.5.d | Done | The guard is exercised against a real vault lifecycle — create, add, extract, replace, verify, delete — not only a canary | HC-1 | T0.11 |
 
 ---
 
@@ -114,7 +114,8 @@ Phase 0 proves nothing about the product. Every item exists to make a later proo
 
 ## Open Questions
 
-- **`unicode-normalization` is used and pinned in `veil-core`'s `Cargo.toml` but absent from Spec §7's dependency table.** Resolver: owner, next Specification bump.
-- **Whether the logging guard should be wired into `tests/harness/mod.rs` by default.** Right now it proves itself in isolation (T0.9, T0.10) but nothing outside `logging_guard.rs` invokes it, so Phase 2's real vault-operation tests do not run under it. Resolver: owner, likely at Phase 2.
+**Resolved:** `unicode-normalization` was pinned in `veil-core`'s `Cargo.toml` and used for §4.6 but absent from Spec §7's dependency table. Added.
 
-None.
+**Resolved:** whether the logging guard should be wired into `tests/harness/mod.rs` by default. It is not, and that turned out to be the right call rather than a shortcut: the ad hoc test suite's fixture names (single-letter folders like `"d"`, generic names like `"one.bin"`) are not distinctive strings, and treating every one of them as a marker to scan the whole process-lifetime capture buffer for would produce false HC-1 violations on coincidental substring matches rather than a usable check — the guard's own design (T0.9) depends on a marker being unmistakable. What closes the gap instead is T0.11 (`tests/logging_guard.rs`): a dedicated case, alongside the canary, that drives a real vault through add, extract, replace, verify, and delete with a genuinely distinctive marker under `support::guarded`. Confirmed to fire by planting a real leak and watching it fail before removing the plant.
+
+None outstanding.

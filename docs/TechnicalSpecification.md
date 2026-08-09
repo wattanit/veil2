@@ -209,7 +209,7 @@ Each entry is one file under `entries/` (§4.1), named by its id, holding exactl
 
 **Nothing happens at open.** Opening reads the header and one index slot, writes nothing, and does not list `entries/`. A write at open would advance `generation`, which is FR-24's entire detection mechanism (§4.4) — a vault opened from a stale copy would come away holding a number above a newer copy arriving moments later, and every later write would pass the check meant to refuse it.
 
-**A file the index does not reference — the residue of a replace or delete interrupted between its two steps — is left alone.** It costs at most one entry's worth of space, it is visible to anyone who looks at the directory, and nothing reads or removes it automatically. Building a sweep for it was considered and declined: an index that is momentarily behind its own directory is indistinguishable from this case by construction, and removing a file on that guess risks exactly the loss HC-4 forbids, for reasons that have nothing to do with why the index fell behind.
+**A file the index does not reference is left alone.** This is the residue of a replace or delete interrupted between its two steps, and equally of an ingest refused (C-1, C-2) or cancelled (FR-15) after its file was written but before the index committed — `add` has no rollback, so a write that does not finish still leaves its file behind. Either way it costs at most one entry's worth of space, it is visible to anyone who looks at the directory, and nothing reads or removes it automatically. Building a sweep for it was considered and declined: an index that is momentarily behind its own directory is indistinguishable from this case by construction, and removing a file on that guess risks exactly the loss HC-4 forbids, for reasons that have nothing to do with why the index fell behind.
 
 On read-only storage — mounted image, write-protected drive, permissions that deny writing — the vault opens read-only and says so at open (FR-23). Refusing would make an interrupted operation on a drive that later became read-only into permanent data loss, which HC-4 forbids.
 
@@ -386,6 +386,7 @@ Locked initial set. Acceptance policy: primitives come from RustCrypto where one
 | `zeroize` | Key material lifetime | §3.1 |
 | `ciborium`, `serde` | Index serialisation | §4.3, FR-6 |
 | `rand`, `getrandom` | CSPRNG for keys, salts, nonces | §3.1 |
+| `unicode-normalization` | NFC normalisation of stored names (§4.6) | FR-13 |
 | `fs4` | Cross-platform advisory locks | FR-23 |
 | `thiserror` | Error taxonomy | §6 |
 | `tracing` | Operational logging, subject to §6 | |

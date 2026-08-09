@@ -222,4 +222,6 @@ Already had a dedicated test file (originally labelled Phase 5, T5.1–T5.4); re
 ## Open Questions
 
 - **What Argon2id cost parameters satisfy C-3, and on what hardware.** `m = 256 MiB, t = 3, p = 4` is the working value; nothing is measured against C-3's one-second budget on low-end hardware. Resolver: owner, when hardware is available.
-- **Whether `cargo-fuzz` targets are added for the header and index parsers.** T1.32 covers the same entry points with seeded randomised testing at lower depth. Resolver: owner.
+- **Maximum length of the path metadata recorded under FR-10 (carried from Requirements §9).** Requirements defers this to the Technical Specification; the Specification has not fixed one, and no code enforces one — a path is unbounded today except incidentally through C-1/C-2. Still open; not resolved by this phase despite the Plan's expectation that it would be. Resolver: owner.
+
+**Resolved:** whether `cargo-fuzz` targets are added for the header and index parsers. Declined per Spec §11 — it needs a nightly toolchain and a tool this development machine does not have. T1.32's seeded, deterministic randomised testing covers the same two entry points at lower depth and runs with the ordinary suite.
