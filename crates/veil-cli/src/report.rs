@@ -58,8 +58,26 @@ pub fn list(
 }
 
 /// Reports what a vault holds and what it occupies (FR-8, FR-22).
+///
+/// This is the one command that measures the packs rather than reading the
+/// figures the index maintains, and it does so because it is the command whose
+/// entire purpose is those figures. Opening a vault does not walk the packs
+/// (S-2), so the index's totals count what committed operations put on disk and
+/// miss what an interrupted one left behind. The difference is space the user
+/// can reclaim, and this is where they came to find out about it.
+///
+/// It is reported as one number. Design §3.2 forbids splitting deleted files'
+/// bytes from an interrupted operation's: both are space the vault is holding
+/// and not using, both come back from the same command, and naming the second
+/// makes it sound like damage.
 pub fn info(vault: &Vault, format: Format) -> Run<()> {
-    let stats = vault.statistics();
+    let stats = vault.recount_statistics().unwrap_or_else(|_| {
+        // A pack that cannot be measured is damage, and `check` is where damage
+        // is diagnosed. Reporting the index's own figures is the honest
+        // fallback: they are what the vault believes, and the vault opening at
+        // all means they are readable.
+        vault.statistics()
+    });
     let share = if stats.physical_bytes == 0 {
         0.0
     } else {

@@ -381,13 +381,11 @@ fn t2_26_statistics_match_a_full_recount() {
     assert_statistics_match_recount(&vault, "after a shrinking replace");
 
     // And across a reopen, since the figures live in the index rather than in
-    // the process. Reconciliation runs at open from Phase 4 on and changes
-    // nothing here: it discards the residue of an interrupted operation, and
-    // nothing above was interrupted.
+    // the process. Opening reads them and recomputes nothing, so they are the
+    // same figures rather than figures that happen to agree.
     let expected = vault.statistics();
     drop(vault);
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert_eq!(vault.statistics(), expected);
     assert_statistics_match_recount(&vault, "after a reopen");
 }

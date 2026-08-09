@@ -12,7 +12,7 @@ use harness::{
     SMALL_CAP, add, assert_statistics_match_recount, create, open, pattern, read_back, snapshot,
 };
 use veil_core::store::{PACKS_DIR, existing_pack_ids, pack_path};
-use veil_core::vault::{Access, Cancel, NoProgress, Reconciled};
+use veil_core::vault::{Access, Cancel, NoProgress};
 
 /// A pack that this entry uses and no other does.
 ///
@@ -135,18 +135,19 @@ fn t4_1_every_write_path_is_a_known_write_path() {
     );
 }
 
-// ---------------------------------------------------------- reconciliation --
+// ------------------------------ space an interrupted operation left behind --
 
-/// T4.17 — residue is found at open and reported, not destroyed (FR-32, HC-4).
+/// T4.17 — space an interrupted operation left is found when asked for, and
+/// never destroyed (HC-4, FR-8, FR-23).
 ///
-/// FR-32 asks for it to be discarded here. It is not, and that is the decision
-/// T4.28 exists to justify: whether unreferenced bytes are residue is a guess,
-/// and acting destructively on a guess is how a vault mid-sync loses data that
-/// no interruption touched. What FR-32 requires and gets is the report — space
-/// that reappears without explanation is indistinguishable, to the person
-/// watching, from space that was never accounted for properly.
+/// Nothing looks for it at open, because opening a vault walks no packs and
+/// writes nothing. It is found by the two operations the user asks for — the
+/// figures, and reclaiming — and it is never discarded on sight, which is the
+/// decision T4.28 exists to justify: whether unreferenced bytes are leftovers
+/// is a guess, and acting destructively on a guess is how a vault mid-sync
+/// loses data that no interruption touched.
 #[test]
-fn t4_17_residue_is_found_and_reported() {
+fn t4_17_leftover_space_is_found_when_asked_for() {
     let scratch = harness::Scratch::new("reconcile-orphan");
     let dir = scratch.vault_dir();
     let mut vault = create(&dir, SMALL_CAP);
@@ -157,20 +158,26 @@ fn t4_17_residue_is_found_and_reported() {
     let (orphan, size) = plant_orphan(&dir, 2048);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled(), Reconciled::Residue { bytes: size });
     assert!(
         pack_path(&dir, orphan).exists(),
-        "the residue was destroyed at open rather than reported"
+        "the leftover was destroyed at open rather than left alone"
     );
-    // Counted into what the user can reclaim, so nothing accumulates unseen.
+    // The index's own figures are untouched: an open learned nothing, because
+    // an open looked at nothing.
     assert_eq!(
-        vault.statistics().reclaimable_bytes,
-        before.reclaimable_bytes + size
+        vault.statistics(),
+        before,
+        "opening the vault changed the figures it reports"
+    );
+    // Asking is what finds it, and what it finds is space that can be had back.
+    assert_eq!(
+        vault.recount_statistics().unwrap().reclaimable_bytes,
+        before.reclaimable_bytes + size,
+        "a recount did not find the leftover bytes"
     );
     assert_eq!(read_back(&vault, id).unwrap(), pattern(1500));
-    assert_statistics_match_recount(&vault, "after residue was found");
 
-    // And reclaiming space takes it, which is the deliberate act FR-23 wants.
+    // And reclaiming takes it, which is the deliberate act FR-23 wants.
     let mut vault = vault;
     let reclaimed = vault.compact(&mut NoProgress, &Cancel::new()).unwrap();
     assert!(reclaimed.bytes_recovered >= size);
@@ -197,22 +204,20 @@ fn t4_18_an_open_never_writes() {
 
     let before = snapshot(&dir);
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled(), Reconciled::Clean);
     assert_eq!(vault.generation(), generation, "the generation advanced");
     drop(vault);
     assert_eq!(snapshot(&dir), before, "an ordinary open changed the vault");
 
-    // And with residue present, which is the case that tempts a write.
+    // And with leftovers present, which is the case that tempts a write.
     plant_orphan(&dir, 1024);
     let before = snapshot(&dir);
     let vault = open(&dir).unwrap();
-    assert!(matches!(vault.reconciled(), Reconciled::Residue { .. }));
     assert_eq!(vault.generation(), generation);
     drop(vault);
     assert_eq!(
         snapshot(&dir),
         before,
-        "an open that found residue wrote to the vault"
+        "an open with leftover bytes present wrote to the vault"
     );
 }
 
@@ -246,19 +251,18 @@ fn t4_19_an_interrupted_reclaim_leaves_nothing_unreachable() {
     let (leftover, size) = plant_orphan(&dir, 3072);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), size);
+    assert_eq!(
+        vault.recount_statistics().unwrap().reclaimable_bytes,
+        vault.statistics().reclaimable_bytes + size,
+        "a recount did not find what the interrupted reclaim left"
+    );
     assert!(pack_path(&dir, leftover).exists());
     for (id, content) in &kept {
         assert_eq!(&read_back(&vault, *id).unwrap(), content);
     }
-    assert_statistics_match_recount(&vault, "after an interrupted reclaim");
 
     // Reclaiming takes the leftover along with the rest, and everything live
     // survives the operation that was interrupted the first time.
-    //
-    // Asserted on bytes rather than on the leftover's file still existing:
-    // removing the highest pack frees its number, and the pack this reclaim
-    // writes may take it back. Recorded as *Notes for Upstream*, item 9.
     let mut vault = vault;
     let on_disk_before = veil_core::store::total_pack_bytes(&dir).unwrap();
     let reclaimed = vault.compact(&mut NoProgress, &Cancel::new()).unwrap();
@@ -268,20 +272,20 @@ fn t4_19_an_interrupted_reclaim_leaves_nothing_unreachable() {
     drop(vault);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled(), Reconciled::Clean);
+    assert_statistics_match_recount(&vault, "after reclaiming finished the job");
     for (id, content) in &kept {
         assert_eq!(&read_back(&vault, *id).unwrap(), content);
     }
 }
 
-/// T4.20 — a read-only vault opens, skips reconciliation, and says so
-/// (FR-32, Spec §4.5, §4.8).
+/// T4.20 — a read-only vault opens, says so, and is not written to
+/// (FR-26, FR-32, Spec §4.5, §4.8).
 ///
 /// Refusing to open would turn an interrupted reclaim on a drive that later
 /// became read-only into permanent data loss, which HC-4 forbids.
 #[test]
 #[cfg(unix)]
-fn t4_20_a_read_only_vault_skips_reconciliation() {
+fn t4_20_a_read_only_vault_opens_and_says_so() {
     use std::os::unix::fs::PermissionsExt;
 
     let scratch = harness::Scratch::new("reconcile-readonly");
@@ -315,8 +319,6 @@ fn t4_20_a_read_only_vault_skips_reconciliation() {
 
     let vault = open(&dir).unwrap();
     assert_eq!(vault.access(), Access::ReadOnly);
-    assert_eq!(vault.reconciled(), Reconciled::Skipped);
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert!(
         pack_path(&dir, orphan).exists(),
         "something was written to a read-only vault"
@@ -339,13 +341,12 @@ fn restore(dir: &Path, files: &[std::path::PathBuf]) {
     }
 }
 
-/// T4.21 — garbage in the middle of a live pack is left alone (FR-23, FR-32).
+/// T4.21 — garbage in the middle of a live pack survives an open (FR-23).
 ///
-/// Reconciliation discards what can go without moving a byte. Bytes with live
-/// bytes *after* them cannot: recovering those means rewriting the pack around
-/// them, which is reclaiming space, and FR-23 makes that the user's decision
-/// alone. So the file this deletes is the one at the *start* of the pack — the
-/// case where the hole it leaves has something live above it.
+/// Recovering bytes with live bytes *after* them means rewriting the pack
+/// around them, which is reclaiming space, and FR-23 makes that the user's
+/// decision alone. So the file this deletes is the one at the *start* of the
+/// pack — the case where the hole it leaves has something live above it.
 #[test]
 fn t4_21_garbage_inside_a_live_pack_is_left_alone() {
     let scratch = harness::Scratch::new("reconcile-live-pack");
@@ -366,7 +367,6 @@ fn t4_21_garbage_inside_a_live_pack_is_left_alone() {
         .collect();
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert_eq!(vault.statistics().reclaimable_bytes, reclaimable);
     assert_eq!(existing_pack_ids(&dir).unwrap(), packs);
     let now: Vec<u64> = packs
@@ -376,20 +376,19 @@ fn t4_21_garbage_inside_a_live_pack_is_left_alone() {
     assert_eq!(now, sizes, "a live pack was rewritten by an open");
 }
 
-/// T4.26 — deleted bytes are not residue and are never taken at open
-/// (FR-21, FR-23, FR-29, FR-32).
+/// T4.26 — deleted bytes stay until the user asks for the space (FR-21, FR-23,
+/// FR-29).
 ///
 /// The other side of T4.17. Both are bytes on disk that no entry references,
-/// and they call for opposite treatment: residue goes, a deleted file's bytes
-/// stay until the user asks for the space back. The discriminator is already in
-/// the index — the statistics count what committed operations put on disk, the
-/// filesystem counts what is there, and the difference is exactly the residue.
+/// and neither may be taken without being asked for: FR-23 makes recovering
+/// space the user's decision, and the product told them at the delete that the
+/// bytes would remain until they made it.
 ///
 /// Asserted in the shape that would break a rule based on "unreferenced" alone:
 /// a pack the deletes emptied completely, and a dead tail with nothing live
 /// above it. Both are trivially discardable and neither may be discarded.
 #[test]
-fn t4_26_deleted_bytes_are_not_residue() {
+fn t4_26_deleted_bytes_stay_until_asked_for() {
     // A whole pack that nothing references any more.
     let scratch = harness::Scratch::new("reconcile-emptied");
     let dir = scratch.vault_dir();
@@ -404,7 +403,6 @@ fn t4_26_deleted_bytes_are_not_residue() {
     drop(vault);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert!(
         pack_path(&dir, emptied).exists(),
         "a pack the user emptied by deleting was taken at open"
@@ -435,7 +433,6 @@ fn t4_26_deleted_bytes_are_not_residue() {
     drop(vault);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert_eq!(
         std::fs::metadata(pack_path(&dir, pack)).unwrap().len(),
         size_before,
@@ -446,8 +443,7 @@ fn t4_26_deleted_bytes_are_not_residue() {
     assert_statistics_match_recount(&vault, "after an open that took nothing");
 }
 
-/// T4.27 — the residue of an interrupted ingest is found, tail and all
-/// (FR-32, HC-4).
+/// T4.27 — an interrupted ingest's bytes are found, tail and all (HC-4, FR-8).
 ///
 /// The case T4.26 is the mirror of. Bytes appended by an operation that never
 /// committed are counted by nothing, so the difference between what the
@@ -455,7 +451,7 @@ fn t4_26_deleted_bytes_are_not_residue() {
 /// when they sit as a tail on a live pack, which is where an interrupted add
 /// leaves them and where a rule about whole packs would miss them entirely.
 #[test]
-fn t4_27_the_residue_of_an_interrupted_ingest_is_found() {
+fn t4_27_an_interrupted_ingests_bytes_are_found() {
     let scratch = harness::Scratch::new("reconcile-residue");
     let dir = scratch.vault_dir();
     let mut vault = create(&dir, 1024 * 1024);
@@ -481,14 +477,17 @@ fn t4_27_the_residue_of_an_interrupted_ingest_is_found() {
     drop(file);
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled(), Reconciled::Residue { bytes: 5000 });
     assert_eq!(
-        vault.statistics().reclaimable_bytes,
+        vault.statistics(),
+        before,
+        "opening the vault changed the figures it reports"
+    );
+    assert_eq!(
+        vault.recount_statistics().unwrap().reclaimable_bytes,
         before.reclaimable_bytes + 5000,
-        "the residue was not counted into what can be reclaimed"
+        "the leftover tail was not counted into what can be reclaimed"
     );
     assert_eq!(read_back(&vault, kept).unwrap(), pattern(900));
-    assert_statistics_match_recount(&vault, "after residue was found");
 
     // Reclaiming takes it, and the file that shared the pack is untouched.
     let mut vault = vault;
@@ -528,7 +527,12 @@ fn t4_28_an_index_behind_its_packs_loses_nothing() {
 
     let stale = open(&dir).unwrap();
     assert_eq!(stale.entries().len(), 1);
-    assert!(matches!(stale.reconciled(), Reconciled::Residue { .. }));
+    // The bytes the newer index will name are here and unaccounted for. This is
+    // the moment a rule that discarded them would destroy live content.
+    assert!(
+        stale.recount_statistics().unwrap().reclaimable_bytes
+            > stale.statistics().reclaimable_bytes
+    );
     drop(stale);
 
     // Now the newer index lands. What it points at has to still be there.
@@ -545,7 +549,6 @@ fn t4_28_an_index_behind_its_packs_loses_nothing() {
         pattern(1100),
         "the file the newer index names was destroyed by an earlier open"
     );
-    assert_eq!(vault.reconciled(), Reconciled::Clean);
     assert_statistics_match_recount(&vault, "after the newer index arrived");
 }
 
@@ -613,9 +616,9 @@ fn t4_23_everything_outside_a_missing_pack_still_works() {
 
 /// T4.24 — a missing pack is never treated as garbage (FR-32, S-4).
 ///
-/// A missing pack is referenced by definition, so it is damage and not residue.
-/// An implementation that confuses the two deletes the record of what the user
-/// lost.
+/// A missing pack is referenced by definition, so it is damage and not unused
+/// space. An implementation that confuses the two deletes the record of what
+/// the user lost.
 #[test]
 fn t4_24_a_missing_pack_is_never_treated_as_garbage() {
     let scratch = harness::Scratch::new("missing-not-garbage");
@@ -631,7 +634,6 @@ fn t4_24_a_missing_pack_is_never_treated_as_garbage() {
     std::fs::remove_file(pack_path(&dir, victim)).unwrap();
 
     let vault = open(&dir).unwrap();
-    assert_eq!(vault.reconciled().residue_bytes(), 0);
     assert_eq!(vault.entries().len(), 2, "an entry was dropped");
     assert_eq!(
         vault.generation(),

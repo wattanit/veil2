@@ -1,15 +1,19 @@
 # Veil2 — Phase 4 Test Cases: Durability and Compaction
 
-**Version:** 1.0
-**Status:** draft — awaiting owner approval
-**Date:** 2026-08-08
+**Version:** 2.0
+**Status:** approved
+**Date:** 2026-08-09
 **Owner:** wattanit
 **Foundation and plan versions these cases are built against (G-14):**
-- Requirements Document **v1.2** — upstream
-- Design Guideline **v1.2** — upstream
-- Technical Specification **v1.4** — upstream
-- Implementation Plan **v1.6** — upstream
-- [Phase4-ToDo.md](Phase4-ToDo.md) **v1.0** — companion; each case names the item it covers
+- Requirements Document **v2.0** — upstream
+- Design Guideline **v2.0** — upstream
+- Technical Specification **v2.0** — upstream
+- Implementation Plan **v2.0** — upstream
+- [Phase4-ToDo.md](Phase4-ToDo.md) **v2.0** — companion; each case names the item it covers
+
+*Changes since v1.0 (**major**):* approved, re-pinned, and the reconciliation cases rewritten. FR-32 is withdrawn (Requirements v2.0) and nothing happens when a vault opens, so T4.17, T4.19, T4.20, T4.21, T4.26 and T4.27 now assert that the space an interrupted operation left is found by *asking* — reclaiming, or reporting the figures — and that opening finds and changes nothing. T4.18 is unchanged in intent and stronger in fact: an open writes nothing and now measures nothing either.
+
+> **v1.1 of this document, published earlier the same day, is wrong.** It described T4.17 and T4.28 as verifying a reversed FR-32. There is no FR-32.
 
 This document owns the **enumerated checks that close Phase 4**. Every case cites the requirement it verifies (G-10).
 
@@ -26,7 +30,7 @@ This document owns the **enumerated checks that close Phase 4**. Every case cite
 1. the vault opens;
 2. every file that existed before the killed operation is still listed;
 3. each of those extracts byte-identically to what was stored;
-4. the statistics match a full recount.
+4. the arithmetic holds: file count and stored bytes match a measurement exactly, and the on-disk total is never *higher* than what is there — after a kill it is lower by the bytes the killed operation left, and those are counted as space to reclaim. Nothing corrects the figures at open, so this asserts the gap is the right shape rather than that it is absent.
 
 **Where these run.** The development machine, macOS. Windows and Linux are unconfirmed (Spec §8.1), and it matters here more than anywhere: signal delivery, `fsync` semantics, and whether a directory sync is required at all are platform behaviour. What passes here is evidence for this platform and a reasonable expectation for the others.
 
@@ -95,7 +99,9 @@ Build a multi-pack vault with a small pack cap through the subject binary, delet
 
 After each of T4.2 to T4.5, open the vault and compare every reported figure against a full recount.
 
-**Verdict:** entry count, logical bytes, physical bytes and reclaimable bytes all agree. An incremental counter is broken by exactly the event this suite creates — bytes written that no commit learned about, or a pack written off before it was removed — so a suite that killed processes and never checked the arithmetic would be testing the easy half.
+**Verdict:** entry count and logical bytes agree exactly; physical and reclaimable bytes are lower than the measurement by the same amount, which is the bytes the killed operation left and never committed. Then reclaim, and all four agree exactly — because reclaiming measures first and commits what it found.
+
+An incremental counter is broken by exactly the event this suite creates, so a suite that killed processes and never checked the arithmetic would be testing the easy half. What changed at v2.0 is what "true again" means: opening does not make the figures true, because opening measures nothing (FR-22). Reclaiming does, and it is the user's act.
 
 ### T4.7 — Repeated kills at unpredictable points
 *Covers P4.2.e, P4.6.c · Verifies HC-4* — `#[ignore]`, run on request
@@ -175,14 +181,14 @@ Reclaim space and read the output. Then delete a file and read that output.
 
 ---
 
-## Reconciliation
+## What happens when a vault is opened
 
 ### T4.17 — Residue is found at open and reported, not destroyed
-*Covers P4.4.a, P4.4.b · Verifies FR-32, HC-4*
+*Covers P4.4.a, P4.4.b, P4.4.c · Verifies FR-8, FR-22, HC-4*
 
 Leave a pack file that no extent references beside an otherwise intact vault, then open it.
 
-**Verdict:** it is reported, counted into the space the user can reclaim, and still on disk; `reclaim-space` then takes it. FR-32 asks for it to be discarded at open and this phase declines — see T4.28 for the case that decides it. What FR-32 requires and gets is the report: space that reappears without explanation is indistinguishable, to the person watching, from space that was never accounted for properly.
+**Verdict:** opening changes nothing and reports nothing — the figures the vault carries are the same before and after, and the bytes are still on disk. Asking is what finds them: a measurement counts them as space that can be reclaimed, and `reclaim-space` takes them. FR-32 once required them to be discarded here; it is withdrawn, and T4.28 is the case that decided it. Space that reappears without explanation is indistinguishable, to the person watching, from space that was never accounted for properly — so it is reported where a user asked, and nowhere else.
 
 ### T4.18 — An open never writes
 *Covers P4.4.d · Verifies HC-4, S-2, FR-27*
@@ -192,42 +198,42 @@ Open an intact vault twice, recording the generation and both index slots. Then 
 **Verdict:** identical both times. The generation does not advance, no slot is rewritten, no pack is touched — including on the open that finds residue, which is the one that tempts a write. An open that writes is an open that can fail; worse, it costs FR-27 its detector, because a vault opened from a stale copy would come away holding a generation higher than the newer index a sync daemon then delivers.
 
 ### T4.19 — An interrupted reclaim leaves nothing unreachable
-*Covers P4.4.a, P4.1.c, P4.3.d · Verifies FR-32, HC-4, FR-24*
+*Covers P4.4.b, P4.1.c, P4.3.d · Verifies FR-8, HC-4, FR-24*
 
 Leave behind what a kill on either side of the reclaim commit produces — a new pack the index had not adopted, or an old one it had already let go of — then open the vault and reclaim.
 
 **Verdict:** every live file reads, the leftover is reported as reclaimable, and reclaiming takes it. This is the case that proves the ordering of P4.1.c: the operation is recoverable from both sides of its commit, or it is not.
 
-### T4.20 — A read-only vault opens, skips reconciliation, and says so
-*Covers P4.4.e · Verifies FR-32, Spec §4.5, §4.8*
+### T4.20 — A read-only vault opens, says so, and is not written to
+*Covers P4.4.e · Verifies FR-26, Spec §4.5, §4.8*
 
 Make a vault directory read-only, leave an orphaned pack in it, and open it. List it and check it. Then try to add.
 
 **Verdict:** it opens; the orphaned pack is still there; listing and checking succeed; the add exits with the read-only code; and the fact that the vault opened read-only is stated at the time it opens, not left to be discovered by the failing add. Refusing to open would turn an interrupted reclaim on a drive that later became read-only into permanent data loss, which HC-4 forbids.
 
 ### T4.21 — Garbage inside a live pack is left alone
-*Covers P4.4.f · Verifies FR-23, FR-32*
+*Covers P4.4.f · Verifies FR-23, FR-21*
 
 Delete one file from a pack that holds several, then open the vault.
 
 **Verdict:** the pack is untouched, its size is unchanged, and the reclaimable figure still counts the deleted file's bytes. Recovering those bytes means rewriting the pack around them, which is reclaiming space and the user's decision alone (FR-23). T4.26 makes the same assertion for the shapes where no rewriting would be needed at all, which is the harder half.
 
 ### T4.26 — Deleted bytes are not residue and are never taken at open
-*Covers P4.4.a, P4.4.f · Verifies FR-21, FR-23, FR-29, FR-32*
+*Covers P4.4.f · Verifies FR-21, FR-23, FR-29*
 
 Delete every file with extents in one pack, close the vault and open it again. Then do the same to a file at the *end* of a pack that still holds others.
 
 **Verdict:** nothing is removed, nothing is truncated, and the reclaimable figure is exactly what it was. Both shapes are trivially discardable — a whole dead pack, and a dead tail with nothing live above it — and neither may be discarded, because those are bytes the product told the user would stay until they asked for the space back. The two shapes are chosen deliberately: they are what a rule phrased as "discard what nothing references" would take.
 
 ### T4.27 — The residue of an interrupted ingest is found, tail and all
-*Covers P4.4.a, P4.4.c · Verifies FR-32, HC-4*
+*Covers P4.4.b, P4.4.c · Verifies FR-8, HC-4*
 
 Append bytes to a live pack that no commit ever learned of — what a kill part-way through an add leaves behind — then open the vault.
 
 **Verdict:** the exact byte count is reported, it is counted into what can be reclaimed, and `reclaim-space` takes it. The mirror of T4.26, and the pair is where the discrimination is asserted: the statistics count what was committed, the filesystem counts what is present, and the difference is the residue. It matters that this shape is a *tail on a live pack* rather than a whole pack — that is where an interrupted add leaves it, and a rule about whole packs misses it entirely.
 
 ### T4.28 — A vault whose index is behind its packs loses nothing
-*Covers P4.4.a · Verifies HC-4, FR-27, FR-32*
+*Covers P4.4.a · Verifies HC-4, FR-27*
 
 Deliver a vault the way a sync daemon would: the packs of a newer state, but an older index. Open it. Then let the newer index land, and open it again.
 
@@ -254,7 +260,7 @@ In the same vault, list, save a copy of a file stored elsewhere, and check.
 ### T4.24 — A missing pack is never treated as garbage
 *Covers P4.5.d · Verifies FR-32, S-4*
 
-Open the vault of T4.22 and read what reconciliation reported.
+Open the vault of T4.22 and ask it what is missing.
 
 **Verdict:** nothing was removed, nothing was recovered, no entry was dropped from the index, and the statistics were not quietly adjusted to match the smaller vault. A missing pack is referenced by definition, so it is damage and not residue, and an implementation that confuses the two deletes the record of what the user lost.
 

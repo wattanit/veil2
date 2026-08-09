@@ -10,7 +10,7 @@ use veil_core::Error;
 use veil_core::crypto::KdfParams;
 use veil_core::index::{Entry, EntryId};
 use veil_core::store::DEFAULT_PACK_CAP;
-use veil_core::vault::{Reconciled, Vault};
+use veil_core::vault::{Access, Vault};
 
 use crate::cli::{Cli, Command, Format};
 use crate::failure::{Failure, Run};
@@ -73,24 +73,22 @@ fn open(dir: &Path, cli: &Cli) -> Run<Vault> {
 
 /// Says what opening the vault found, before the command's own result.
 ///
-/// All three of these are conditions the user has not asked about and needs to
-/// know anyway: FR-32 requires recovered space to be reported rather than
-/// absorbed and a read-only vault to say so, and S-4 requires a partial loss to
-/// be presented as a list of files rather than discovered later. They go to
-/// standard error, because none of them is the result of the command that was
-/// run.
+/// Both of these are conditions the user has not asked about and needs to know
+/// anyway: FR-26 and FR-32 require a vault that cannot be written to say so
+/// rather than let the first write discover it, and S-4 requires a partial loss
+/// to be presented as a list of files rather than found later. They go to
+/// standard error, because neither is the result of the command that was run.
+///
+/// Space an interrupted operation left behind is deliberately **not** announced
+/// here. Finding it means walking the packs, opening a vault does not, and a
+/// figure nobody asked for is not worth putting vault size into the cost of
+/// every command. `veil info` reports it, and `veil reclaim-space` takes it.
 fn announce(vault: &Vault) {
-    match vault.reconciled() {
-        Reconciled::Skipped => output::note(
+    if vault.access() == Access::ReadOnly {
+        output::note(
             "This vault is read-only. You can look at it and check it for damage, \
              but nothing can be added to it or changed in it.",
-        ),
-        Reconciled::Residue { bytes } => output::note(&format!(
-            "{} in this vault was left behind by an operation that did not finish. \
-             It counts\nas space you can reclaim: run `veil reclaim-space` when you want it back.",
-            output::human_size(bytes)
-        )),
-        Reconciled::Clean => {}
+        );
     }
 
     let unreadable = vault.unreadable_entries().len();

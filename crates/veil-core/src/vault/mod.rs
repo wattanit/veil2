@@ -7,9 +7,17 @@
 //! This file holds the type and the read-only accessors. The operations are
 //! split by what they do to a vault: `session` opens and closes one and owns
 //! the password, `ingest` puts data in, `mutate` changes what is already there,
-//! `read` gets data out, `reclaim` recovers the space `mutate` left behind, and
-//! `reconcile` clears up after a crash at open.
+//! `read` gets data out, `reclaim` recovers the space `mutate` and a crash left
+//! behind, and `damage` says which entries a missing pack costs.
+//!
+//! **Opening a vault reads the header and one index slot, and does nothing
+//! else.** It writes nothing, and it does not walk the packs directory. Both
+//! matter: a write at open advances the generation that FR-27 detects external
+//! change with, and a walk puts vault size into the cost of an open (S-2).
+//! Finding space a crash left behind belongs to `reclaim` and to `info`, which
+//! the user asks for.
 
+mod damage;
 mod ingest;
 mod limits;
 mod lock;
@@ -17,7 +25,6 @@ mod mutate;
 mod progress;
 mod read;
 mod reclaim;
-mod reconcile;
 mod session;
 mod verify;
 mod walk;
@@ -27,7 +34,6 @@ pub use limits::{Limits, MAX_ENTRIES_PER_VAULT, MAX_FILE_SIZE};
 pub use lock::{Access, LOCK_FILE, VaultLock};
 pub use progress::{Cancel, NoProgress, Progress, ProgressReport, Unit};
 pub use reclaim::Reclaimed;
-pub use reconcile::Reconciled;
 pub use session::HEADER_FILE;
 pub use verify::{Outcome, Report, Verdict};
 pub use walk::{Found, SkipReason, Skipped, Walk, walk};
@@ -54,9 +60,6 @@ pub struct Vault {
     pack_cap: u64,
     limits: Limits,
     lock: VaultLock,
-    /// What reconciliation did at open. FR-32 requires the recovered space be
-    /// reported rather than absorbed, and this is where the caller reads it.
-    reconciled: Reconciled,
 }
 
 impl Vault {
@@ -121,9 +124,19 @@ impl Vault {
         &self.header
     }
 
-    /// Recomputes the statistics by scanning. A test oracle and a diagnostic,
-    /// never the source of [`statistics`](Self::statistics) — FR-22 requires
-    /// those to be incremental. This is what they get checked against.
+    /// Recomputes the statistics from what is actually on disk.
+    ///
+    /// **Never the source of [`statistics`](Self::statistics)**, which FR-22
+    /// requires to be incremental and available the instant a vault opens. This
+    /// walks the packs directory, so its cost follows vault size and it belongs
+    /// only where a user asked for it: reporting the figures, reclaiming space,
+    /// and checking a recount in a test.
+    ///
+    /// The difference between the two is exactly the space an interrupted
+    /// operation left behind. The incremental figures count what committed
+    /// operations put on disk; this counts what is there. A crash leaves bytes
+    /// nothing committed, so this reports more — and that surplus is space the
+    /// user can reclaim.
     ///
     /// # Errors
     ///

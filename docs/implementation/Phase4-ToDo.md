@@ -1,18 +1,22 @@
 # Veil2 — Phase 4 To-Do: Durability and Compaction
 
-**Version:** 1.0
-**Status:** draft — awaiting owner approval
-**Date:** 2026-08-08
+**Version:** 2.0
+**Status:** approved
+**Date:** 2026-08-09
 **Owner:** wattanit
 **Foundation and plan versions this list is built against (G-14):**
-- Requirements Document **v1.2** — upstream
-- Design Guideline **v1.2** — upstream
-- Technical Specification **v1.4** — upstream
-- Implementation Plan **v1.6** — upstream; this list expands Plan tasks P4.1–P4.6
+- Requirements Document **v2.0** — upstream
+- Design Guideline **v2.0** — upstream
+- Technical Specification **v2.0** — upstream
+- Implementation Plan **v2.0** — upstream; this list expands Plan tasks P4.1–P4.6
+
+*Changes since v1.0 (**major**):* approved, re-pinned, and **P4.4 is rewritten rather than re-worded.** This phase implemented reconciliation at open as a report rather than a discard, and proposed that reading upstream. The owner went further: FR-32 is withdrawn, and nothing happens when a vault is opened at all. The space an interrupted operation leaves is found by reclaiming and by reporting the figures, both of which the user asks for. Everything else in this list stands as built.
+
+> **v1.1 of this document, published earlier the same day, is wrong.** It recorded all ten notes as absorbed. Note 7 was not absorbed — the requirement behind it was withdrawn, which is a different outcome and the one worth remembering.
 
 This document owns the **step-level breakdown of Phase 4**. It defers what to build to the Requirements, how it presents to the Design Guideline, how it is built to the Specification, and phase sequencing to the Implementation Plan. Enumerated checks live in [Phase4-TestCases.md](Phase4-TestCases.md).
 
-**It is not a shadow spec (G-11).** No item below restates a format, an algorithm, or a parameter value. Where this phase must fix something the foundation documents leave open — directory-level durability, where the reconciliation report is returned, what a crash test is killing — it is recorded under *Notes for Upstream* and decided by the owner, not settled here.
+**It is not a shadow spec (G-11).** No item below restates a format, an algorithm, or a parameter value. Where this phase must fix something the foundation documents leave open — directory-level durability, what happens to bytes an interrupted operation left, what a crash test is killing — it is recorded under *Notes for Upstream* and decided by the owner, not settled here.
 
 ---
 
@@ -63,7 +67,7 @@ Phases 1 to 3 built a vault that works when nothing goes wrong. Phase 4 is the p
 |---|---|---|---|
 | P4.2.a | A real process killed with an uncatchable signal, part-way through an operation that is genuinely in flight | Spec §9, HC-4 | T4.2–T4.5 |
 | P4.2.b | The kill triggered by watching the vault's own bytes appear on disk, not by anything the process was built to tell a test | Spec §9, §11.1 | T4.2 |
-| P4.2.c | Four invariants asserted after every kill: the vault opens; every file that existed beforehand is still listed; each of those extracts byte-identically; the statistics match a full recount | HC-4, FR-8, FR-22 | T4.6 |
+| P4.2.c | Four invariants asserted after every kill: the vault opens; every file that existed beforehand is still listed; each of those extracts byte-identically; and the arithmetic holds — file count and stored total match a measurement exactly, while the on-disk total may be *lower* than the measurement by exactly the bytes the kill left, which are counted as space to reclaim | HC-4, FR-8, FR-22 | T4.6 |
 | P4.2.d | Add, replace and delete killed through the shipped binary; reclaiming space killed through a subject that is not the shipped binary, for the reason below | Spec §9, §4.5 | T4.5 |
 | P4.2.e | A deterministic set that runs with the suite, and a repeated randomised sweep marked `#[ignore]` and run on request | Spec §9, §8.1 | T4.7 |
 | P4.2.f | The signal is a kill, not an interrupt. An interrupt is cancellation, it is a different guarantee, and T3.18 already covers it | FR-14, HC-4 | T4.2 |
@@ -100,27 +104,24 @@ Phases 1 to 3 built a vault that works when nothing goes wrong. Phase 4 is the p
 
 ---
 
-## P4.4 — Reconciliation at open
+## P4.4 — Nothing at open
 
-*Plan P4.4 · Spec §4.5 · FR-32, HC-4, FR-27*
+*Plan P4.4 · Spec §4.5 · HC-4, FR-8, FR-22, FR-26, FR-27*
 
 | Item | Work | Cites | Tests |
 |---|---|---|---|
-| P4.4.a | Bytes on disk that no committed operation put there found at open, and counted into the space the user can reclaim rather than destroyed on the spot | Spec §4.5, FR-32, HC-4 | T4.17, T4.19, T4.27, T4.28 |
-| P4.4.b | What was found returned to the caller and said out loud by the command line, rather than absorbed | FR-32, Design §4.2 | T4.17 |
-| P4.4.c | The figures true again afterwards, from pack file sizes. Sizes are metadata; no stored content is read, and open time still does not scale with vault size | FR-22, S-2 | T4.6, T4.27 |
-| P4.4.d | **Nothing written at open — not the index, not a pack.** Opening a vault stays a read | HC-4, S-2, FR-27 | T4.18 |
-| P4.4.e | A vault whose storage will not take a write opened read-only, and said so rather than left to be discovered by a failing command | FR-32, Spec §4.5, §4.8 | T4.20 |
-| P4.4.f | Residue told from a deleted file's bytes by the figure the index already carries, so what the user deleted stays until they ask for the space back (FR-23) | FR-21, FR-23, FR-29, FR-32 | T4.21, T4.26, T4.27 |
-| P4.4.g | Reclaiming space takes the residue along with everything else, so nothing found here accumulates | FR-23, FR-32 | T4.17, T4.19, T4.27 |
+| P4.4.a | **Nothing at open.** No write — not the index, not a pack — and no walk of the packs directory. Opening a vault is the header and one index slot | HC-4, S-2, FR-22, FR-27 | T4.17, T4.18, T4.28 |
+| P4.4.b | Bytes on disk that no committed operation put there found by reclaiming, which measures the packs before selecting anything, and swept with everything else | FR-8, FR-23, HC-4 | T4.17, T4.19, T4.27 |
+| P4.4.c | The same bytes found by reporting the figures, so a user who asks what the vault occupies is told the truth without being made to reclaim to learn it | FR-8, Design §3.2 | T4.17, T4.27 |
+| P4.4.d | The maintained figures left understating rather than corrected behind the user's back, and the statistics trued up only inside the generation step that reclaiming commits | FR-22, S-2 | T4.6, T4.27 |
+| P4.4.e | A vault whose storage will not take a write opened read-only, and said so at open rather than left to be discovered by a failing command | FR-26, Spec §4.5, §4.8 | T4.20 |
+| P4.4.f | What the user deleted left alone until they ask for the space back, which is the same rule and needs no discrimination between the two kinds | FR-21, FR-23, FR-29 | T4.21, T4.26 |
 
-**Why P4.4.a reports rather than discards, against FR-32's letter.** Whether unreferenced bytes are residue is a *guess*. An index that is behind its packs looks exactly like a killed ingest, and §1 names a vault in a sync folder as a motivation for the product: a daemon can deliver an older index before the packs a newer one describes. Discard at that moment and content the newer index still points at is gone — no interruption anywhere in the story, and data lost anyway, which is what HC-4 exists to forbid. FR-32's own words name the target as "the residue an interrupted ingest or compaction leaves behind **under HC-4**", so where the identification is uncertain HC-4 governs. The residue is instead counted into what can be reclaimed, and reclaiming is the deliberate act FR-23 already requires. Nothing accumulates unseen; nothing is destroyed on a guess. Recorded as *Notes for Upstream*, item 7 — the largest departure in this phase, and the owner's to overturn.
+**Why nothing happens at open, and why this is not what the phase proposed.** This phase found that discarding unreferenced bytes acts on a *guess* — an index behind its packs is indistinguishable from a killed ingest, and §1 names a vault in a sync folder as a motivation for the product — and proposed reporting instead of discarding. That kept the mechanism and changed its verb. Two further objections remove it entirely: a write at open advances the generation FR-27 detects change with, and a walk of the packs directory puts vault size into the cost of every open, against S-2. Both are objections to *where the work sits*, not to what it does. Moved into reclaiming and into reporting the figures — both user-initiated, both already measuring the packs — the same work is correct, and opening a vault is a read of two files.
 
-**Why the discrimination needs no new field.** Residue and a deleted file's bytes are both unreferenced and call for opposite treatment. The statistics count what committed operations put on disk; the filesystem counts what is there. A delete leaves its bytes counted, an interrupted ingest leaves bytes nothing counted, so the difference between the two totals is exactly the residue — in both directions.
+**Why the figures are allowed to understate.** After an interruption the maintained totals count less than the filesystem holds, and nothing corrects them until the user asks. The alternative costs one `stat` per pack at every open, and pack count follows vault size (S-2). The error is in the safe direction: the product promises less space than reclaiming returns.
 
-**Why P4.4.d is stated as a prohibition.** An index write at open advances the generation, and the generation is FR-27's whole mechanism. A vault opened from a stale copy would come away holding a number higher than the newer index a daemon then delivers, and every later write would sail past the check that exists to refuse it — reconciliation quietly disabling the protection against the exact situation that motivated it. Found by two Phase 2 cases failing the moment reconciliation committed (*Notes for Upstream*, item 10).
-
-**Why P4.4.e is in this list at all.** FR-32 requires a vault that cannot be written to open read-only *and say so*. Phase 3 shipped the first half: a read-only vault opens, and the first write fails with its own exit code. Nothing tells the user before they try. That is the difference between a product that explains itself and one that has to be experimented with.
+**Why P4.4.e is in this list at all.** FR-26 requires a vault that cannot be written to open read-only *and say so*. Phase 3 shipped the first half: a read-only vault opens, and the first write fails with its own exit code. Nothing told the user before they tried. That is the difference between a product that explains itself and one that has to be experimented with.
 
 ---
 
@@ -133,12 +134,12 @@ Phases 1 to 3 built a vault that works when nothing goes wrong. Phase 4 is the p
 | P4.5.a | A referenced pack missing from disk does not prevent the vault from opening | Spec §4.5, S-4 | T4.22 |
 | P4.5.b | The entries with extents in it enumerable at open, without reading content | S-4, S-2 | T4.22 |
 | P4.5.c | Every entry outside it still listed, still extractable, still verified | S-4 | T4.23 |
-| P4.5.d | Never confused with garbage: reconciliation removes packs that nothing references, and a missing pack is referenced by definition | FR-32, S-4 | T4.24 |
+| P4.5.d | Never confused with space to reclaim: a missing pack is referenced by definition, so reclaiming never counts it and the figures are never adjusted to match it | FR-8, S-4 | T4.24 |
 | P4.5.e | Reported as damage in the words Design §7 fixes, pointing at `check` for the full list | Design §4.2, §7, FR-33 | T4.22 |
 
 **Why refusing to open would be the defect.** A vault that will not open because one of four hundred packs is missing has converted the loss of one pack into the loss of everything else, which is precisely the failure S-4 exists to reject. The right answer is the one §4.5 already fixes: open, name the casualties, and keep serving the rest.
 
-**Why the statistics are not silently corrected here.** P4.4.c re-derives the totals when reconciliation removed something. A missing pack is not something reconciliation removed — it is damage — so this phase reports it and leaves the figures alone rather than quietly writing a smaller vault into the index. Damage that adjusts the numbers to match itself is damage that has covered its tracks.
+**Why the statistics are not silently corrected here.** Reclaiming trues the totals up when it finds *more* on disk than the index accounts for. A missing pack is the opposite — less on disk, and it is damage rather than space — so the figures are left exactly as they are and the shortfall is reported. Damage that adjusts the numbers to match itself is damage that has covered its tracks.
 
 ---
 
@@ -160,18 +161,37 @@ The Plan's exit conditions for this phase, and where each is met:
 
 - **No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand** — T4.2 to T4.8, with P4.2's stated limit: the kill is a process kill, not a power cut.
 - **Compaction needs working space bounded by roughly one pack** — T4.10 at test scale and T4.25 at a scale where the difference is unambiguous.
-- **An interrupted compaction is cleaned up at next open, with the recovered space reported rather than absorbed silently** — **met in part, and the part that is not is a decision rather than an omission.** The space is reported at open (T4.19); it is recovered when the user reclaims, not at open, for the reason P4.4.a gives and *Notes for Upstream* item 7 records. The vault is fully usable in between and nothing accumulates unseen. If the owner rules for FR-32's letter this condition is met outright, and T4.28 is the case that changes.
-- **A vault on read-only media opens** — T4.20, which also covers the half of FR-32 that says it must say so.
+- **An interrupted compaction leaves nothing unreachable, and the space it left is recovered by the next reclaim** — **met** (T4.19, T4.27). The condition read differently when this phase was written: FR-32 required cleanup at open, this phase declined and reported instead, and the owner withdrew the requirement altogether. Nothing happens at open now, which T4.17, T4.18 and T4.28 assert directly.
+- **A vault on read-only media opens** — T4.20, which also covers the half of FR-26 that says it must say so at open rather than at the first failed write.
 
 ---
 
 ## Notes for Upstream
 
-Recorded per G-24. **None of these has been absorbed**; each is proposed with the reading this phase implements, so that the work is not blocked and the decision is still the owner's. Where the owner rules differently, the code changes, not this list.
+Recorded per G-24. **All ten were absorbed by the owner into Requirements v2.0 and Specification v2.0**, and the pins in the header are the versions that contain them. Each was proposed with the reading this phase implemented, so that the work was not blocked and the decision stayed the owner's; the owner ruled for every reading, so no code changed on absorption. Where each landed:
+
+| Note | Landed in |
+|---|---|
+| 1 — directory-level durability | Spec §4.7 |
+| 2 — nowhere to report what open found | **dissolved** — nothing is found at open; Spec §5.1, `recount_statistics()` reports on request |
+| 3 — no operation enumerates a missing pack's entries | Spec §5.1, `missing_packs()` / `unreadable_entries()` |
+| 4 — reclaiming while a read is in flight | Spec §11.1, resolved: it may not |
+| 5 — fsync ordering unverified | Spec §11.1, resolved: ordering proved, platform's honouring of it not |
+| 6 — pack identifiers rise by argument | superseded by note 9 |
+| 7 — FR-32 says discard, this phase reports | **Requirements v2.0, FR-32 withdrawn** — neither verb; nothing happens at open. Spec §4.5; FR-8, FR-22, FR-26 and Design §3.2, §8.4 carry what it covered |
+| 8 — what the crash tests kill | Spec §9 |
+| 9 — pack identifiers can be reused, in one case | **Spec §4.3, `next_pack_id`** — fixed rather than recorded; Plan P5.7 builds it |
+| 10 — nothing writes the index at open | Requirements FR-22 and the withdrawn FR-32, Spec §4.5 — generalised from "no write" to "nothing at all" |
+
+Two are rulings rather than clarifications, and in both the owner went past what this phase proposed.
+
+**Note 7** was the largest departure in the phase. This list proposed keeping reconciliation at open and changing its verb from discard to report. The owner withdrew FR-32 instead: the objection was to doing anything at open, not to which thing. The work moved to reclaiming and to reporting the figures, both of which the user asks for. That this list proposed the smaller change is worth leaving on the record — it is the same shape of error as the one that created FR-32, and it was made by the people who had just diagnosed it.
+
+**Note 9** proposed recording the pack-identifier defect and not fixing it, on the ground that its consequence is a detected error rather than silent corruption. The owner overruled that and required the counter: reporting damage where there is none is FR-2's failure in a different place, and the format is still private enough for the fix to cost a line.
 
 1. **Spec §4.7 fixes the ordering between pack and index and says nothing about the directory.** `fsync` on a file makes its contents durable, not its name; the directory entry needs its own sync. Three write paths are affected — a newly created pack, the header's rename, and an index slot's first creation — and none of them does it today. *Proposed: §4.7 gains a sentence putting the containing directory inside the same ordering obligation as the file.* Resolver: owner, at the next Specification bump.
 
-2. **FR-32 requires open to report the space it recovered, and §5.1's API has nowhere to put it.** `Vault::open` returns a `Vault`. *Proposed: an accessor on the open vault carrying what reconciliation found — clean, residue of a stated size, or not examined because the vault is read-only — leaving the constructor's signature as §5.1 fixes it.* Resolver: owner.
+2. **FR-32 requires open to report the space it recovered, and §5.1's API has nowhere to put it.** *(Dissolved rather than answered: FR-32 is withdrawn and open reports nothing.)* `Vault::open` returns a `Vault`. *Proposed: an accessor on the open vault carrying what reconciliation found — clean, residue of a stated size, or not examined because the vault is read-only — leaving the constructor's signature as §5.1 fixes it.* Resolver: owner.
 
 3. **§4.5 requires the entries of a missing pack to be enumerated at open, and §5.1 has no operation that does it.** *Proposed: an accessor alongside the one in item 2, computed from extents and one existence check per referenced pack, so it costs no content read (S-2).* Resolver: owner.
 

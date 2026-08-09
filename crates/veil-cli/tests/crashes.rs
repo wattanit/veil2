@@ -235,10 +235,33 @@ fn assert_survived(subject: &Subject, vault: &Path, before: &BTreeMap<String, Ve
 
     // 4 — the arithmetic survived too. An incremental counter is broken by
     // exactly the event this suite creates.
+    //
+    // A kill leaves bytes on disk that no commit accounted for, so the index's
+    // figures and a recount are *expected* to differ here, by exactly those
+    // bytes. What must hold is that the index never claims more than is there,
+    // and that the parts a kill cannot touch — how many files and how much they
+    // hold — agree exactly. Opening the vault does not reconcile the two, and
+    // that is the point: an open writes nothing (FR-27).
+    let held = opened.statistics();
+    let counted = opened.recount_statistics().unwrap();
     assert_eq!(
-        opened.statistics(),
-        opened.recount_statistics().unwrap(),
-        "{at}: the statistics diverged from a recount"
+        held.entry_count, counted.entry_count,
+        "{at}: the file count diverged from a recount"
+    );
+    assert_eq!(
+        held.logical_bytes, counted.logical_bytes,
+        "{at}: the stored total diverged from a recount"
+    );
+    assert!(
+        held.physical_bytes <= counted.physical_bytes,
+        "{at}: the index claims {} bytes on disk but only {} are there",
+        held.physical_bytes,
+        counted.physical_bytes
+    );
+    assert_eq!(
+        counted.physical_bytes - held.physical_bytes,
+        counted.reclaimable_bytes - held.reclaimable_bytes,
+        "{at}: bytes a kill left behind were not counted as space to reclaim"
     );
 
     // T4.8 — at least one index slot authenticated, which is what opening at
@@ -456,11 +479,25 @@ fn t4_6_the_statistics_are_true_after_a_kill() {
         total_pack_bytes(&watching).unwrap_or(0) > baseline + 1024 * 1024
     });
 
-    // Before the reconciliation an open would perform, the figures may count
-    // bytes no commit learned of. That is what FR-32 exists for, and this case
-    // is the assertion that it closes the gap rather than papering over it.
-    let opened = Vault::open(&vault, &subject.password()).unwrap();
-    assert_eq!(opened.statistics(), opened.recount_statistics().unwrap());
+    // The gap a kill leaves, and that it closes where it is supposed to. Opening
+    // does not close it — an open writes nothing and walks no packs — so the
+    // index still counts only what committed, and the bytes the killed add left
+    // show up as space to reclaim. Reclaiming is what makes the two agree, and
+    // it is the user's deliberate act (FR-23) rather than a side effect of
+    // looking at the vault.
+    let mut opened = Vault::open(&vault, &subject.password()).unwrap();
+    let counted = opened.recount_statistics().unwrap();
+    assert!(
+        counted.physical_bytes > opened.statistics().physical_bytes,
+        "the killed add left no trace, so this case proves nothing"
+    );
+
+    opened.compact(&mut NoProgress, &Cancel::new()).unwrap();
+    assert_eq!(
+        opened.statistics(),
+        opened.recount_statistics().unwrap(),
+        "reclaiming did not make the figures true again"
+    );
     drop(opened);
 
     assert_survived(&subject, &vault, &before, "after a killed add");

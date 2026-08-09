@@ -1,12 +1,22 @@
 # Veil2 — Requirements Document
 
-**Version:** 1.2
+**Version:** 2.0
 **Status:** approved
-**Date:** 2026-08-08
+**Date:** 2026-08-09
 **Owner:** wattanit
 **Companion documents:**
-- Design Guideline v1.2 — downstream
-- Technical Specification v1.4 — downstream
+- Design Guideline v1.3 — downstream
+- Technical Specification v2.0 — downstream
+
+*Changes since v1.2 (**major — two decisions reversed, one requirement withdrawn**):*
+
+**1. FR-32 is withdrawn. Opening a vault is a read.** It required the product to reconcile stored data against the index at open, discarding what nothing referenced. Implementation established that identifying leftovers is a *guess*, wrong in the sync-folder case §1 names as a motivation for this product; and that any write at open advances the counter FR-27 detects external change with, disabling the protection that motivated it. Both objections kill the requirement rather than amend it. Recovering that space belongs to FR-23, where a deliberate act was always required; reporting it belongs to FR-8; opening read-only belongs to FR-26; naming a missing pack's casualties was always S-4. Nothing FR-32 asked for is lost — it was a requirement written to authorise a mechanism, and the mechanism was wrong.
+
+**2. §2.1's three platforms are no longer peers at 2.0.** macOS ships first; Windows and Linux follow. Portability stays a property of the format and stays defect-grade under HC-8, but *verifying* it needs three machines that do not exist and a pipeline the owner has ruled out. Calling them peers while only one is ever run made the claim decorative. §2.2 records the deferral with its door.
+
+*Also:* FR-8 states what reclaimable space counts and that measuring it is a request rather than something opening a vault does; FR-26 gains the read-only case FR-32 held and the lock-unavailable case implementation found; FR-22 says which figures are immediate and which are measured.
+
+> **The documents in commits before this one are wrong**, and not only out of date. Every version of this suite up to Requirements v1.2, Design Guideline v1.2, Technical Specification v1.4 and Implementation Plan v1.6 carries FR-32 and the reconciliation-at-open mechanism it authorised. A revision published earlier on the same day as this one *reversed* FR-32 rather than withdrawing it, and is wrong in the same way for the same reason. Read none of them as current. The trace of how the mistake was made and found is kept in §9 and in Technical Specification §11.2, because losing it would make the same mistake cheap to repeat.
 
 *Changes since v1.1 (minor — additive, no decision reversed):* FR-34 added — adding a file at a path the vault already holds is refused rather than stored alongside it. Raised by Phase 3: a duplicated path is unaddressable from a command line afterwards, and FR-13 already treats the full path as identity.
 
@@ -36,7 +46,9 @@ In priority order:
 
 ### 2.1 In scope
 
-Creating, opening, and closing a single vault at a time. Browsing the complete file index while a vault is open. Adding files and folders. Retrieving selected files to a user-chosen destination. Replacing and deleting entries. Explicit, user-initiated compaction. A graphical application and a command-line application, both built on one shared core. Changing a vault's password. All of it on macOS, Windows, and Linux, as peer platforms rather than a primary and two ports.
+Creating, opening, and closing a single vault at a time. Browsing the complete file index while a vault is open. Adding files and folders. Retrieving selected files to a user-chosen destination. Replacing and deleting entries. Explicit, user-initiated compaction. A graphical application and a command-line application, both built on one shared core. Changing a vault's password.
+
+**Platform scope: macOS at 2.0; Windows and Linux after it.** Nothing is written for one platform — the format carries no host-specific behaviour (HC-8), and the language, the dependencies, and every platform-sensitive path are chosen so the other two are a build and a test run rather than a port. What they are not is *verified*, and this document does not claim what nobody has run. Verification is deferred with a door in §2.2, and until it is done a release states which platforms it has been run on rather than implying three.
 
 ### 2.2 Explicitly deferred
 
@@ -47,6 +59,8 @@ Each entry names the door the current version must leave open. A deferral withou
 - **Opening a vault file directly in an external application.** This requires plaintext on disk and therefore a cleanup obligation; the original Veil's attempt at this produced a command that deleted unrelated empty directories. *Door:* retrieval targets a caller-supplied destination (FR-16), so a supervised temporary-extraction path can be added without changing the retrieval model.
 - **Editing a file in place and writing it back.** *Door:* replace-by-name (FR-13) already expresses the storage half of this, so an editor integration needs no new format support.
 - **More than one vault open at once.** *Door:* the core must represent an open vault as an instance value with no process-global state (A-7).
+- **Verified support for Windows and Linux.** Both are built for and neither is run. A release ships for the platforms it was tested on and says so; the others arrive when there is a machine to run them on. *Door:* HC-8 keeps every platform-sensitive behaviour — path separators, Unicode normalisation, case, reserved characters — out of the stored format and normalised on the way in, so a vault written on macOS today is the vault the other two will open. Nothing about the deferral is allowed to reach the format, which is why HC-8 stays defect-grade while the verification waits.
+
 - **Migrating a vault from a superseded format version to the current one.** A later release may change how keys are derived or how data is laid out; rewriting existing vaults into the new format is not built now. *Door:* every vault records the format version required to read it and the application version that wrote it (HC-5), and readers dispatch on the recorded format version rather than assuming the current one (FR-30) — so a migration path can be added later without having to guess what an existing vault contains.
 
 ### 2.3 Out of scope
@@ -79,6 +93,8 @@ These are defect-grade. A release that violates any of them is defective by defi
 
 **HC-8.** A vault is portable across every supported platform. A vault written on one opens on the others with identical contents and identical file names, without conversion. Platform-specific behaviour — path separators, Unicode normalisation of names, case sensitivity, reserved characters — is normalised on the way in and never reaches the stored format. A vault that opens on the platform that wrote it and fails on another is defective. Users move vaults between machines on drives and sync services (§1, motivation 3), so portability is a property of the format, not a convenience.
 
+*This constraint binds the format now and binds every release, including releases for platforms nobody has run yet.* Its **verification** is a per-platform release gate rather than a 2.0 gate (§2.1, §2.2): a platform ships once a vault written elsewhere has been opened on it and compared byte-for-byte, and not before. Deferring the run does not soften the constraint — a portability defect found in 2026 is as defective as one found today, and the reason HC-8 is written as a property of the format is precisely so that the delay costs verification time rather than stored data.
+
 ---
 
 ## 4. Functional Requirements
@@ -106,6 +122,10 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 **FR-7.** Group and filter the index by each entry's recorded original relative path. Storage is flat; path is descriptive metadata, so operations that a real tree would support — renaming a folder, creating an empty one — are not offered, and the product does not imply otherwise.
 
 **FR-8.** Report the statistics a user needs to decide whether compaction is worth running: entry count, logical bytes stored, physical bytes occupied on disk, bytes reclaimable by compaction, and reclaimable bytes as a share of physical. Compaction is a deliberate manual act (FR-23), so the figures the decision rests on must be in front of the person making it.
+
+**Reclaimable bytes count two things, and the user is not asked to tell them apart:** the bytes of deleted and replaced files, which stay until compaction (FR-21), and the bytes an interrupted operation left behind, which no commit ever accounted for. Both are space the vault is occupying and not using, both are recovered by the same act, and a figure that showed only one of them would understate what the user gets. The distinction is real inside the implementation and carries no meaning outside it.
+
+**Measuring the second kind is a request, never something the product does on its own.** Finding bytes no commit accounted for means measuring the stored data itself, which costs time proportional to the vault. It happens where a user asked for these figures, and where they asked to reclaim — not when a vault is opened, because opening a vault is a read and must stay one (FR-22, FR-27).
 
 ### 4.3 Ingest
 
@@ -145,6 +165,8 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 
 **FR-22.** Make the statistics of FR-8 available immediately on opening a vault, without reading or scanning stored data. Acceptance: the figures appear at open time for a vault of any size. Deriving reclaimable space by scanning hundreds of gigabytes would cost more than the compaction it is meant to advise, so these totals are maintained as the vault changes rather than computed on demand.
 
+**This is a prohibition as much as a promise, and it is the reason opening a vault measures nothing.** The maintained totals count what completed operations recorded. After an interruption they can understate what is on disk, and closing that gap means measuring the stored data — which is exactly the cost this requirement refuses to put into opening a vault. The gap is closed where a user asks for the figures and where they ask to reclaim (FR-8, FR-23), and it errs in the safe direction: the product promises less space than it will return, never more.
+
 **FR-23.** Compact only when the user explicitly asks. Compaction rewrites stored data and is never triggered automatically or in the background, where it would compete for I/O and risk interruption the user did not choose.
 
 **FR-24.** Perform compaction such that the vault is openable at every point during it, and an interruption costs at most the progress of the current unit of work (HC-4).
@@ -155,7 +177,17 @@ Numbering is continuous across groups; the headings are organisation, not namesp
 
 **FR-26.** Take an advisory lock when opening a vault, and tell a second opener that the vault is in use rather than allowing two writers. On storage where advisory locking is unreliable — network filesystems and some user-space mounts — the lock is best-effort and FR-27's detection is the actual protection; the product says so rather than implying a guarantee it cannot keep.
 
-**FR-32.** Reconcile stored data against the index when opening a vault, discarding stored data that no index entry references — the residue an interrupted ingest or compaction leaves behind under HC-4. Report the space recovered rather than absorbing it silently. Where the vault cannot be written, open it read-only and say so instead of failing; a vault on read-only media must still be readable.
+Where the storage will not take a lock at all — read-only media, a filesystem that does not implement locking, a directory the user cannot write — **the vault opens read-only and says so when it opens**, rather than letting the first attempted change discover it. Everything that reads works: browsing, retrieval, verification. Only genuine contention is reported as in use.
+
+Two things this refuses to do, each with its reason. Refusing to open a read-only vault would make an interrupted operation on a drive that later became write-protected into permanent data loss, which HC-4 forbids, and would make the operation that diagnoses a failing drive (FR-33) the one operation a failing drive cannot run. Reporting unavailable locking as contention would send someone hunting for a second window that does not exist, which is FR-2's conflation wearing different clothes.
+
+**~~FR-32.~~ Withdrawn at v2.0; the number is retained and not reused.** It required stored data to be reconciled against the index when a vault is opened, discarding what no entry referenced and reporting the space recovered. Two findings from implementation withdraw it rather than amend it:
+
+*The identification is a guess.* An index that is behind its packs is indistinguishable from an interrupted operation, and §1's third motivation puts vaults in sync folders where a daemon can deliver an older index before the stored data a newer one describes. Discarding at that moment destroys content the newer index still points at — no interruption anywhere in the story and data lost anyway, which is exactly what HC-4 forbids.
+
+*Doing it at open is worse than doing it wrong.* Any write while opening advances the version counter FR-27 detects external change with. A vault opened from a stale copy would come away holding a counter higher than the newer copy arriving moments later, and every subsequent write would pass the check that exists to refuse it — FR-27 disabled by the housekeeping meant to serve it.
+
+What FR-32 was reaching for is covered without it, and was before it existed: the space is counted and reported by FR-8, recovered by the deliberate act FR-23 already requires, and a missing component's casualties are enumerated under S-4. **Opening a vault is a read.** It reports what the vault records, changes nothing, and measures nothing that costs time proportional to the vault's size (FR-22).
 
 **FR-27.** Detect that a vault changed on disk since it was opened, refuse to write over the change, and offer to reload. Vaults may live in sync folders (§1, motivation 3), so an external writer is an expected condition, not an anomaly.
 
@@ -251,12 +283,21 @@ Downstream of the suite: an Implementation Plan expanding the Spec's milestones,
 
 Document versions and release versions are independent counters. Foundation documents in this suite begin at 1.0. Released software begins at 2.0.0, continuing the original Veil's lineage rather than restarting, so that a version number never refers to two different products. Each release's Implementation Plan pins the exact foundation document versions it was built against; that pin, not these documents, is the as-built record of what a release shipped.
 
+**A release names the platforms it was run on.** 2.0.0 is macOS (§2.1). Windows and Linux follow as their own releases once each has been run against the portability check HC-8 requires, and neither is announced as supported before that run. "Coming soon" is the honest statement and the only one this document permits; a download button for a binary nobody has executed is not.
+
 ---
 
 ## 9. Open Questions
 
-- **Exact key-derivation cost parameters satisfying C-3.** Resolver: Technical Specification, measured on real hardware.
+- **Exact key-derivation cost parameters satisfying C-3.** Partly settled and deliberately still open: the working values are measured at 0.27 s on the development machine, which is among the strongest hardware C-3 contemplates rather than the weakest it targets. Nothing is orphaned by a later change (HC-5). Resolver: Technical Specification, measured on a low-spec machine when one is available.
 - **Maximum length of the path metadata recorded under FR-10.** Resolver: Technical Specification.
+
+### Resolved during v2.0
+
+- **~~Whether reconciliation at open discards what it finds or reports it.~~** Resolved as **neither: FR-32 is withdrawn and nothing happens at open.** The question was asked twice and answered wrongly the first time. Phase 4 raised it as "discard or report", the first answer was "report" — which kept the mechanism and moved its verb — and only then was the prior question asked: *should a vault opening do this at all?* It should not. Identifying leftovers is a guess that the sync-folder case makes wrong in a data-losing direction, and any write at open costs FR-27 its detector. FR-8 reports the space on request, FR-23 recovers it on request, FR-26 covers read-only, S-4 covers a missing component. The withdrawn FR-32 above records what it asked for and why it is gone.
+
+  **The lesson is worth more than the decision.** This requirement existed because a design review noticed the Specification doing something no requirement described, and resolved it by writing a requirement that authorised it (Technical Specification §11.2, item 3). The observation was correct and the resolution inverted: *"the implementation does something nothing asked for"* has two available answers, and only one of them was ever reached for. Every feedback item this suite has absorbed was resolved the same way. A note from implementation must now say which of the two was chosen and why the other was not.
+- **~~Whether macOS, Windows and Linux ship as peers at 2.0.~~** Resolved as **no**: macOS ships at 2.0 and the other two follow as their own releases. Verifying three platforms needs three machines or a pipeline, and the owner has ruled out both. HC-8 is unchanged and still defect-grade — what moved is when it is *checked*, not whether it holds. §2.1 carries the scope, §2.2 the deferral and its door, §8 what a release is permitted to claim.
 
 ### Resolved during v1.1
 

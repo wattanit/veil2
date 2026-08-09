@@ -103,6 +103,16 @@ pub fn entries_in_pack(entries: &[Entry], pack_id: u32) -> Vec<EntryId> {
         .collect()
 }
 
+/// Bytes already in the pack with this identifier, or zero if there is none.
+///
+/// Non-zero means an interrupted operation left bytes behind under an
+/// identifier the counter had not yet committed. They are written past rather
+/// than over: they are only *probably* residue, and nothing here is entitled to
+/// act on that guess.
+fn existing_len(vault_dir: &Path, pack_id: u32) -> u64 {
+    fs::metadata(pack_path(vault_dir, pack_id)).map_or(0, |m| m.len())
+}
+
 /// An append-only sink that rolls over at the cap, recording where everything
 /// landed. Implements [`Write`], so encryption streams straight into it.
 pub struct PackSink<'a> {
@@ -124,21 +134,32 @@ pub struct PackSink<'a> {
 }
 
 impl<'a> PackSink<'a> {
-    /// Opens a sink that appends to the vault's newest pack, or starts one.
+    /// Opens a sink that appends to the pack the counter last handed out, or
+    /// starts the one it names next.
+    ///
+    /// `next_pack_id` is the index's counter (§4.3). Identifiers come from it
+    /// rather than from the highest file present, because a pack removed by
+    /// reclaiming space lowers the highest file present and the counter does
+    /// not — see [`IndexDocument::next_pack_id`](crate::index::IndexDocument).
+    ///
+    /// Where the pack it lands on already exists with bytes in it that no
+    /// entry references — the residue of an interrupted operation — those bytes
+    /// are appended past, never truncated. Whether they are residue is a guess,
+    /// and this is not the place to act on one.
     ///
     /// # Errors
     ///
     /// [`Error::Io`] if the packs directory cannot be created or listed.
-    pub fn open(vault_dir: &'a Path, cap: u64) -> Result<Self> {
+    pub fn open(vault_dir: &'a Path, cap: u64, next_pack_id: u32) -> Result<Self> {
         fs::create_dir_all(vault_dir.join(PACKS_DIR))?;
-        let ids = existing_pack_ids(vault_dir)?;
+        let next_pack_id = next_pack_id.max(1);
 
-        let (pack_id, offset) = match ids.last() {
-            Some(&id) => {
-                let len = fs::metadata(pack_path(vault_dir, id))?.len();
-                if len >= cap { (id + 1, 0) } else { (id, len) }
-            }
-            None => (1, 0),
+        // The counter names the *next* identifier, so the one before it is the
+        // pack still being filled — if it exists and has room.
+        let current = next_pack_id.saturating_sub(1).max(1);
+        let (pack_id, offset) = match fs::metadata(pack_path(vault_dir, current)) {
+            Ok(m) if current < next_pack_id && m.len() < cap => (current, m.len()),
+            _ => (next_pack_id, existing_len(vault_dir, next_pack_id)),
         };
 
         Ok(Self {
@@ -159,26 +180,29 @@ impl<'a> PackSink<'a> {
     /// newest, so its bytes are separable from everything already stored.
     ///
     /// This is what reclaiming space writes into: the live extents of one pack
-    /// are copied here, and the new pack takes an identifier above every pack
-    /// present. Identifiers are therefore never reused — the new pack is
-    /// created before the old one is removed, so the highest only ever rises.
+    /// are copied here, and the new pack takes the identifier the index's
+    /// counter names next. **The counter, not the highest file present** —
+    /// reclaiming removes packs, so the highest file present can go down, and
+    /// an identifier handed out twice lets a stale index name bytes that are
+    /// now someone else's (§4.3).
     ///
     /// # Errors
     ///
     /// [`Error::Io`] if the packs directory cannot be created or listed.
-    pub fn open_fresh(vault_dir: &'a Path, cap: u64) -> Result<Self> {
+    pub fn open_fresh(vault_dir: &'a Path, cap: u64, next_pack_id: u32) -> Result<Self> {
         fs::create_dir_all(vault_dir.join(PACKS_DIR))?;
-        let pack_id = existing_pack_ids(vault_dir)?.last().map_or(1, |id| id + 1);
+        let pack_id = next_pack_id.max(1);
+        let offset = existing_len(vault_dir, pack_id);
 
         Ok(Self {
             vault_dir,
             cap,
             pack_id,
-            offset: 0,
+            offset,
             file: None,
             extents: Vec::new(),
             start_pack_id: pack_id,
-            start_offset: 0,
+            start_offset: offset,
             named_a_pack: false,
             break_extent: false,
         })
@@ -188,6 +212,19 @@ impl<'a> PackSink<'a> {
     #[must_use]
     pub fn extents(&self) -> &[Extent] {
         &self.extents
+    }
+
+    /// What the index's counter must be after this sink's extents are adopted.
+    ///
+    /// Read before [`finish`](Self::finish) and stored in the same commit that
+    /// takes the extents, so the counter and the packs it accounts for become
+    /// durable together. A sink that rolled back never reaches a commit, so a
+    /// cancelled write leaves the counter where it was — and the identifier it
+    /// nearly used is handed out again, which is correct: nothing ever
+    /// referenced it.
+    #[must_use]
+    pub fn next_pack_id_after(&self) -> u32 {
+        self.pack_id.saturating_add(1)
     }
 
     /// Ends the current extent, so the next write starts a new one.

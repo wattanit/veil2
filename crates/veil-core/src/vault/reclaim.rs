@@ -23,7 +23,7 @@ use super::{Cancel, Progress, ProgressReport, Unit, Vault};
 /// Bytes moved per read, and the interval at which cancellation is noticed.
 const COPY_CHUNK: usize = 64 * 1024;
 
-/// What reclaiming space recovered (FR-8, FR-32).
+/// What reclaiming space recovered (FR-8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Reclaimed {
     /// How many packs were rewritten and removed.
@@ -90,6 +90,14 @@ impl Vault {
         // file holds, so the arithmetic says there is nothing to recover — and
         // damage that hides its own detection is the worst kind to have.
         self.refuse_unreadable_packs()?;
+
+        // Opening a vault does not walk the packs, so the incremental figures
+        // count what committed operations put on disk and not what a crash
+        // left there. This is the first moment a walk is warranted — the user
+        // asked for one — so the figures are trued up against the filesystem
+        // before anything is selected. Without it, reclaiming space a crash
+        // left behind would subtract bytes the statistics never counted.
+        self.document.statistics = self.recount_statistics()?;
 
         let mut candidates = self.candidates()?;
         // Highest share of garbage first (§4.5). Equal shares fall back to the
@@ -177,8 +185,8 @@ impl Vault {
     /// the new bytes are durable, then the index names them, then what the
     /// index let go of is removed. A crash before the commit leaves the new
     /// pack unreferenced; a crash after it leaves the old one unreferenced.
-    /// Either way the leftover is residue that reconciliation clears at the
-    /// next open (FR-32), and nothing live is ever unreachable.
+    /// Either way the leftover is unused space that the next reclaim sweeps —
+    /// it is counted, it is recoverable, and nothing live is ever unreachable.
     fn rewrite(&mut self, candidate: &Candidate, cancel: &Cancel) -> Result<u64> {
         let pack_id = candidate.pack_id;
 
@@ -197,9 +205,10 @@ impl Vault {
             .collect();
 
         let mut relocated: Vec<(EntryId, usize, Extent)> = Vec::with_capacity(moving.len());
+        let mut next_pack_id = self.document.next_pack_id;
 
         if !moving.is_empty() {
-            let mut sink = PackSink::open_fresh(&self.dir, self.pack_cap)?;
+            let mut sink = PackSink::open_fresh(&self.dir, self.pack_cap, next_pack_id)?;
             let mut source = std::fs::File::open(pack_path(&self.dir, pack_id))?;
 
             let outcome = (|| -> Result<()> {
@@ -227,12 +236,13 @@ impl Vault {
                 // Nothing has been committed, so the new pack is entirely this
                 // attempt's and can go. If the rollback itself fails, the
                 // reason we stopped is still the one the caller needs — and
-                // what it leaves behind is unreferenced, which reconciliation
-                // clears at the next open (FR-32).
+                // what it leaves behind is unreferenced, so the next reclaim
+                // sweeps it.
                 let _ = sink.rollback();
                 return Err(e);
             }
 
+            next_pack_id = next_pack_id.max(sink.next_pack_id_after());
             // Durable before the index may name it (FR-12).
             sink.finish()?;
         }
@@ -244,6 +254,12 @@ impl Vault {
                 *extent = to;
             }
         }
+
+        // The identifier of the pack about to be removed is spent, and stays
+        // spent. This is the case the counter exists for: without it, removing
+        // the highest pack would hand its number to the next allocation, and a
+        // stale index would name bytes that are now somebody else's (§4.3).
+        self.document.next_pack_id = next_pack_id;
 
         // Removing the pack recovers exactly its garbage: the live part of it
         // was just written again elsewhere.

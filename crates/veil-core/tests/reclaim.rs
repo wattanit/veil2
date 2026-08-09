@@ -239,11 +239,10 @@ fn t4_13_cancelling_keeps_what_was_already_reclaimed() {
     assert_all_intact(&vault, &stored, "after a cancelled reclaim");
 
     // What it had already reclaimed stays reclaimed, and the leftover of the
-    // pack in flight is residue the next open clears (FR-32).
+    // pack in flight is space the next reclaim sweeps.
     drop(vault);
     let vault = open(&dir).unwrap();
     assert_all_intact(&vault, &stored, "after reopening a cancelled reclaim");
-    assert_statistics_match_recount(&vault, "after reopening a cancelled reclaim");
 
     // And running it again finishes the job.
     let mut vault = vault;
@@ -350,4 +349,63 @@ fn t4_25_bounded_working_space_at_scale() {
         "the fixture is too small for one pack of headroom to be a meaningful bound"
     );
     assert_statistics_match_recount(&vault, "after reclaiming at scale");
+}
+
+/// P5.7 — a reclaimed pack's identifier is never handed out again
+/// (Spec §4.3, §4.5; HC-3, FR-2).
+///
+/// Allocating "one above the highest pack present" is correct until reclaiming
+/// removes packs, because then the highest present goes *down*. Empty a vault
+/// and reclaim, and every pack is gone: the next allocation starts from one
+/// again, over identifiers this vault has already used. A stale index slot, or
+/// an older copy a sync daemon delivers late, then names a pack whose bytes are
+/// now a different pack's. That fails authentication and is reported as damage,
+/// which sends a user looking for a corrupted vault they do not have. The
+/// stored counter is what makes the case unreachable.
+#[test]
+fn a_reclaimed_pack_identifier_is_never_reissued() {
+    let scratch = harness::Scratch::new("pack-id-not-reissued");
+    let dir = scratch.vault_dir();
+    let (mut vault, stored) = stocked(&dir, 3);
+
+    let issued = *existing_pack_ids(&dir).unwrap().last().unwrap();
+    assert!(issued > 1, "the fixture never filled a second pack");
+
+    for name in stored.keys() {
+        delete_by_name(&mut vault, &stored, name);
+    }
+    vault.compact(&mut NoProgress, &Cancel::new()).unwrap();
+
+    // The case this exists for: nothing is left on disk, so "one above the
+    // highest present" is one — an identifier already spent.
+    assert!(
+        existing_pack_ids(&dir).unwrap().is_empty(),
+        "the fixture did not reach the case: packs remain after emptying the vault"
+    );
+
+    // Reopened, because a counter is only worth anything if it is stored.
+    drop(vault);
+    let mut vault = open(&dir).unwrap();
+    let id = add(&mut vault, "after.bin", "d", &pattern(3200));
+
+    let landed: Vec<u32> = vault
+        .entries()
+        .iter()
+        .find(|e| e.id == id)
+        .unwrap()
+        .extents
+        .iter()
+        .map(|x| x.pack_id)
+        .collect();
+    assert!(
+        landed.iter().all(|p| *p > issued),
+        "pack identifiers up to {issued} were already issued and reclaimed; \
+         the new file landed in {landed:?}"
+    );
+    assert_eq!(
+        read_back(&vault, id).unwrap(),
+        pattern(3200),
+        "the file written after reclaiming did not come back"
+    );
+    assert_statistics_match_recount(&vault, "after emptying and reclaiming");
 }

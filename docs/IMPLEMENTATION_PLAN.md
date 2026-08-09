@@ -1,22 +1,30 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.6
+**Version:** 2.0
 **Status:** approved
-**Date:** 2026-08-08
+**Date:** 2026-08-09
 **Owner:** wattanit
 **Foundation versions this plan is built against (G-14):**
-- Requirements Document **v1.2** — upstream
-- Design Guideline **v1.2** — upstream
-- Technical Specification **v1.4** — upstream
+- Requirements Document **v2.0** — upstream
+- Design Guideline **v2.0** — upstream
+- Technical Specification **v2.0** — upstream
 
 **Downstream documents:**
 - [Phase 0 To-Do](implementation/Phase0-ToDo.md) v1.0 · [Phase 0 Test Cases](implementation/Phase0-TestCases.md) v1.0
 - [Phase 1 To-Do](implementation/Phase1-ToDo.md) v1.0 · [Phase 1 Test Cases](implementation/Phase1-TestCases.md) v1.0
 - [Phase 2 To-Do](implementation/Phase2-ToDo.md) v1.0 · [Phase 2 Test Cases](implementation/Phase2-TestCases.md) v1.0
 - [Phase 3 To-Do](implementation/Phase3-ToDo.md) v1.0 · [Phase 3 Test Cases](implementation/Phase3-TestCases.md) v1.0
-- [Phase 4 To-Do](implementation/Phase4-ToDo.md) v1.0 · [Phase 4 Test Cases](implementation/Phase4-TestCases.md) v1.0 — **draft, awaiting owner approval**
+- [Phase 4 To-Do](implementation/Phase4-ToDo.md) v2.0 · [Phase 4 Test Cases](implementation/Phase4-TestCases.md) v2.0 — approved; its ten upstream notes resolved into Requirements v2.0 and Specification v2.0, one of them by withdrawing the requirement rather than absorbing the note
 
-*Changes since v1.5 (minor — additive, no decision reversed):* the Phase 4 to-do list and test cases are written and pinned above. They carry ten notes for upstream, none of them absorbed: the Specification is still at v1.4 and those readings are proposed rather than settled. Two are more than clarifications — P4.1 gains directory-level durability as an obligation, which §4.7 does not state, and P4.4 declines FR-32's instruction to discard residue at open, reporting it instead, on the ground that identifying residue is a guess and HC-4 governs where the guess can be wrong.
+*Changes since v1.6 (**major — the suite it is pinned to reversed two decisions**):* re-pinned to Requirements v2.0, Design Guideline v2.0 and Specification v2.0, which resolve all ten of Phase 4's notes. Two things move in this document as a result:
+
+**Phase 5 stops depending on hardware that does not exist.** Requirements §2.1 now ships macOS at 2.0 with Windows and Linux following as their own releases, so the tasks one machine can finish stay in Phase 5 and the two that need a second machine become **Phase 8**. This is the change that unblocks the plan: Phase 5's exit condition was previously a portability run across three platforms, which nobody could perform, and a phase that cannot be exited is a phase the work eventually walks around.
+
+**Phase 4's exit is met outright rather than in part, and the condition itself is gone.** It required an interrupted compaction to be cleaned up at next open. FR-32 is withdrawn: nothing happens at open, the space is found by the next reclaim or the next request for the figures, and the condition below says that instead.
+
+> **This document's earlier versions are wrong, including v2.0 as first published earlier the same day**, which re-pinned to a suite that had reversed FR-32 rather than withdrawn it. Phases 0 to 3's to-do lists and test cases remain pinned to the versions they were built against — that is the as-built record and is deliberate — but every FR-32 reference in them describes a requirement that no longer exists.
+
+Also: P2.1 gains the FR-27 citation that Phase 2's first upstream note asked for and that v1.4 recorded as absorbed without making; P5.7 is added for the `next_pack_id` field Specification §4.3 now defines, and was built immediately rather than deferred, because an unreleased format is the only time that field is free.
 
 *Changes since v1.4 (minor — additive, no decision reversed):* the Phase 3 to-do list and test cases are written and pinned above; re-pinned to the v1.2 Requirements, v1.2 Design Guideline and v1.3 Specification, which absorbed what those two documents raised.
 
@@ -44,7 +52,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 3. `cargo clippy` clean, `cargo fmt` applied, `cargo deny` and `cargo audit` passing.
 4. The local gates of Spec §8.1 pass: `fmt --check`, `clippy -D warnings`, `test`, `deny check`, `audit`.
 
-This used to read "CI green on all three platforms". There is no CI and nothing runs on three platforms, so that clause was never met by any task and is removed. Development is on macOS; Windows and Linux are expected to work and unconfirmed (Spec §8.1).
+This used to read "CI green on all three platforms". There is no CI and nothing runs on three platforms, so that clause was never met by any task and is removed. The gates run on macOS, which is what 2.0 ships (Requirements §2.1). Every task is still written for all three — Spec §8.1 forbids writing for one platform while accepting verification on one — and Phase 8 is where the other two are run.
 
 **Enumerated test cases live in per-phase test-case documents** (G-10), not here. This plan names what a phase must prove; the test-case documents enumerate the individual checks, each citing the requirement it verifies.
 
@@ -110,7 +118,7 @@ This used to read "CI green on all three platforms". There is no CI and nothing 
 
 | Task | Work | Cites |
 |---|---|---|
-| P2.1 | `create` / `open` / `lock`, advisory lock held for the vault's lifetime. `Vault` is an instance value carrying no process-global state, so the single-vault limit stays a product decision rather than a structural one | Spec §2, §5.1, FR-1, FR-2, FR-3, FR-26, A-7 |
+| P2.1 | `create` / `open` / `lock`, advisory lock held for the vault's lifetime, and the write-time generation check that makes FR-27's counter a detector rather than a number. `Vault` is an instance value carrying no process-global state, so the single-vault limit stays a product decision rather than a structural one | Spec §2, §5.1, FR-1, FR-2, FR-3, FR-26, **FR-27**, A-7 |
 | P2.1a | Index loaded and decrypted at open, presenting every entry with its metadata without touching stored content; browsing thereafter serves from memory | Spec §4.3, §5.1, FR-6, S-2 |
 | P2.2 | Progress sink and cancellation token as parameters, checked at chunk boundaries | Spec §2, A-3, FR-14, FR-19 |
 | P2.3 | Ingest pipeline with copy semantics and the fsync ordering that makes durability true | Spec §4.7, FR-9, FR-12 |
@@ -165,34 +173,38 @@ This used to read "CI green on all three platforms". There is no CI and nothing 
 | P4.1 | Audit every write path against the fsync ordering the Spec prescribes | Spec §4.7, HC-4, FR-12 |
 | P4.2 | Crash tests that kill a real process mid-operation. No indirection layer inside `veil-core` — that would put a seam in shipped code to serve a test | Spec §9, HC-4 |
 | P4.3 | Compaction: select by garbage ratio, copy live extents, single generation step, remove old pack | Spec §4.5, FR-23, FR-24, FR-25 |
-| P4.4 | Reconciliation at open, discarding unreferenced packs and reporting space recovered; read-only vaults open read-only with reconciliation skipped | Spec §4.5, FR-32, HC-4 |
+| P4.4 | **Nothing at open**: no write, no walk of the packs. Bytes an interrupted operation left are found by reclaiming and by reporting the figures, both of which the user asks for; read-only vaults open read-only and say so at open | Spec §4.5, FR-8, FR-22, FR-26, FR-27, HC-4 |
 | P4.5 | Missing-but-referenced pack treated as total damage to that pack — vault opens, affected entries enumerated | Spec §4.5, S-4 |
 | P4.6 | Crash suite green across add, replace, delete, and compact | Spec §9, HC-4 |
 
 **Exit:**
-- No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand.
+- No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand — with the limit Spec §9 states: the kill is a process kill, not a power cut.
 - Compaction of a vault of any size needs working space bounded by roughly one pack (FR-25) — verified against a vault large enough that the difference is unambiguous.
-- An interrupted compaction is cleaned up at next open, with the recovered space reported rather than absorbed silently (FR-32).
-- A vault on read-only media opens (FR-32).
+- An interrupted compaction leaves nothing unreachable, and the space it left is recovered by the next reclaim rather than by anything happening at open (FR-8, FR-23).
+- Opening a vault writes nothing and measures nothing, with the generation unchanged — the property FR-27 depends on (FR-22, S-2).
+- A vault on read-only media opens, and says so at open rather than at the first failed write (FR-26).
 
 ---
 
-## Phase 5 — Cross-Platform Correctness (Spec M5)
+## Phase 5 — Portability by Construction (Spec M5)
 
-*Proves HC-8, before the GUI multiplies the platform surface.*
+*Proves the half of HC-8 that one machine can prove: that no host fact reaches the stored format. The other half needs a second machine and is Phase 8.*
 
 **Entry:** Phase 4 exit met.
 
 | Task | Work | Cites |
 |---|---|---|
 | P5.1 | NFC normalisation on ingest; exact case-sensitive comparison thereafter | Spec §4.6, HC-8, FR-13 |
-| P5.2 | Extraction representability check — stop and ask rather than silently altering a name | Spec §4.6, FR-31, HC-8 |
-| P5.3 | Portability check by hand: each platform writes a vault, every other opens and verifies it, with Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names. Keep the vaults as fixtures so it is repeatable without three machines present | Spec §9, HC-8 |
+| P5.2 | Extraction representability check — stop and ask rather than silently altering a name, including the names reserved on a platform this machine is not | Spec §4.6, FR-31, HC-8 |
+| P5.3 | Build the portability **fixture** and the comparison it feeds: vaults carrying Latin, Thai, Arabic, Han and emoji names, NFC/NFD pairs, and Windows-reserved names, generated and committed, with the byte-for-byte check written and passing against them here. Phase 8 runs it elsewhere; nothing about it is written then | Spec §9, HC-8 |
 | P5.4 | Network-path detection and the best-effort locking advisory | Spec §2, FR-26, FR-27 |
 | P5.5 | Scale tests marked `#[ignore]` and run on request: a multi-gigabyte entry and a vault at C-1's limit | Spec §9, S-1, S-2, C-1, C-2 |
 | P5.6 | Fix the maximum path-metadata length, resolving that Spec open item | FR-10, Spec §11.1 |
+| ~~P5.7~~ | **Done ahead of its phase**, during the v2.0 revision, because the format is unreleased and the window closes at 2.0.0: `next_pack_id` stored in the index, allocation taken from it, and a case asserting that emptying a vault and reclaiming does not hand a spent identifier back | Spec §4.3, §4.5, HC-3, FR-2 |
 
-**Exit:** the portability test passes in every direction between all three platforms; peak memory does not scale with file size (S-1) and open time does not scale with vault size (S-2), both asserted rather than assumed.
+**Exit:** a vault written here carries no fact about this machine — normalisation, separators, case and reserved names all handled at the boundary, asserted by test rather than by argument; the fixture and its comparison exist and pass locally; peak memory does not scale with file size (S-1) and open time does not scale with vault size (S-2), both asserted rather than assumed; and reclaiming the highest pack does not reissue its identifier (P5.7).
+
+**P5.7 was done early and is left in the list rather than deleted from it.** Specification §4.3 defines the field, and every vault in existence was written by its author on this machine — so adding it cost a line, while adding it after 2.0 would cost a format version and a migration path Requirements §2.2 has not built. The row stays so the phase's record shows what it contained, struck through rather than removed.
 
 ---
 
@@ -205,14 +217,14 @@ This used to read "CI green on all three platforms". There is no CI and nothing 
 | Task | Work | Cites |
 |---|---|---|
 | P6.1 | Tauri v2 shell over `veil-core`; operations on a worker thread, progress marshalled to the UI thread | Spec §5.3, A-3, A-4 |
-| P6.2 | Ephemeral webview storage configured per platform — all three, none left to default | Spec §5.3, HC-1 |
+| P6.2 | Ephemeral webview storage configured per platform — all three written, none left to default, whichever one is running | Spec §5.3, HC-1 |
 | P6.3 | CSP restricted to the bundled origin; no `localStorage`, `sessionStorage`, or IndexedDB; devtools compiled out of release | Spec §5.3, HC-1 |
-| P6.4 | **Webview persistence test** on all three platforms: marker filenames, browse, close, then search webview data, caches, and temp directories | Spec §9, HC-1 |
+| P6.4 | **Webview persistence test** — marker filenames, browse, close, then search webview data, caches, and temp directories. Written once and run on macOS here; Phase 8 runs the same test on each platform before it ships, and no platform ships without it | Spec §9, §5.3, HC-1 |
 | P6.5 | Virtualised entry list at the density and typography the design fixes, including tabular numerals | Design §2.3, §3.2 |
 | P6.6 | Complex-script rendering verified in both themes — the evidence that decided the toolkit | HC-8, Design §2.2 |
 | P6.7 | Whole-window drop target naming the count before release; native file dialogs | Design §3.3, FR-9, FR-16 |
 
-**Exit:** the persistence test is green on all three platforms — any marker found is an HC-1 defect and blocks the phase. Thai, Arabic, Han and emoji filenames render correctly in light and dark. Dropping 34 files shows "34" before release.
+**Exit:** the persistence test is green on macOS — any marker found is an HC-1 defect and blocks the phase, and the same test blocks each later platform in Phase 8. Thai, Arabic, Han and emoji filenames render correctly in light and dark. Dropping 34 files shows "34" before release.
 
 ---
 
@@ -238,9 +250,32 @@ This used to read "CI green on all three platforms". There is no CI and nothing 
 | P7.12 | Constrained conditions: vault in use, changed on disk, storage gone, destination full, limits exceeded, damaged region marked per-entry | Design §4.3, FR-15, FR-26, FR-27, FR-28, S-4 |
 | P7.13 | Damage check: time estimate before starting, per-entry progress, cancellation returning partial results, and a result that names failing files and states plainly that Veil cannot recover them | Design §8.6, FR-33, S-4 |
 | P7.14 | Vocabulary audit against the Design §7 table across GUI and CLI alike | Design §7 |
-| P7.15 | Packaging: macOS bundle UTI, signing and notarisation; Windows installer and association; Linux AppImage with the WebKitGTK version check | Spec §8.2, HC-8 |
+| P7.15 | Packaging for macOS: bundle UTI, signing, notarisation. The Windows and Linux artifacts are Phase 8 | Spec §8.2 |
+| P7.16 | The release states the platforms it was run on, and says "coming soon" about the others rather than offering them | Requirements §2.1, §8 |
 
-**Exit:** every functional requirement is reachable from the GUI; the vocabulary audit is clean in both applications; all three packages install and open a vault created on a different platform.
+**Exit:** every functional requirement is reachable from the GUI; the vocabulary audit is clean in both applications; the macOS package installs, opens a vault, and is the 2.0.0 release.
+
+---
+
+## Phase 8 — Windows, then Linux (Spec M8)
+
+*Proves HC-8 in the direction only a second machine can, and closes the deferral Requirements §2.2 records.*
+
+**Entry:** Phase 7 exit met, 2.0.0 shipped for macOS, and a machine of the target platform available. **This phase is blocked by hardware rather than by work**, which is why it is last and why nothing before it waits on it.
+
+Run once per platform, in this order, and the platform ships at the end of it:
+
+| Task | Work | Cites |
+|---|---|---|
+| P8.1 | Build the workspace and run the whole suite on the target platform. Failures here are ordinary defects, not portability findings, until shown otherwise | Spec §8.1 |
+| P8.2 | Run P5.3's fixture in both directions: this platform opens the vaults macOS wrote and compares names and content byte-for-byte, and macOS opens what this platform writes | Spec §9, HC-8 |
+| P8.3 | Run the webview persistence test on this platform. **No platform ships without it** — an unverified webview configuration is an unverified HC-1 claim | Spec §5.3, §9, HC-1 |
+| P8.4 | Platform-specific paths exercised by hand where no test can reach them: advisory locking on a network share, a read-only mount, directory durability on the platform's own filesystem | Spec §2, §4.5, §4.7, FR-26 |
+| P8.5 | Package per Spec §8.2 — Windows installer and association, or Linux AppImage with the WebKitGTK version check — and release with its own version number | Spec §8.2 |
+
+**Exit, per platform:** the suite passes on it, a vault written on macOS opens on it with identical names and content and the reverse holds, the persistence test is green, and the package installs. Only then is the platform announced as supported.
+
+**Why the whole phase is worth keeping written down rather than left as "port it later."** Two things in it are cheaper to know early and are the reason P5.3 and P6.4 are built before the machines exist: the fixture and the persistence test. Both are written on macOS by phases that have to write them anyway, so this phase is an afternoon of running per platform rather than a project — which is the property that makes deferring it honest rather than convenient.
 
 ---
 
@@ -263,10 +298,12 @@ These apply to every task in every phase and are part of the definition of done,
 
 - **P1.11 gates everything.** The corruption suite is not a Phase 1 deliverable to be finished later; it is the condition for starting Phase 2.
 - **CLI before durability work.** Crash-injection through a command is cheap; through a GUI it is not.
-- **Cross-platform before GUI.** Every platform-specific bug found after Phase 6 costs three times as much to reproduce.
-- **Argon2id cost measured on the weakest target** (P1.12), not the development machine. A vault that cannot be opened on a modest laptop is a worse failure than a slow derivation on a fast one.
+- **Portability by construction before GUI** (Phase 5), even though the second machine comes after it. The reason the old ordering gave — that a platform-specific bug found after Phase 6 costs three times as much to reproduce — applies to *where the bug is written*, not to where it is observed. Phase 5 is where every host fact is kept out of the format, and it stays ahead of the GUI for exactly that reason. What moved to Phase 8 is the observation, which needs hardware.
+- **Argon2id cost measured on the weakest target** (P1.12), not the development machine. A vault that cannot be opened on a modest laptop is a worse failure than a slow derivation on a fast one. Still unmeasured, and now the oldest open item in the plan.
 
-**Standing risk:** the webview configurations of P6.2 fail *silently* when wrong — a running application looks identical whether or not it is writing a cache. P6.4 is the only thing that detects it, which is why it is an exit condition rather than a task.
+**Standing risk:** the webview configurations of P6.2 fail *silently* when wrong — a running application looks identical whether or not it is writing a cache. P6.4 is the only thing that detects it, which is why it is an exit condition rather than a task, and why P8.3 repeats it per platform rather than trusting the macOS run.
+
+**Standing risk, new at v2.0:** two platforms now go a long time between being written for and being run. The mitigation is not optimism — it is P5.3 and P6.4 being built before the machines exist, so Phase 8 is a run rather than a project, and Spec §8.1's line that writing for one platform is forbidden while verifying on one is accepted. The failure mode to watch for is that line eroding quietly: a `#[cfg(target_os = "macos")]` that should have been a portable path, added because it was the only one anyone could test.
 
 ---
 
@@ -274,6 +311,12 @@ These apply to every task in every phase and are part of the definition of done,
 
 - **~~Whether the scale tests of P5.5 run on developer hardware or a dedicated runner.~~** Resolved: developer hardware on request, since there is no runner (Spec §8.1).
 - **Whether Phase 7 ships as one release or the GUI lands incrementally behind a pre-release tag.** Affects nothing technical; affects when the 2.0.0 tag is cut. Resolver: owner, at Phase 6 exit.
+- **Whether Windows or Linux comes first in Phase 8.** Depends entirely on which machine appears first, so it is not worth deciding in advance. Resolver: whichever it is.
+- **Whether the CLI ships for Windows and Linux ahead of the GUI.** The command line has no webview, so P8.3 does not apply to it and its Phase 8 is materially shorter — P8.1, P8.2 and P8.4 only. Whether that is worth a separate release, or whether a platform arrives all at once, is a product call rather than a technical one. Resolver: owner, at Phase 8 entry.
+
+### Resolved during v2.0
+
+- **~~How Phase 5 exits without three machines.~~** Resolved by splitting it: what one machine can prove stays in Phase 5, what needs a second becomes Phase 8, and Requirements §2.1 makes macOS the 2.0 platform so the split is a scope decision rather than a gap. The previous exit condition — a portability run in every direction between three platforms — could not be performed by anyone, and an unpassable gate in the middle of a plan does not stop work; it teaches everyone to route around a phase boundary.
 
 ### Resolved during v1.2
 

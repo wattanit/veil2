@@ -11,6 +11,19 @@ use crate::store::PackSink;
 
 use super::{Cancel, NoProgress, Progress, ProgressReport, Skipped, Unit, Vault, walk};
 
+/// One entry written to the packs and not yet referenced by the index.
+///
+/// Carries what the commit needs and nothing the caller has to recompute: the
+/// entry, what it cost on disk, and where the pack counter now stands.
+pub(super) struct Staged {
+    /// The entry, complete but unreferenced.
+    pub entry: Entry,
+    /// Bytes it added to the packs.
+    pub ciphertext_len: u64,
+    /// What `next_pack_id` must become when these extents are adopted (§4.3).
+    pub next_pack_id: u32,
+}
+
 /// What a folder ingest did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FolderOutcome {
@@ -59,13 +72,16 @@ impl Vault {
         }
 
         let id = EntryId::new(self.document.next_entry_id);
-        let (entry, ciphertext_len) = self.stage(id, name, folder, src, progress, cancel)?;
+        let staged = self.stage(id, name, folder, src, progress, cancel)?;
 
         self.document.next_entry_id += 1;
+        // Never lowered: an identifier this vault has handed out is spent, and
+        // the counter is what keeps it that way (§4.3).
+        self.document.next_pack_id = self.document.next_pack_id.max(staged.next_pack_id);
         self.document.statistics.entry_count += 1;
-        self.document.statistics.logical_bytes += entry.size;
-        self.document.statistics.physical_bytes += ciphertext_len;
-        self.document.entries.push(entry);
+        self.document.statistics.logical_bytes += staged.entry.size;
+        self.document.statistics.physical_bytes += staged.ciphertext_len;
+        self.document.entries.push(staged.entry);
         self.commit()?;
         Ok(id)
     }
@@ -142,7 +158,7 @@ impl Vault {
     }
 
     /// Streams one source into the packs, producing an entry nothing yet
-    /// references, and the ciphertext length it cost.
+    /// references.
     ///
     /// Advances no generation, so a failure or cancellation rolls the packs back
     /// and the index never learned of the attempt. Shared with `replace`.
@@ -154,7 +170,7 @@ impl Vault {
         src: &mut impl Read,
         progress: &mut impl Progress,
         cancel: &Cancel,
-    ) -> Result<(Entry, u64)> {
+    ) -> Result<Staged> {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled { rolled_back: true });
         }
@@ -163,7 +179,7 @@ impl Vault {
         let nonce_prefix = generate_nonce_prefix();
         let max_file_size = self.limits.max_file_size;
 
-        let mut sink = PackSink::open(&self.dir, self.pack_cap)?;
+        let mut sink = PackSink::open(&self.dir, self.pack_cap, self.document.next_pack_id)?;
         let mut stop: Option<Error> = None;
 
         let outcome = {
@@ -203,6 +219,9 @@ impl Vault {
             }
         };
 
+        // Read before the sink is consumed; the caller stores it in the same
+        // commit that adopts these extents (§4.3).
+        let next_pack_id = sink.next_pack_id_after();
         // Pack data is durable before anything may refer to it (FR-12).
         let extents = sink.finish()?;
 
@@ -219,7 +238,11 @@ impl Vault {
             extents,
             unknown: std::collections::BTreeMap::new(),
         };
-        Ok((entry, summary.ciphertext_len))
+        Ok(Staged {
+            entry,
+            ciphertext_len: summary.ciphertext_len,
+            next_pack_id,
+        })
     }
 }
 

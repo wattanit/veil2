@@ -13,7 +13,7 @@ use crate::format::{CURRENT_FORMAT_VERSION, Header, SALT_LEN, unlock};
 use crate::index::IndexDocument;
 use crate::store::DEFAULT_PACK_CAP;
 
-use super::{Access, Limits, Reconciled, Vault, VaultLock};
+use super::{Access, Limits, Vault, VaultLock};
 
 /// Name of the header file within a vault directory (Spec §4.1).
 pub const HEADER_FILE: &str = "veil.header";
@@ -99,18 +99,19 @@ impl Vault {
         let key = index_key(&master);
         let document = crate::index::read(dir, &key)?;
 
-        let mut vault = Self::assemble(
+        // Header and one index slot, and that is the whole of opening a vault.
+        // Nothing is written — a write here would advance the generation that
+        // FR-27 detects external change with, so a vault opened from a stale
+        // copy would outrank the newer one arriving moments later. Nothing
+        // walks the packs either, which keeps open time off vault size (S-2).
+        Ok(Self::assemble(
             dir.to_path_buf(),
             header,
             master,
             document,
             DEFAULT_PACK_CAP,
             lock,
-        );
-        // The residue of an interrupted ingest or reclaim is cleared here, and
-        // what it recovered is kept for the caller to report (FR-32).
-        vault.reconciled = vault.reconcile()?;
-        Ok(vault)
+        ))
     }
 
     /// Changes the vault's password (FR-4).
@@ -178,6 +179,7 @@ impl Vault {
         let document = crate::index::read(&self.dir, &self.index_key)?;
         self.document = document;
         self.document.next_entry_id = next_id_floor(&self.document);
+        self.document.next_pack_id = next_pack_floor(&self.document);
         Ok(())
     }
 
@@ -190,6 +192,7 @@ impl Vault {
         lock: VaultLock,
     ) -> Self {
         document.next_entry_id = next_id_floor(&document);
+        document.next_pack_id = next_pack_floor(&document);
         Self {
             index_key: index_key(&master),
             entry_wrap_key: entry_wrap_key(&master),
@@ -199,9 +202,6 @@ impl Vault {
             pack_cap,
             limits: Limits::default(),
             lock,
-            // A vault being created has no residue; `open` overwrites this
-            // with what reconciliation actually found.
-            reconciled: Reconciled::Clean,
         }
     }
 }
@@ -228,6 +228,26 @@ fn next_id_floor(document: &IndexDocument) -> u64 {
     document
         .next_entry_id
         .max(highest.map_or(1, |h| h + 1))
+        .max(1)
+}
+
+/// The stored pack counter, raised to clear every pack the index references.
+///
+/// Derived from the index's own extents and never from the packs directory:
+/// opening a vault reads the header and one index slot, and nothing else. A
+/// pack on disk with a higher identifier than anything referenced is residue,
+/// and appending past it is safe — [`PackSink`](crate::store::PackSink) does
+/// exactly that, rather than truncating on a guess.
+fn next_pack_floor(document: &IndexDocument) -> u32 {
+    let highest = document
+        .entries
+        .iter()
+        .flat_map(|e| e.extents.iter())
+        .map(|x| x.pack_id)
+        .max();
+    document
+        .next_pack_id
+        .max(highest.map_or(1, |h| h.saturating_add(1)))
         .max(1)
 }
 

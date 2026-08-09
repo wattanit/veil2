@@ -38,7 +38,7 @@ impl Vault {
         };
 
         let id = EntryId::new(self.document.next_entry_id);
-        let (entry, ciphertext_len) = self.stage(id, name, folder, src, progress, cancel)?;
+        let staged = self.stage(id, name, folder, src, progress, cancel)?;
 
         // Nothing below can fail before the single index write. That is what
         // keeps this one generation step rather than two.
@@ -46,11 +46,12 @@ impl Vault {
         let old_stored: u64 = old.extents.iter().map(|x| x.length).sum();
 
         self.document.next_entry_id += 1;
+        self.document.next_pack_id = self.document.next_pack_id.max(staged.next_pack_id);
         self.document.statistics.logical_bytes =
-            self.document.statistics.logical_bytes - old.size + entry.size;
-        self.document.statistics.physical_bytes += ciphertext_len;
+            self.document.statistics.logical_bytes - old.size + staged.entry.size;
+        self.document.statistics.physical_bytes += staged.ciphertext_len;
         self.document.statistics.reclaimable_bytes += old_stored;
-        self.document.entries.push(entry);
+        self.document.entries.push(staged.entry);
         self.commit()?;
         Ok(id)
     }

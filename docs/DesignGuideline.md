@@ -1,14 +1,18 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.2
+**Version:** 2.0
 **Status:** approved
-**Date:** 2026-08-08
+**Date:** 2026-08-09
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.2 — upstream
-- Technical Specification v1.4 — downstream
+- Requirements Document v2.0 — upstream
+- Technical Specification v2.0 — downstream
 
-*Changes since v1.1 (minor — additive, no decision reversed):* §3.2 fixes the content list's column order, which §3.4 already required the command line to follow but which no section stated.
+*Changes since v1.2 (**major — versioned with the suite; no decision in this document reversed**):* absorbs what Requirements v2.0 changes on screen. §3.2 and §8.4 state what the reclaimable figure counts and that the interface never breaks it down, since FR-8 changed underneath a number this document puts inside a button. §4.3 gains the read-only vault, which FR-26 requires the product to say *before* a write fails rather than by letting one fail. §3.2 also states that opening a vault reports what it recorded and measures nothing, so the figures a user sees at open are not the whole story and the product does not pretend they are.
+
+The version is 2.0 because the suite is one generation and pinning is worthless if its four documents drift apart in numbering. Nothing this document decided has been reversed.
+
+> **The versions in earlier commits are wrong**, including one published earlier on the same day as this. They describe reclaimable space as a figure the product corrects when a vault is opened. It does not, and must not — see the withdrawn FR-32.
 
 *Changes since v1.0 (minor — additive and clarifying, no decision reversed):* the three open questions on replace-matching, whole-vault verification, and CLI compaction scheduling are resolved; §8.6 added for verification; the §7 vocabulary table gains its verb.
 
@@ -113,6 +117,10 @@ One panel showing vault contents. There is no second panel for the local filesys
 
 **Statistics line** — the FR-8 figures, always visible, never behind a menu. They are the input to the compaction decision (FR-23) and a user who must go looking for them will not make that decision at all. Reclaimable space is shown plainly whenever it is non-trivial; the threshold for calling attention to it is tunable, initially 10% of physical size.
 
+**Reclaimable space is one number and is never broken down.** FR-8 counts two things in it — the bytes of deleted files, and bytes an interrupted operation left behind. The interface does not distinguish them, offers no breakdown, and never explains the difference unprompted. Both are space the vault is holding and not using; both come back from the same control. A user shown "14.1 GB deleted, 4.1 GB left over from an interrupted operation" learns nothing they can act on and acquires a worry they cannot resolve — and "left over from an interrupted operation" reads as damage, which it is not. Where it must be named at all, the word is **unused space**, never residue, orphan, or garbage.
+
+**The figure shown at open is what the vault recorded, not a measurement.** Opening a vault reads; it does not measure the stored data, because that would cost time proportional to the vault every time someone looked at it (FR-22, S-2). So the figure can understate — after an interruption, by however much that operation left behind. The design does not paper over this and does not explain it either: the figure is never captioned "approximate", never given a tilde, and never accompanied by a refresh control. What closes the gap is asking for the figures or asking to reclaim, both of which measure. A user who reclaims and gets back more than the number promised has been under-promised, which is the safe direction and the only one this product accepts.
+
 **Controls** — search, the grouping toggle, and add. Grouping by recorded folder path is a *view* control, not a tree widget (FR-7). Groups collapse and expand; they cannot be renamed, created, or dragged, because they are metadata rather than structure.
 
 **Content list** — virtualised, sorted by any column, multi-select. Columns are **name, folder, size, added**, in that order, and §3.4 binds the command line to the same order. Name leads because it is what the user is looking for; folder follows because it is what disambiguates two files with one name; size and date are what they compare, and are the two the tabular-numeral rule of §2.3 exists for.
@@ -160,6 +168,12 @@ Errors are shown where the action was taken. A failure during extraction appears
 Each of these is an expected condition with a designed response, not an exception path.
 
 **Vault in use by another process (FR-26).** State that it is open elsewhere and offer to open read-only if that is possible, or to retry. Do not offer to break the lock: the lock exists because two writers corrupt the vault.
+
+**Vault open, but nothing can be written to it (FR-26).** The vault is on read-only media, or its storage will not take a lock, or the user cannot write to the directory. It opens and everything that reads works normally — browsing, saving copies, checking for damage. The state is stated **when the vault opens**, in the identity bar alongside the lock state, not discovered when the first add fails. The wording separates it from damage and from failure, because nothing is wrong:
+
+> "Read-only — this vault can't be changed from here."
+
+Controls that would write are disabled rather than hidden, so their absence does not read as a missing feature, and the reason is available on the control. A user who has just plugged in a write-protected drive needs to know that before they spend twenty minutes selecting files to add.
 
 **Vault changed on disk since opening (FR-27).** Stop before writing. Explain that something else — most likely a sync client — changed the vault, and offer to reload. Never merge, never overwrite silently. Reconciling divergence is out of scope (§2.3 of Requirements) and the design must not imply Veil2 can do it.
 
@@ -274,6 +288,8 @@ Deletion is confirmed with `caution`, names the files, and states the limit plai
 > "Delete 12 files? They'll be removed from the list immediately, but their data stays in the vault file until you reclaim space."
 
 Reclaiming space is presented as maintenance the user chooses, with the FR-8 figures in the button itself — "Reclaim 18.2 GB" — so the decision needs no arithmetic. During it, the vault stays usable and the operation stays cancellable (FR-24).
+
+**The number in the button is the number the operation delivers, or more.** Reclaiming measures the stored data first, so it recovers deleted files' bytes and anything an interrupted operation left, and no region holding unused space is skipped for being barely worth rewriting. It may therefore recover *more* than the figure promised, never less — a button that says 18.2 GB and returns 17.9 GB has made a number approximately true, and this product does not have those. The protection against pointless work is the figure itself: nobody presses *Reclaim 4 KB*.
 
 ### 8.5 Locking and ending
 

@@ -151,13 +151,11 @@ proptest! {
         }
 
         // The figures survive a close and reopen: they live in the index, not
-        // in the process. Reconciliation runs at open from Phase 4 on and has
-        // nothing to do here — no sequence of adds, replaces and deletes leaves
-        // residue, because none of them was interrupted.
+        // in the process. Opening recomputes nothing, so these are the same
+        // figures rather than figures that happen to agree.
         let expected = vault.statistics();
         drop(vault);
         let vault = harness::open(&dir).unwrap();
-        prop_assert_eq!(vault.reconciled().residue_bytes(), 0);
         prop_assert_eq!(vault.statistics(), expected);
         assert_statistics_match_recount(&vault, "after a reopen");
     }

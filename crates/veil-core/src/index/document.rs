@@ -54,6 +54,23 @@ pub struct IndexDocument {
     #[serde(default)]
     pub next_entry_id: u64,
 
+    /// The next pack identifier to issue, never decreasing.
+    ///
+    /// **Stored for the same reason `next_entry_id` is.** Allocating one above
+    /// the highest pack on disk is safe until reclaiming space removes a pack
+    /// that is entirely dead: if that pack held the highest identifier, the
+    /// next allocation takes the number back. A stale index — the older of the
+    /// two slots, or an older copy a sync daemon delivers late — then names a
+    /// pack whose bytes are now a different pack's. That fails authentication
+    /// and is reported as damage (HC-3), so nothing wrong is ever returned as
+    /// content; but it reports damage where there is none, which sends a user
+    /// looking for a corrupted vault they do not have (FR-2).
+    ///
+    /// `#[serde(default)]` so an older document still reads; the vault repairs
+    /// the value upward from the packs its entries reference on load.
+    #[serde(default)]
+    pub next_pack_id: u32,
+
     /// Every entry.
     pub entries: Vec<Entry>,
 
@@ -72,6 +89,7 @@ impl IndexDocument {
             generation: 0,
             statistics: Statistics::default(),
             next_entry_id: 1,
+            next_pack_id: 1,
             entries: Vec::new(),
             unknown: BTreeMap::new(),
         }
