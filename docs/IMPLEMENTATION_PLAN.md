@@ -15,6 +15,7 @@
 - [Phase 2 To-Do](implementation/Phase2-ToDo.md) v1.0 · [Phase 2 Test Cases](implementation/Phase2-TestCases.md) v1.0
 - [Phase 3 To-Do](implementation/Phase3-ToDo.md) v1.0 · [Phase 3 Test Cases](implementation/Phase3-TestCases.md) v1.0
 - [Phase 4 To-Do](implementation/Phase4-ToDo.md) v2.0 · [Phase 4 Test Cases](implementation/Phase4-TestCases.md) v2.0 — approved; its ten upstream notes resolved into Requirements v2.0 and Specification v2.0, one of them by withdrawing the requirement rather than absorbing the note
+- [Phase 5 To-Do](implementation/Phase5-ToDo.md) v1.0 · [Phase 5 Test Cases](implementation/Phase5-TestCases.md) v1.0 — draft; three notes for upstream, none yet ruled on
 
 *Changes since v1.6 (**major — the suite it is pinned to reversed two decisions**):* re-pinned to Requirements v2.0, Design Guideline v2.0 and Specification v2.0, which resolve all ten of Phase 4's notes. Two things move in this document as a result:
 
