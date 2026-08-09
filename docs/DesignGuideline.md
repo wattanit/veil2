@@ -1,22 +1,14 @@
 # Veil2 — Design Guideline
 
-**Version:** 2.0
+**Version:** 1.0
 **Status:** approved
 **Date:** 2026-08-09
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v2.0 — upstream
-- Technical Specification v2.0 — downstream
+- Requirements Document v1.0 — upstream
+- Technical Specification v1.0 — downstream
 
-*Changes since v1.2 (**major — versioned with the suite; no decision in this document reversed**):* absorbs what Requirements v2.0 changes on screen. §3.2 and §8.4 state what the reclaimable figure counts and that the interface never breaks it down, since FR-8 changed underneath a number this document puts inside a button. §4.3 gains the read-only vault, which FR-26 requires the product to say *before* a write fails rather than by letting one fail. §3.2 also states that opening a vault reports what it recorded and measures nothing, so the figures a user sees at open are not the whole story and the product does not pretend they are.
-
-The version is 2.0 because the suite is one generation and pinning is worthless if its four documents drift apart in numbering. Nothing this document decided has been reversed.
-
-> **The versions in earlier commits are wrong**, including one published earlier on the same day as this. They describe reclaimable space as a figure the product corrects when a vault is opened. It does not, and must not — see the withdrawn FR-32.
-
-*Changes since v1.0 (minor — additive and clarifying, no decision reversed):* the three open questions on replace-matching, whole-vault verification, and CLI compaction scheduling are resolved; §8.6 added for verification; the §7 vocabulary table gains its verb.
-
-This document owns how Veil2 looks, feels, and speaks: identity and anti-goals, visual language, layout, interaction and response policy, the wording of every honesty clause FR-29 requires, and the moments that decide whether the product is trusted. It defers what the product must do to the Requirements Document, and how it is built to the Technical Specification. Working values below — colours, sizes, thresholds — are initial and tunable; they are given so that tuning is a value change rather than a redesign.
+This document specifies how Veil2 looks, feels, and communicates: identity and anti-goals, visual language, layout, interaction and response policy, the wording of every honesty clause FR-27 requires, and the moments that determine whether the product is trusted. It defers what the product must do to the Requirements Document, and how it is built to the Technical Specification. Working values below — colors, sizes, thresholds — are initial and tunable; they are specified so that tuning is a value change rather than a redesign.
 
 ---
 
@@ -24,23 +16,23 @@ This document owns how Veil2 looks, feels, and speaks: identity and anti-goals, 
 
 ### 1.1 Concept
 
-Veil2 is **a filing cabinet with a lock, not a safe you must empty to use.** Everything about the design follows from that: the user's time is spent reading a list and pulling one thing out of it, not performing an unlock-everything ritual.
+The interface is a browsable list of files, not a single encrypted block that must be fully decrypted to use. The primary user action is finding one file in the list and retrieving it.
 
-The index is the product. Encryption is what makes the index trustworthy, but the user's actual experience is scanning, finding, and retrieving. A design that foregrounds cryptography over the list has misunderstood what people do here.
+The file list is the primary interface. Encryption makes the list's contents trustworthy, but is not itself part of the user-facing interaction. Design choices prioritize the list over visual emphasis on cryptography.
 
 ### 1.2 Anti-goals
 
-What the design must not become is as normative as what it must be. Each of these is forbidden, with its reason.
+Each of the following is prohibited, with its reason.
 
-**No security theatre.** No padlock iconography, no shields, no keyholes, no dark-and-green "hacker" palette, no "military-grade encryption" or "unbreakable" language anywhere in the product. The reason is direct: §7 of the Requirements says Veil2 does nothing against a compromised host, and a product that dresses itself as impregnable manufactures exactly the over-trust that gets people hurt. Confidence is communicated by being precise, not by looking fortified.
+**No security theater.** No padlock iconography, shields, keyholes, dark-and-green "hacker" color schemes, or language such as "military-grade encryption" or "unbreakable." Requirements §7 states that Veil2 does not defend against a compromised host; visual claims of impregnability would overstate this protection. Confidence is communicated through precise language, not through visual signaling of strength.
 
-**Not a file manager.** Veil2 does not compete with Finder or Explorer. It offers no rename-in-place, no folder creation, no move-between-folders, no in-app preview. Storage is flat (FR-7); a UI implying a real directory tree would promise operations the format cannot honour.
+**Not a file manager.** Veil2 does not provide rename-in-place, folder creation, move-between-folders, or in-app preview. Storage is flat (FR-8); a UI implying a directory tree would imply operations the format does not support. Grouping the list by recorded folder path (§3.2) is not an exception to this: it is a flat view control with no create, rename, or drag, and no nesting.
 
-**Not a sync client.** Nothing happens in the background. No auto-compaction (FR-23), no background verification, no ambient progress in a corner. If work is happening, the user started it and can stop it.
+**Not a sync client.** No operation runs in the background. Verification is user-initiated, not automatic (FR-26). Any operation in progress was started by the user and can be canceled by the user.
 
-**No progress theatre.** No indeterminate spinners standing in for work that could be measured, no progress bars that advance on a timer, no percentage that reaches 99% and stalls. At the sizes in play a user is deciding whether to wait twenty minutes or cancel, and that decision requires a number that means something.
+**No progress theater.** No indeterminate spinners for measurable work, no progress bars that advance on a timer rather than actual progress, no percentage that stalls before completion. Progress values reflect actual work completed; at the sizes Veil2 targets, the user is deciding whether to wait or cancel based on this number.
 
-**No reassurance by default.** Where a guarantee has a limit, the limit is stated at the point of use, not buried in documentation (FR-29). The product does not congratulate the user on being secure.
+**No reassurance by default.** Where a guarantee has a limit, the limit is stated at the point of use (FR-27), not only in documentation. The product does not present confirmatory messaging about security.
 
 ---
 
@@ -48,13 +40,13 @@ What the design must not become is as normative as what it must be. Each of thes
 
 ### 2.1 Principles
 
-The file list is the only hero. Chrome recedes. Any pixel that is not a file, its metadata, or a control acting on it must justify itself.
+The file list is the primary visual element. Chrome is minimized. Any interface element that is not a file, its metadata, or a control acting on it requires justification.
 
-Restraint is a security property here, not an aesthetic preference: in a dense list of thousands of entries, colour and weight are the only tools left for signalling that something is destructive or in progress. Spending them on decoration disarms them.
+Visual restraint serves a functional purpose: in a dense list of thousands of entries, color and weight are the primary means of signaling a destructive or in-progress state. Using them decoratively reduces their effectiveness for that purpose.
 
-### 2.2 Colour
+### 2.2 Color
 
-Working values, tunable, defined once and referenced everywhere. Light and dark are both first-class and follow the system setting.
+Working values, tunable, defined once and referenced everywhere. Light and dark are both supported and follow the system setting.
 
 | Token | Role | Light | Dark |
 |---|---|---|---|
@@ -66,23 +58,23 @@ Working values, tunable, defined once and referenced everywhere. Light and dark 
 | `accent` | Selection, in-progress | `#2F6FEB` | `#4C8DFF` |
 | `caution` | Destructive and irreversible | `#C4341C` | `#FF6B52` |
 
-Two semantic colours only — `accent` and `caution`. There is no success green: completing an operation is the expected case and needs no celebration, and a green tick next to a file invites the reading "this file is safe," which is a claim Veil2 does not make.
+Two semantic colors are defined: `accent` and `caution`. No success color is defined. Successful completion is the expected outcome and does not require visual emphasis; a green indicator next to a file would imply a security claim ("this file is safe") that Veil2 does not make.
 
-`caution` is reserved for actions that cannot be undone: deleting an entry, overwriting a file at a destination, creating a vault whose password cannot be recovered. Using it for ordinary warnings devalues it.
+`caution` is used only for irreversible actions: deleting an entry, overwriting a destination file, creating a vault (whose password cannot be recovered, per HC-7). It is not used for other warnings.
 
 ### 2.3 Typography and density
 
 System UI font throughout. Sizes are tunable: body `13px`, list rows `13px`, secondary metadata `11px`, headings `15px` semibold.
 
-**Numerals in size and date columns are tabular**, so digits align vertically and a user can compare magnitudes by scanning rather than reading. This is the one typographic rule that is not negotiable at any size.
+Numerals in size and date columns use tabular figures, so digits align vertically and magnitudes can be compared by scanning. This rule is fixed and does not change with other tunable values.
 
-List rows are `28px` and dense by default. Cards, thumbnails, and generous padding are wrong here: a media vault holds thousands of entries and the design goal is how many the user can assess per screen.
+List rows are `28px`, dense by default. Cards, thumbnails, and large padding are not used; the design goal is maximizing the number of entries visible per screen, since a vault may hold thousands of entries.
 
-Monospace appears nowhere. It signals "technical output" and this is not that.
+Monospace is not used in the interface.
 
 ### 2.4 Iconography
 
-Icons are used only where a word would be slower: drag-target affordance, the lock state, and per-row type indication. Everything else is a labelled control. An icon-only toolbar is forbidden — this product's actions are consequential and ambiguity is expensive.
+Icons are used only where they communicate faster than text: drag-target affordance, lock state, per-row type indication. All other controls are labeled with text. Icon-only toolbars are not used, since misinterpreting a consequential action is costly.
 
 ---
 
@@ -90,12 +82,12 @@ Icons are used only where a word would be slower: drag-target affordance, the lo
 
 ### 3.1 Single panel
 
-One panel showing vault contents. There is no second panel for the local filesystem: the operating system's own file manager already is that panel, and drag-and-drop plus Save-As spans the gap. A second panel would also have implied a plaintext region inside the vault, which HC-1 forbids.
+One panel shows vault contents. There is no second panel for the local filesystem; the operating system's file manager serves that function, connected via drag-and-drop and Save-As. A second panel displaying vault contents alongside a local filesystem view would also imply an unencrypted region within the vault, which HC-1 prohibits.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  ▣ Holiday Photos        Unlocked          [ Lock ]        │  ← identity bar
-│  1,284 files · 312.4 GB stored · 18.2 GB reclaimable       │  ← statistics (FR-8)
+│  1,284 files · 312.4 GB stored                              │  ← statistics (FR-7)
 ├────────────────────────────────────────────────────────────┤
 │  [ search ]                    Group by folder ▾   [ + ]   │  ← controls
 ├────────────────────────────────────────────────────────────┤
@@ -109,39 +101,35 @@ One panel showing vault contents. There is no second panel for the local filesys
 └────────────────────────────────────────────────────────────┘
 ```
 
-*Example only; proportions and wording are illustrative and carry no normative weight.*
+*Illustrative example; exact proportions and wording are not specified here.*
 
 ### 3.2 Regions
 
-**Identity bar** — vault name, lock state, lock action. Lock state is the most important single fact in the application and must be legible at a glance from across a desk. Locked and unlocked differ in more than colour, so the distinction survives colour-blindness and greyscale screenshots.
+**Identity bar** — vault name, lock state, lock action. Lock state must be identifiable at a glance and at a distance. The locked and unlocked states differ in more than color, so the distinction remains identifiable for color-blind users and in greyscale.
 
-**Statistics line** — the FR-8 figures, always visible, never behind a menu. They are the input to the compaction decision (FR-23) and a user who must go looking for them will not make that decision at all. Reclaimable space is shown plainly whenever it is non-trivial; the threshold for calling attention to it is tunable, initially 10% of physical size.
+**Statistics line** — entry count and total stored size, always visible (FR-7). Displaying this immediately at open has no performance cost, since open time does not scale with vault size (S-2).
 
-**Reclaimable space is one number and is never broken down.** FR-8 counts two things in it — the bytes of deleted files, and bytes an interrupted operation left behind. The interface does not distinguish them, offers no breakdown, and never explains the difference unprompted. Both are space the vault is holding and not using; both come back from the same control. A user shown "14.1 GB deleted, 4.1 GB left over from an interrupted operation" learns nothing they can act on and acquires a worry they cannot resolve — and "left over from an interrupted operation" reads as damage, which it is not. Where it must be named at all, the word is **unused space**, never residue, orphan, or garbage.
+**Controls** — search, the grouping toggle, and add. Grouping by recorded folder path is a *view* control, not a directory tree (FR-8). Groups can be collapsed and expanded; they cannot be renamed, created, or dragged, since folder path is metadata rather than structure.
 
-**The figure shown at open is what the vault recorded, not a measurement.** Opening a vault reads; it does not measure the stored data, because that would cost time proportional to the vault every time someone looked at it (FR-22, S-2). So the figure can understate — after an interruption, by however much that operation left behind. The design does not paper over this and does not explain it either: the figure is never captioned "approximate", never given a tilde, and never accompanied by a refresh control. What closes the gap is asking for the figures or asking to reclaim, both of which measure. A user who reclaims and gets back more than the number promised has been under-promised, which is the safe direction and the only one this product accepts.
+**Content list** — virtualized, sortable by any column, multi-select. Columns are **name, folder, size, added**, in that order; §3.4 specifies the same order for the command-line output. This order places name first (the primary search target), folder second (disambiguates same-named files), then size and date (comparison values, formatted per the tabular-numeral rule in §2.3).
 
-**Controls** — search, the grouping toggle, and add. Grouping by recorded folder path is a *view* control, not a tree widget (FR-7). Groups collapse and expand; they cannot be renamed, created, or dragged, because they are metadata rather than structure.
-
-**Content list** — virtualised, sorted by any column, multi-select. Columns are **name, folder, size, added**, in that order, and §3.4 binds the command line to the same order. Name leads because it is what the user is looking for; folder follows because it is what disambiguates two files with one name; size and date are what they compare, and are the two the tabular-numeral rule of §2.3 exists for.
-
-**Operation bar** — present only while an operation runs. Shows what is happening, real progress, throughput, and cancel. One operation at a time is visible; queued work is stated as a count.
+**Operation bar** — present only while an operation is running. Shows what is happening, actual progress, throughput, and a cancel control. One operation is visible at a time; queued work is stated as a count.
 
 ### 3.3 Drop target
 
-With a vault open, the entire window is a drop target. The drop affordance appears on drag-enter and names what will happen — "Add 34 files to Holiday Photos" — because the consequence of a drop is a copy into an encrypted store and the user should see the count before releasing.
+With a vault open, the entire window functions as a drop target. On drag-enter, the drop affordance states the resulting action — for example, "Add 34 files to Holiday Photos" — so the file count is visible before the user releases.
 
-With no vault open, dropping a vault opens it. Dropping anything else is refused with an explanation rather than ignored silently.
+With no vault open, dropping a vault opens it. Dropping anything else is refused with an explanation.
 
 ### 3.4 Command-line surface
 
-The CLI is a peer, not a debug tool (A-4). Its design obligations:
+The CLI is a peer application, not a debug tool (A-4). Requirements:
 
-- Default output is a table with the same column order as the GUI, so the two produce the same mental model.
-- Machine-readable output is available on request for scripting; the human default is never machine-shaped.
-- Progress is written to standard error, results to standard output, so pipelines are not polluted.
+- Default output is a table with the same column order as the GUI.
+- Machine-readable output is available on request for scripting; the human-readable default is not machine-formatted.
+- Progress is written to standard error, results to standard output.
 - Progress rendering degrades to periodic lines when not attached to a terminal, rather than emitting control characters into a log.
-- It never prompts when a non-interactive invocation can be detected; it fails with a message naming the missing input.
+- The CLI does not prompt when a non-interactive invocation is detected; it fails with a message naming the missing input.
 
 ---
 
@@ -149,85 +137,85 @@ The CLI is a peer, not a debug tool (A-4). Its design obligations:
 
 ### 4.1 Standing rules
 
-**Every long operation is cancellable and every cancel is honest.** Cancelling states what happened: an interrupted add leaves the vault as though it had not started (FR-14); an interrupted extraction leaves no usable partial file (FR-17). The user is told which, not left to guess.
+**Every long operation is cancellable, and cancellation states its result.** An interrupted add leaves the vault as though it had not started (FR-15); an interrupted extraction leaves no usable partial file (FR-18). The result is stated explicitly.
 
-**No silent retry, no silent degradation.** If an operation cannot proceed, it stops and says so. Automatic retry hides a failing drive, which is the condition the user most needs to learn about.
+**No silent retry, no silent degradation.** If an operation cannot proceed, it stops and reports why. Automatic retry would obscure a failing drive, which the user needs to know about.
 
-**Confirmation is reserved for the irreversible.** Deleting an entry, overwriting a destination file, and creating a vault are confirmed. Nothing else is. A product that asks "are you sure?" routinely trains people to click through the one prompt that mattered.
+**Confirmation is required only for irreversible actions**: deleting an entry, overwriting a destination file, creating a vault. No other action requires confirmation. Frequent confirmation prompts reduce attention to the prompts that matter.
 
-**Confirmations name the object.** "Delete IMG_4417.raw?" not "Delete selected item?" Where a count is involved it is exact: "Delete 34 files?"
+**Confirmations name the object.** "Delete IMG_4417.raw?" not "Delete selected item?" Where a count is involved, it is exact: "Delete 34 files?"
 
 ### 4.2 Failure
 
-Errors have three parts, always in this order: **what happened**, **what state things are in now**, **what you can do**. The middle part is the one usually omitted and the one that matters most here, because the user's real question after a failed write to an encrypted vault is whether the vault is still good.
+Errors have three parts, in this order: **what happened**, **the current state**, **available actions**. The current-state part is often omitted and is the most important here, since the user's primary concern after a failed write to an encrypted vault is whether the vault is still intact.
 
-Errors are shown where the action was taken. A failure during extraction appears at the extraction, not as a system notification.
+Errors are shown at the location of the action. A failure during extraction appears at the extraction, not as a system notification.
 
 ### 4.3 Constrained conditions
 
 Each of these is an expected condition with a designed response, not an exception path.
 
-**Vault in use by another process (FR-26).** State that it is open elsewhere and offer to open read-only if that is possible, or to retry. Do not offer to break the lock: the lock exists because two writers corrupt the vault.
+**Vault in use by another process (FR-23).** State that it is open elsewhere and offer to retry. Do not offer to open read-only instead: FR-23 does not provide a read-only path around genuine lock contention, only for storage that cannot take a lock at all (the next condition). Do not offer to break the lock either: the lock exists to prevent two writers from corrupting the vault.
 
-**Vault open, but nothing can be written to it (FR-26).** The vault is on read-only media, or its storage will not take a lock, or the user cannot write to the directory. It opens and everything that reads works normally — browsing, saving copies, checking for damage. The state is stated **when the vault opens**, in the identity bar alongside the lock state, not discovered when the first add fails. The wording separates it from damage and from failure, because nothing is wrong:
+**Vault open, but nothing can be written to it (FR-23).** The vault is on read-only media, its storage does not support locking, or the user cannot write to the directory. It opens, and all read operations function normally — browsing, saving copies, checking for damage. The state is stated when the vault opens, in the identity bar alongside the lock state, rather than discovered when a write fails. The wording distinguishes this from damage or failure:
 
 > "Read-only — this vault can't be changed from here."
 
-Controls that would write are disabled rather than hidden, so their absence does not read as a missing feature, and the reason is available on the control. A user who has just plugged in a write-protected drive needs to know that before they spend twenty minutes selecting files to add.
+Controls that would write are disabled rather than hidden, with the reason available on the control.
 
-**Vault changed on disk since opening (FR-27).** Stop before writing. Explain that something else — most likely a sync client — changed the vault, and offer to reload. Never merge, never overwrite silently. Reconciling divergence is out of scope (§2.3 of Requirements) and the design must not imply Veil2 can do it.
+**Vault changed on disk since opening (FR-24).** Stop before writing. State that something external changed the vault, and offer to reload. Never merge or overwrite silently. Reconciling divergence is out of scope (Requirements §2.3), and the design does not imply that Veil2 can do this.
 
-**Storage disappeared mid-operation (FR-28).** Name the volume that went away, state that the vault is intact as of the last completed step, and return to a usable state without restarting the application.
+**Storage disappeared mid-operation (FR-25).** Name the volume that became unavailable, state that the vault is intact as of the last completed step, and return to a usable state without requiring a restart.
 
-**Destination full during extraction.** Remove the partial file, say how much space was needed against how much was free.
+**Destination full during extraction.** Remove the partial file. State how much space was needed against how much was available.
 
-**Vault full or file too large (FR-15).** Name the limit and the current value in the same sentence.
+**Vault full or file too large (FR-16).** Name the limit and the current value in the same message.
 
-**A file lives in a damaged region (S-4).** Mark the affected entries in the list rather than failing the whole vault. The rest of the vault remains fully usable, which is the entire point of S-4, and the UI must show that clearly instead of presenting a general alarm.
+**A file is in a damaged region (S-3).** Mark the affected entries in the list rather than failing the whole vault. The rest of the vault remains usable, which S-3 requires; the interface reflects this rather than presenting a general failure.
 
 ---
 
 ## 5. The Unlock
 
-This is the most important screen in the product. It is the only gate, it is where trust is either established or lost, and it is the screen every user sees every time.
+This is the primary gate in the product and the screen every user sees on every use.
 
-**It shows four things and nothing else:** the vault's name, its location on disk, a password field, and an unlock button. No branding, no tips, no feature tour, no security badge.
+**It shows four things and nothing else:** the vault's name, its location on disk, a password field, and an unlock button. No branding, tips, feature tour, or security badge.
 
-**It takes about a second and must not look broken.** Key derivation is deliberately expensive (C-3). During it the button becomes a determinate-looking working state and the field locks. It does not show a fake percentage — there is nothing meaningful to measure — but it must be visibly alive, because a one-second freeze on a password field reads as a hang.
+**Key derivation takes approximately one second (C-3); the interface must not appear frozen during this time.** The unlock button shows a determinate-looking working state and the field locks during derivation. No fake percentage is shown, since there is nothing measurable to display, but the interface must appear active.
 
-**Wrong password and damaged vault are different screens.** FR-2 requires the distinction and the design carries it:
+**Wrong password and damaged vault are different screens.** FR-2 requires the distinction:
 
-> *Wrong password* — "That password didn't work. Try again." No count of attempts, no lockout, no hint about the password's shape.
+> *Wrong password* — "That password didn't work. Try again." No attempt count, no lockout, no hint about the password's shape.
 >
-> *Damaged vault* — "This vault can't be read. It may be incomplete or damaged." Followed by what is known, and by the advice to work from a backup copy rather than this one.
+> *Damaged vault* — "This vault can't be read. It may be incomplete or damaged." Followed by what is known, and advice to work from a backup copy.
 
-Sending a user with a corrupted vault to retype their password wastes the time in which a backup might still exist. This distinction is worth the design cost.
+Directing a user with a damaged vault to retry their password delays the point at which they could act on a backup.
 
-**A vault in a superseded format says so plainly** (FR-30): which format version it uses, that it will open normally, and that a future release may offer to convert it. A vault too new to read (FR-5) names the version needed.
+**A vault in a superseded format states this plainly** (FR-6): which format version it uses, that it opens normally, and that a future release may offer to convert it. A vault too new to read (FR-5) names the version required.
 
-**There is no "remember this password" in v1.** HC-7 makes the password the only thing between the user and permanent loss, and storing it in an OS keychain silently relocates the security boundary to the keychain. If it is ever offered it must say exactly that, in those terms.
+**There is no "remember this password" in v1.** HC-7 makes the password the only safeguard against permanent loss; storing it in an OS keychain would relocate the security boundary to the keychain. If offered in a future version, this must be stated explicitly.
 
 ---
 
 ## 6. The Extraction
 
-Extraction is the only path by which plaintext leaves a vault (HC-2, FR-16), which makes it the second moment worth designing deliberately.
+Extraction is the only path by which plaintext leaves a vault (HC-2, FR-17).
 
-**The destination is always chosen and always shown.** There is no default download folder and no one-click extract. The user names the destination every time, because Veil2's responsibility ends there and the user must know where it ended.
+**The destination is always chosen and always shown.** There is no default download folder and no one-click extract. The user names the destination each time.
 
-**Overwrites are confirmed by name** (FR-18): "Replace IMG_4417.raw in Pictures?" The original Veil overwrote silently, and a failed extraction destroyed the user's only good copy.
+**Overwrites are confirmed by name** (FR-19): "Replace IMG_4417.raw in Pictures?"
 
-**Verification failure removes the output** (FR-17). The message says the file was damaged in the vault, that the incomplete copy has been removed, and that the vault's other files are unaffected.
+**Verification failure removes the output** (FR-18). The message states that the file was damaged in the vault, that the incomplete copy has been removed, and that the vault's other files are unaffected.
 
-**Success states the consequence, once, plainly:** "Saved to Pictures. This copy is not protected." Not a warning dialog, not a red banner — a line of text in the completion state. It is said every time because it is true every time, and a user who extracts a file and forgets it is unprotected is the most likely way data leaks out of Veil2.
+**Success states the consequence, once, plainly:** "Saved to Pictures. This copy is not protected." Stated as a line of text in the completion state, not a warning dialog. This is stated every time, since an extracted file that the user forgets is unprotected is a common route by which data leaves Veil2's protection.
 
 ---
 
 ## 7. Voice and Language
 
-The rules below are followed by this document's own prose; a guideline that writes in a voice it forbids is not usable.
+This document follows the rules below in its own writing.
 
-**Plain words.** Short sentences. Second person. No hedging, and no ceremony.
+**Plain words.** Short sentences. Second person. No hedging.
 
 **Fixed vocabulary — one word per thing, everywhere, GUI and CLI alike:**
 
@@ -240,16 +228,15 @@ The rules below are followed by this document's own prose; a guideline that writ
 | add | import, ingest, encrypt |
 | save a copy | export, decrypt, download, unlock |
 | lock | close, seal |
-| reclaim space | compact, vacuum, garbage-collect |
 | check for damage | verify, validate, integrity check, scrub, fsck |
 
-Internal terms — entry, ingest, compaction, master key — belong in these documents and the source code, never on screen. The user-facing verb for retrieval is deliberately "save a copy" rather than "decrypt": it describes what happens to the user's world, and it carries the fact that a second, unprotected copy now exists.
+Internal terms — entry, ingest, master key — belong in these documents and the source code, not on screen. The user-facing verb for retrieval is "save a copy" rather than "decrypt": it describes the effect from the user's perspective, including that a second, unprotected copy now exists.
 
-**Forbidden words and claims:** "military-grade", "bank-level", "unbreakable", "100% secure", "hacker-proof", "your data is safe". The last is the most tempting and the most wrong — Requirements §7 lists six things Veil2 does not protect against.
+**Forbidden words and claims:** "military-grade", "bank-level", "unbreakable", "100% secure", "hacker-proof", "your data is safe." Requirements §7 lists what Veil2 does not protect against; these claims contradict it.
 
-**Errors never blame the user** and never expose internals. No error codes in primary text, no cryptographic library messages, no stack traces. A detail view may carry the technical text for a bug report; the first sentence is always human.
+**Errors do not blame the user and do not expose internals.** No error codes in primary text, no cryptographic library messages, no stack traces. A detail view may carry technical text for a bug report; the first sentence is always in plain language.
 
-**Numbers:** human-readable by default (`312.4 GB`), exact bytes on hover. Counts are exact and never rounded — "1,284 files", never "about 1,300".
+**Numbers:** human-readable by default (`312.4 GB`), exact bytes on hover. Counts are exact, never rounded — "1,284 files", not "about 1,300".
 
 **Honesty clauses are direct and specific.** Not "vault size may be observable" but "anyone who has this file can see how large it is and roughly when you last changed it."
 
@@ -259,91 +246,73 @@ Internal terms — entry, ingest, compaction, master key — belong in these doc
 
 ### 8.1 First run
 
-No vault exists. The window offers exactly two choices — create a vault, or open one — and nothing else. No tour, no sample vault, no account.
+No vault exists. The window offers exactly two choices — create a vault, or open one — and nothing else. No tour, sample vault, or account.
 
 ### 8.2 Creating a vault
 
-This is where HC-7 is stated, and it is the one place the product is deliberately uncomfortable.
+HC-7 (password loss is unrecoverable) is disclosed here.
 
-The user names the vault, chooses a location, and sets a password subject to C-4. Before the vault is created, a single `caution` block states, without softening:
+The user names the vault, chooses a location, and sets a password subject to C-4. Before the vault is created, a `caution` block states:
 
 > **If you forget this password, everything in this vault is lost.** There is no recovery, no reset, and no way for anyone — including us — to get it back. Write the password down and keep it somewhere safe.
 
-Confirmation is an explicit acknowledgement, not a pre-ticked checkbox. Suggesting a password manager here is appropriate; a "skip" affordance is not.
+Confirmation is an explicit acknowledgment, not a pre-checked checkbox. A password manager may be suggested; a "skip" option is not offered.
 
-Strength feedback is descriptive, never permissive-sounding: it may say a password is short, but it never says one is "strong", because that is a promise about an attacker's resources that nobody can make.
+Strength feedback is descriptive, not permissive: it may state that a password is short, but does not state that a password is "strong," since that would be a claim about attacker resources that cannot be verified.
 
 ### 8.3 Adding files
 
-On completion, the honesty clause FR-29 requires appears once, in the completion state:
+On completion, the disclosure FR-27 requires appears once, in the completion state:
 
 > "Added 34 files. The originals are still on your disk — Veil doesn't delete them."
 
-Offering to reveal the originals in the file manager is appropriate. Offering to delete them is not: Requirements §2.3 puts secure erasure out of scope, and a delete button here would imply a thoroughness Veil2 cannot deliver.
+Offering to reveal the originals in the file manager is appropriate. Offering to delete them is not: Requirements §2.3 places secure erasure out of scope, and a delete control here would imply a guarantee Veil2 cannot provide.
 
-### 8.4 Deleting and reclaiming space
+### 8.4 Deleting
 
-Deletion is confirmed with `caution`, names the files, and states the limit plainly:
+Deletion is confirmed with `caution` and names the files:
 
-> "Delete 12 files? They'll be removed from the list immediately, but their data stays in the vault file until you reclaim space."
+> "Delete 12 files?"
 
-Reclaiming space is presented as maintenance the user chooses, with the FR-8 figures in the button itself — "Reclaim 18.2 GB" — so the decision needs no arithmetic. During it, the vault stays usable and the operation stays cancellable (FR-24).
-
-**The number in the button is the number the operation delivers, or more.** Reclaiming measures the stored data first, so it recovers deleted files' bytes and anything an interrupted operation left, and no region holding unused space is skipped for being barely worth rewriting. It may therefore recover *more* than the figure promised, never less — a button that says 18.2 GB and returns 17.9 GB has made a number approximately true, and this product does not have those. The protection against pointless work is the figure itself: nobody presses *Reclaim 4 KB*.
+Deletion is immediate: deleted files leave the list and become unreachable (FR-22). Whether the underlying storage is freed immediately or requires a separate step is a Technical Specification decision, not addressed here. If a separate step exists, its presentation is designed when that decision is made.
 
 ### 8.5 Locking and ending
 
-Locking is explicit and always one click from the identity bar. Quitting the application locks the vault; there is no "leave it open" preference.
+Locking is explicit and always one click from the identity bar. Quitting the application locks the vault; there is no "leave it open" setting.
 
-**Nothing else locks the vault** — not inactivity, not system sleep, not the screen locking (FR-3). This is a written prohibition rather than an unbuilt feature, and it stays forbidden for a reason: an unexpected password prompt in the middle of a working session teaches people to retype their password without reading what asked for it, and that reflex is worth more to an attacker than the idle timer was worth to the user.
+**The vault is not locked automatically** — not on inactivity, system sleep, or screen lock (FR-3). This is an explicit design decision: an unexpected password prompt during a working session trains users to enter their password without verifying the prompt's source, which is a greater risk than the benefit of an automatic lock.
 
-The consequence is that a vault left unlocked on an unattended machine stays readable, and the design must not paper over it. The lock-state indicator of §3.2 carries this weight — it is legible from across a desk precisely so that "this vault is open" is never a surprise. No copy anywhere may imply that Veil2 secures itself when the user walks away; Requirements §7 lists this among the things it does not do.
+An unlocked vault on an unattended machine remains readable. This is not obscured in the design: the lock-state indicator in §3.2 is legible at a distance specifically so that "this vault is open" is never a surprise. No copy anywhere implies that Veil2 locks itself when the user steps away; Requirements §7 lists this among the things it does not do.
 
-The locked state is a distinct screen, not a greyed-out list. Leaving the file list visible while locked would suggest the index is still readable, which is precisely the confusion HC-1 exists to prevent.
+The locked state is a distinct screen, not a greyed-out list. A visible file list while locked would suggest the index is still readable, which is the confusion HC-1 exists to prevent.
 
 ---
 
 ### 8.6 Checking a vault for damage
 
-Presented as maintenance the user chooses, alongside reclaiming space and never on a schedule (FR-33). It reads the whole vault, so the control says so before it starts — an estimate in time, not a bare byte count, because the decision being made is whether to wait.
+Presented as maintenance the user chooses, never on a schedule (FR-26). It reads the whole vault, so the control states an estimate in time (not a byte count) before starting, since the decision being made is whether to wait.
 
-Progress is real and per-entry, and cancellation is always available. A cancelled check reports what it got through rather than discarding the result: knowing that the first 400 files are sound is worth more than knowing nothing.
+Progress is reported per entry, and cancellation is available throughout. A canceled check reports what it completed rather than discarding the result.
 
-**A clean result is stated narrowly.** Not "your vault is healthy" — that reads as a standing promise about a vault that is only ever checked at a moment in time. The wording describes what was actually done:
+**A clean result is stated narrowly.** Not "your vault is healthy" — a standing claim that does not hold for a check that describes one point in time. The wording describes what was done:
 
 > "Checked 1,284 files. No damage found."
 
-**A failed result names the files and says what it cannot do**, in the same breath, because this is the moment a user is most likely to assume Veil will fix it:
+**A failed result names the files and states what cannot be done**, since users may otherwise assume Veil can repair the damage:
 
 > **3 files are damaged.** Their data in this vault can't be recovered — Veil doesn't keep a spare copy. If you have a backup, restore these files from it.
 >
 > `IMG_4417.raw` · `IMG_4418.raw` · `notes/2019.md`
 
-Damaged entries are marked in the list afterwards using the same treatment as §4.3, so the finding persists past the dialog rather than evaporating when it is dismissed. Every other file stays fully usable, which is S-4 working and must be visible as such rather than presented as a wounded vault.
+Damaged entries are marked in the list afterward, using the same treatment as §4.3, so the result remains visible after the dialog is dismissed. All other files remain usable (S-3); this is visually apparent rather than presenting the vault as broadly compromised.
 
 ---
 
-## 9. Design-Driven Requirements Feedback
+## 9. Open Questions
 
-Recorded per G-24. This section is a permanent record of what design work sent upstream, and it remains after absorption so the trace stays explicit. All three items were raised while the whole suite was unapproved and converging on a single version 1.0, so the owner absorbed them directly into Requirements v1.0 rather than deferring them to a later bump.
-
-**1. Extraction is a fourth honesty moment. — Absorbed into FR-29.** FR-29 originally named three: unrecoverability at creation, the retained original after ingest, and deleted bytes persisting until compaction. Designing §6 made a fourth unavoidable — the moment a file is saved out of the vault and becomes an ordinary unprotected file. It is the most frequent of the four and the likeliest route by which data escapes Veil2. FR-29 now names it; §6 carries the wording.
-
-**2. S-4 needs entry-level attribution. — Absorbed into S-4.** S-4 originally required only that damage be contained to the entries in the damaged region. §4.3 needs more than containment: to mark affected rows in the list rather than raising a whole-vault alarm, the core must report *which* entries a damaged region holds. S-4 now requires that attribution, since it is a capability and not a presentation choice.
-
-**3. Locking on idle or system sleep was unspecified. — Absorbed into FR-3 and Requirements §7.** §8.5 covered explicit locking and locking on quit, but whether an unlocked vault should lock itself after inactivity, on screen lock, or on sleep was absent from the Requirements while carrying a direct security consequence. Raised here rather than decided, because it belonged to the Requirements owner. Resolved as explicit locking only: FR-3 now states the prohibition and its reason, Requirements §7 names the resulting exposure, and §8.5 above carries both into the design.
-
----
-
-## 10. Open Questions
-
-- **Whether the damage check of §8.6 is reachable from the identity bar or only from a menu.** It is rare enough that prominence would be wrong and important enough that burying it defeats the purpose. Resolver: Design Guideline, next version.
-- **Whether grouping by folder is on or off by default.** It depends on whether real vaults are flat media dumps or structured imports. Resolver: tune with use, once real vaults exist.
-- **Whether the CLI's user-facing strings are shared with the GUI's or maintained separately.** §7 requires identical vocabulary; whether that is enforced mechanically or by review is a build question. Resolver: Technical Specification.
+- **Whether the damage check of §8.6 is reachable from the identity bar or only from a menu.** Resolver: Design Guideline, next version.
+- **Whether the folder-grouping view (§3.2, §1.2) is on or off by default.** Depends on whether real vaults tend to have many distinct folder-path values, which grouping helps navigate, or few, where grouping adds no value. This does not reopen whether grouping is a tree — it is not (§1.2) — only its default state. Resolver: tune with use, once real vaults exist.
+- **Whether the CLI's user-facing strings are shared with the GUI's or maintained separately.** §7 requires identical vocabulary; whether this is enforced mechanically or by review is a build question. Resolver: Technical Specification.
 - **Palette values in §2.2 against real content.** Chosen for contrast on paper, not yet checked against dense lists of long filenames in both themes. Resolver: tune with use.
-- **Application icon and installer identity.** Not yet designed; §1.2 forbids padlocks and shields, which rules out most of the category's visual conventions and leaves the problem genuinely open. Resolver: Design Guideline, next version.
-- **Whether search covers folder metadata as well as filenames**, and whether it is literal or fuzzy. Resolver: Design Guideline, next version, informed by the entry counts real vaults reach.
-
-### Resolved during v1.0
-
-- **Whether an unlocked vault locks itself on idle, screen lock, or system sleep.** Resolved as explicit locking only — the vault locks when the user locks it or quits, and on no other signal. The decision and its reason live in FR-3; the exposure it accepts is listed in Requirements §7; the design consequence and the prohibition on copy that would obscure it are in §8.5 above.
+- **Application icon and installer identity.** Not yet designed; §1.2 excludes padlocks and shields, which rules out most conventional icons for this category. Resolver: Design Guideline, next version.
+- **Whether search covers folder metadata as well as filenames**, and whether it is literal or fuzzy. Resolver: Design Guideline, next version, informed by entry counts in real vaults.
