@@ -40,9 +40,9 @@ The CLI comes first for this phase's benefit: crash-injection through a command 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P4.1.a | Built, needs review | Every write path in `veil-core` re-enumerated against the entry-file layout — one file, one containing directory, one index generation, no rollover | Spec §4.7, FR-12 | T4.1 |
+| P4.1.a | Done | Every write path in `veil-core` re-enumerated against the entry-file layout — one file, one containing directory, one index generation, no rollover | Spec §4.7, FR-12 | T4.1 |
 | P4.1.b | Built, carries forward | A file's containing directory made durable after the file is created, renamed over, or removed | HC-4, FR-12 | T4.1, T4.2 |
-| P4.1.c | Built, needs review | Ingest, replace, and delete each written in the order Spec §4.5 fixes: content durable, then the index generation that names it, then (for delete) the file removed | Spec §4.5, FR-12 | T4.2–T4.4 |
+| P4.1.c | Done | Ingest, replace, and delete each written in the order Spec §4.5 fixes: content durable, then the index generation that names it, then (for delete) the file removed | Spec §4.5, FR-12 | T4.2–T4.4 |
 | P4.1.d | Built, carries forward | No indirection layer, no injectable filesystem, no test hook — the ordering is checked by killing a process, or it is not checked | Spec §9 | T4.2–T4.4 |
 
 ---
@@ -56,7 +56,7 @@ The CLI comes first for this phase's benefit: crash-injection through a command 
 | P4.2.a | Built, carries forward | A real process killed with an uncatchable signal, part-way through an operation genuinely in flight | Spec §9, HC-4 | T4.2–T4.4 |
 | P4.2.b | Built, carries forward | The kill triggered by watching the vault's own bytes appear on disk, not by anything the process was built to tell a test | Spec §9, §11 | T4.2 |
 | P4.2.c | Built, carries forward | Four invariants asserted after every kill: the vault opens; every file that existed beforehand is still listed; each extracts byte-identically; and the statistics match a direct sum | HC-4, FR-7 | T4.5 |
-| P4.2.d | Built, needs rewrite | Add, replace, and delete killed through the shipped binary. There is nothing left to kill mid-compaction | Spec §9 | T4.2–T4.4 |
+| P4.2.d | Done | Add, replace, and delete killed through the shipped binary. There is nothing left to kill mid-compaction | Spec §9 | T4.2–T4.4 |
 | P4.2.e | Built, carries forward | A deterministic set that runs with the suite, and a repeated randomised sweep marked `#[ignore]`, run on request | Spec §9, §8.1 | T4.6 |
 | P4.2.f | Built, carries forward | The signal is a kill, not an interrupt — an interrupt is cancellation and a different guarantee, already covered by T3.22 | FR-15, HC-4 | T4.2 |
 
@@ -68,7 +68,7 @@ The CLI comes first for this phase's benefit: crash-injection through a command 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P4.3.a | Built, needs review | A missing entry file does not prevent the vault from opening — verified under crash conditions, not only by construction | Spec §4.5, S-3 | T4.9 |
+| P4.3.a | Done | A missing entry file does not prevent the vault from opening — verified under crash conditions, not only by construction | Spec §4.5, S-3 | T4.9 |
 | P4.3.b | Built, carries forward | The affected entry is named without reading content | S-3, S-2 | T4.9 |
 | P4.3.c | Built, carries forward | Every entry outside it still listed, still extractable, still verified | S-3 | T4.10 |
 | P4.3.d | Built, carries forward | Reported as damage in the words Design §7 fixes, pointing at `check` for the full list | Design §4.2, §7, FR-26 | T4.9 |
@@ -101,9 +101,13 @@ There is no reclaim mechanism to hand this residue to, and none is built. This i
 
 ## Exit
 
-- No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand — the kill is a process kill, not a power cut (T4.2–T4.7).
+- No interruption at any fsync boundary yields an unopenable vault or loses an entry that existed beforehand — the kill is a process kill, not a power cut (T4.2–T4.6).
 - Opening a vault writes nothing and measures nothing, with the generation unchanged (T4.11).
 - A vault on read-only media opens, and says so at open (T4.12).
+
+**`cargo check --workspace --all-targets` is clean.** This is the first point in the whole rewrite where that is true — nothing in either crate is left broken by an earlier phase. `crates/veil-core/tests/durability.rs` was rewritten from 649 lines (packs, reconciliation, missing-pack attribution) down to about 300: T4.1's write-path tripwire now watches `store/entry_file.rs` instead of `store/pack.rs`; T4.8 (residue), T4.9/T4.10 (missing entry file), T4.11 (open never writes), and T4.12 (read-only) all confirmed passing directly against the library. `crates/veil-cli/tests/crashes.rs` lost its `compact`-killing case (T4.5 old) and its subject-binary machinery entirely — there is nothing left to kill mid-compaction — and its remaining cases were re-pointed at `entries/` instead of `packs/`. All cases pass, including the `#[ignore]`d sweep, run once here to confirm it still does.
+
+**`veil-core`'s own suite runs in debug, not release** — `KdfParams::for_tests()` is compiled out of release builds by design (P1.1.d), so `cargo test -p veil-core --release` fails to compile with an unhelpful-looking error. `cargo test -p veil-core` (debug) is correct and was used throughout. Only `veil-cli`'s suite needs `--release`, since it spawns the real binary deriving real keys.
 
 ---
 

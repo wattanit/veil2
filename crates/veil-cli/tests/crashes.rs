@@ -1,19 +1,19 @@
-//! Phase 4 test cases T4.2 to T4.8 — killing a real process part-way through
-//! an operation (Spec §9; HC-4, FR-12, FR-13, FR-21, FR-24).
+//! Phase 4 test cases T4.2 to T4.7 — killing a real process part-way through
+//! an operation (Spec §9; HC-4, FR-12, FR-13, FR-22).
 //!
 //! Nothing here is simulated. `veil-core` has no seam that lets a test pretend
-//! to crash, deliberately (Spec §11.1), so the only way to check the write
+//! to crash, deliberately (Spec §11), so the only way to check the write
 //! ordering is to end a process without letting it clean up. The signal is a
 //! kill, not an interrupt: an interrupt is cancellation, which promises
-//! something stronger, and T3.18 covers it.
+//! something stronger, and T3.22 covers it.
 //!
-//! **The four invariants.** Every case asserts all of them, because a case that
+//! **The invariants.** Every case asserts all of them, because a case that
 //! asserts only "the vault opens" is not asserting HC-4:
 //!
 //! 1. the vault opens;
 //! 2. every file that existed before the killed operation is still listed;
 //! 3. each of those extracts byte-identically;
-//! 4. the statistics match a full recount.
+//! 4. the statistics match a direct sum over the resident entries.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -26,8 +26,7 @@ use std::time::{Duration, Instant};
 
 use harness::PASSWORD;
 use veil_core::crypto::Password;
-use veil_core::index::generations;
-use veil_core::store::total_pack_bytes;
+use veil_core::index::{Statistics, generations};
 use veil_core::vault::{Cancel, NoProgress, Vault};
 
 /// Big enough that the add is unmistakably in flight when the kill lands, small
@@ -109,19 +108,6 @@ impl Subject {
             .spawn()
             .unwrap()
     }
-
-    /// Starts the crash-test subject of the reclaim cases.
-    fn spawn_subject(&self, vault: &Path, cap: u64, args: &[&str]) -> Child {
-        Command::new(subject_binary())
-            .arg(vault)
-            .arg(self.password_file())
-            .arg(cap.to_string())
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
-    }
 }
 
 impl Drop for Subject {
@@ -134,43 +120,16 @@ fn str(path: &Path) -> &str {
     path.to_str().unwrap()
 }
 
-/// The subject binary, in cargo's examples directory beside the one under test.
-///
-/// Found by searching rather than by a fixed name: building an example as part
-/// of `cargo test` produces only the hash-suffixed file, and `cargo build
-/// --example` produces both. The newest match is the one this run built.
-fn subject_binary() -> PathBuf {
-    let examples = Path::new(env!("CARGO_BIN_EXE_veil"))
-        .parent()
-        .unwrap()
-        .join("examples");
-
-    let mut found: Option<(std::time::SystemTime, PathBuf)> = None;
-    for entry in std::fs::read_dir(&examples).into_iter().flatten().flatten() {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let is_subject = name == "reclaim_subject"
-            || name == "reclaim_subject.exe"
-            || (name.starts_with("reclaim_subject-") && !name.contains('.'));
-        if !is_subject {
-            continue;
-        }
-        let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
-            continue;
-        };
-        if found.as_ref().is_none_or(|(best, _)| modified > *best) {
-            found = Some((modified, path));
-        }
-    }
-
-    found.map(|(_, path)| path).unwrap_or_else(|| {
-        panic!(
-            "the crash subject is not built. Run the whole package — `cargo test -p veil-cli` — \
-             rather than this target alone; selecting one test target skips examples. \
-             Looked in {}",
-            examples.display()
-        )
-    })
+/// Total bytes currently held in `entries/`, watched to tell whether an add is
+/// under way. Replaces watching pack growth, which no longer exists.
+fn total_entry_bytes(vault: &Path) -> u64 {
+    let Ok(dir) = std::fs::read_dir(vault.join("entries")) else {
+        return 0;
+    };
+    dir.flatten()
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
 }
 
 /// Waits until `ready` says the operation is under way, then kills the process
@@ -179,7 +138,7 @@ fn subject_binary() -> PathBuf {
 /// The condition looks at the vault on disk — bytes appearing where the
 /// operation puts them — rather than at anything the process was asked to tell
 /// a test. There is nothing to tell it with, and adding something would be the
-/// seam Spec §11.1 rejected.
+/// seam Spec §11 rejected.
 fn kill_once_started(child: Child, ready: impl Fn() -> bool) {
     assert!(
         kill_if_possible(child, ready),
@@ -213,7 +172,7 @@ fn kill_if_possible(mut child: Child, ready: impl Fn() -> bool) -> bool {
     }
 }
 
-/// The four invariants of P4.2.c. Nothing else in this file asserts survival.
+/// The invariants every case in this file checks.
 fn assert_survived(subject: &Subject, vault: &Path, before: &BTreeMap<String, Vec<u8>>, at: &str) {
     // 1 — it opens. Every later assertion depends on this one.
     let opened = Vault::open(vault, &subject.password())
@@ -233,39 +192,18 @@ fn assert_survived(subject: &Subject, vault: &Path, before: &BTreeMap<String, Ve
         assert_eq!(&out, content, "{at}: {name} came back different");
     }
 
-    // 4 — the arithmetic survived too. An incremental counter is broken by
-    // exactly the event this suite creates.
-    //
-    // A kill leaves bytes on disk that no commit accounted for, so the index's
-    // figures and a recount are *expected* to differ here, by exactly those
-    // bytes. What must hold is that the index never claims more than is there,
-    // and that the parts a kill cannot touch — how many files and how much they
-    // hold — agree exactly. Opening the vault does not reconcile the two, and
-    // that is the point: an open writes nothing (FR-27).
+    // 4 — statistics are derived on every call (FR-7), so they cannot drift
+    // from a direct sum over the same entries — but a killed operation that
+    // left the index itself inconsistent would show up here.
     let held = opened.statistics();
-    let counted = opened.recount_statistics().unwrap();
+    let counted = Statistics::from_entries(opened.entries());
     assert_eq!(
-        held.entry_count, counted.entry_count,
-        "{at}: the file count diverged from a recount"
-    );
-    assert_eq!(
-        held.logical_bytes, counted.logical_bytes,
-        "{at}: the stored total diverged from a recount"
-    );
-    assert!(
-        held.physical_bytes <= counted.physical_bytes,
-        "{at}: the index claims {} bytes on disk but only {} are there",
-        held.physical_bytes,
-        counted.physical_bytes
-    );
-    assert_eq!(
-        counted.physical_bytes - held.physical_bytes,
-        counted.reclaimable_bytes - held.reclaimable_bytes,
-        "{at}: bytes a kill left behind were not counted as space to reclaim"
+        held, counted,
+        "{at}: statistics diverged from a direct sum over the entries"
     );
 
-    // T4.8 — at least one index slot authenticated, which is what opening at
-    // all proves, and both were at least readable as slots.
+    // At least one index slot authenticated, which is what opening at all
+    // proves, and both were at least readable as slots.
     assert!(
         generations(vault).iter().any(Option::is_some),
         "{at}: neither index slot is even readable"
@@ -283,12 +221,12 @@ fn t4_2_a_kill_during_an_add_loses_nothing() {
 
     let source = subject.path("big.bin");
     std::fs::write(&source, vec![7u8; BIG]).unwrap();
-    let baseline = total_pack_bytes(&vault).unwrap();
+    let baseline = total_entry_bytes(&vault);
 
     let child = subject.spawn(&["add", str(&vault), str(&source), "--folder", "d"]);
     let watching = vault.clone();
     kill_once_started(child, move || {
-        total_pack_bytes(&watching).unwrap_or(0) > baseline + 1024 * 1024
+        total_entry_bytes(&watching) > baseline + 1024 * 1024
     });
 
     assert_survived(&subject, &vault, &before, "after a killed add");
@@ -317,7 +255,7 @@ fn t4_3_a_kill_during_a_replace_leaves_one_intact_version() {
 
     let replacement = subject.path("replacement.bin");
     std::fs::write(&replacement, vec![9u8; BIG]).unwrap();
-    let baseline = total_pack_bytes(&vault).unwrap();
+    let baseline = total_entry_bytes(&vault);
 
     let child = subject.spawn(&[
         "replace",
@@ -328,7 +266,7 @@ fn t4_3_a_kill_during_a_replace_leaves_one_intact_version() {
     ]);
     let watching = vault.clone();
     kill_once_started(child, move || {
-        total_pack_bytes(&watching).unwrap_or(0) > baseline + 1024 * 1024
+        total_entry_bytes(&watching) > baseline + 1024 * 1024
     });
 
     // The old content is what was there before, so the standard invariants
@@ -356,11 +294,11 @@ fn t4_3_a_kill_during_a_replace_leaves_one_intact_version() {
 }
 
 /// T4.4 — a kill during a delete leaves the file present or gone, never half
-/// (HC-4, FR-21).
+/// (HC-4, FR-22).
 ///
 /// A delete is one index generation, so this is mostly asserting that it really
-/// is one: an implementation that removed the entry and updated the statistics
-/// in two commits would show up here and nowhere else.
+/// is one: an implementation that removed the entry and its file in two
+/// separate commits would show up here and nowhere else.
 ///
 /// **The window is narrow and the kill is timed, not triggered.** There is no
 /// intermediate state on disk to watch for — that is the point of a single
@@ -413,163 +351,61 @@ fn t4_4_a_kill_during_a_delete_leaves_no_half_state() {
     );
 }
 
-/// T4.5 — a kill during reclaiming space loses no live file (HC-4, FR-24).
-///
-/// FR-24 requires the vault to be openable at *every* point during the
-/// operation, and a kill at an arbitrary point is the only way to sample that.
-/// Driven through the subject binary rather than the shipped one, for the
-/// reason its own documentation gives.
-#[test]
-fn t4_5_a_kill_during_reclaiming_loses_nothing() {
-    const CAP: u64 = 64 * 1024;
-    let subject = Subject::new("reclaim");
-    let vault = subject.path("Reclaim.veil");
-
-    let setup = subject.spawn_subject(&vault, CAP, &["setup", "12", "30000"]);
-    assert!(setup.wait_with_output().unwrap().status.success());
-
-    // What is live beforehand, read through the library, so the comparison
-    // afterwards is against content and not against a count.
-    let opened = Vault::open(&vault, &subject.password()).unwrap();
-    let mut before = BTreeMap::new();
-    for entry in opened.entries() {
-        let mut out = Vec::new();
-        opened
-            .extract(entry.id, &mut out, &mut NoProgress, &Cancel::new())
-            .unwrap();
-        before.insert(entry.name.clone(), out);
-    }
-    let highest = *veil_core::store::existing_pack_ids(&vault)
-        .unwrap()
-        .last()
-        .unwrap();
-    drop(opened);
-
-    // A pack above every pack that existed is the new one being filled, which
-    // means the copy is under way.
-    let child = subject.spawn_subject(&vault, CAP, &["reclaim"]);
-    let watching = vault.clone();
-    kill_once_started(child, move || {
-        veil_core::store::existing_pack_ids(&watching)
-            .unwrap_or_default()
-            .iter()
-            .any(|id| *id > highest)
-    });
-
-    assert_survived(&subject, &vault, &before, "after a killed reclaim");
-}
-
-/// T4.6 — after any kill, the statistics are true again (FR-8, FR-22, HC-4).
+/// T4.5 — after any kill, the statistics still match a direct sum
+/// (FR-7, FR-22, HC-4).
 ///
 /// Asserted inside `assert_survived`, which every case above calls; this states
-/// the obligation in one place so it cannot be met by four cases that each
-/// checked something slightly different.
+/// the obligation in one place so it cannot be met by cases that each checked
+/// something slightly different. It is close to tautological now — statistics
+/// are computed from the entries on every call, so there is no separate figure
+/// left to drift — and it is kept anyway as the direct regression test for the
+/// requirement's own words.
 #[test]
-fn t4_6_the_statistics_are_true_after_a_kill() {
+fn t4_5_the_statistics_match_a_direct_sum_after_a_kill() {
     let subject = Subject::new("statistics");
     let (vault, before) = subject.stocked("Statistics.veil");
 
     let source = subject.path("big.bin");
     std::fs::write(&source, vec![3u8; BIG]).unwrap();
-    let baseline = total_pack_bytes(&vault).unwrap();
+    let baseline = total_entry_bytes(&vault);
 
     let child = subject.spawn(&["add", str(&vault), str(&source), "--folder", "d"]);
     let watching = vault.clone();
     kill_once_started(child, move || {
-        total_pack_bytes(&watching).unwrap_or(0) > baseline + 1024 * 1024
+        total_entry_bytes(&watching) > baseline + 1024 * 1024
     });
-
-    // The gap a kill leaves, and that it closes where it is supposed to. Opening
-    // does not close it — an open writes nothing and walks no packs — so the
-    // index still counts only what committed, and the bytes the killed add left
-    // show up as space to reclaim. Reclaiming is what makes the two agree, and
-    // it is the user's deliberate act (FR-23) rather than a side effect of
-    // looking at the vault.
-    let mut opened = Vault::open(&vault, &subject.password()).unwrap();
-    let counted = opened.recount_statistics().unwrap();
-    assert!(
-        counted.physical_bytes > opened.statistics().physical_bytes,
-        "the killed add left no trace, so this case proves nothing"
-    );
-
-    opened.compact(&mut NoProgress, &Cancel::new()).unwrap();
-    assert_eq!(
-        opened.statistics(),
-        opened.recount_statistics().unwrap(),
-        "reclaiming did not make the figures true again"
-    );
-    drop(opened);
 
     assert_survived(&subject, &vault, &before, "after a killed add");
 }
 
-/// T4.7 — repeated kills at unpredictable points (HC-4).
+/// T4.6 — repeated kills at unpredictable points (HC-4).
 ///
 /// The case that finds the boundary nobody thought of. Ignored by default
 /// because it costs minutes; seeded from a fixed sequence rather than a clock,
 /// because an unreproducible crash-test failure is worth almost nothing.
 #[test]
 #[ignore = "costs minutes; the sweep, run on request"]
-fn t4_7_repeated_kills_at_unpredictable_points() {
-    const CAP: u64 = 64 * 1024;
+fn t4_6_repeated_kills_at_unpredictable_points() {
     // A fixed sequence, so a failure names a run that can be repeated exactly.
     const SHARES: [u32; 8] = [5, 17, 31, 44, 58, 66, 79, 93];
 
     let subject = Subject::new("sweep");
 
     for (n, share) in SHARES.iter().enumerate() {
-        // Add, killed part-way through a large file.
         let (vault, before) = subject.stocked(&format!("Sweep{n}.veil"));
         let source = subject.path("sweep.bin");
         std::fs::write(&source, vec![(n % 251) as u8; BIG]).unwrap();
-        let baseline = total_pack_bytes(&vault).unwrap();
+        let baseline = total_entry_bytes(&vault);
         let target = baseline + u64::from(*share) * (BIG as u64) / 100;
 
         let child = subject.spawn(&["add", str(&vault), str(&source), "--folder", "d"]);
         let watching = vault.clone();
-        kill_once_started(child, move || {
-            total_pack_bytes(&watching).unwrap_or(0) > target
-        });
+        kill_once_started(child, move || total_entry_bytes(&watching) > target);
         assert_survived(
             &subject,
             &vault,
             &before,
             &format!("sweep run {n}: add killed at {share}%"),
-        );
-
-        // Reclaiming, killed once a new pack has appeared.
-        let reclaim_vault = subject.path(&format!("SweepReclaim{n}.veil"));
-        let setup = subject.spawn_subject(&reclaim_vault, CAP, &["setup", "10", "30000"]);
-        assert!(setup.wait_with_output().unwrap().status.success());
-
-        let opened = Vault::open(&reclaim_vault, &subject.password()).unwrap();
-        let mut live = BTreeMap::new();
-        for entry in opened.entries() {
-            let mut out = Vec::new();
-            opened
-                .extract(entry.id, &mut out, &mut NoProgress, &Cancel::new())
-                .unwrap();
-            live.insert(entry.name.clone(), out);
-        }
-        let highest = *veil_core::store::existing_pack_ids(&reclaim_vault)
-            .unwrap()
-            .last()
-            .unwrap();
-        drop(opened);
-
-        let child = subject.spawn_subject(&reclaim_vault, CAP, &["reclaim"]);
-        let watching = reclaim_vault.clone();
-        kill_once_started(child, move || {
-            veil_core::store::existing_pack_ids(&watching)
-                .unwrap_or_default()
-                .iter()
-                .any(|id| *id > highest)
-        });
-        assert_survived(
-            &subject,
-            &reclaim_vault,
-            &live,
-            &format!("sweep run {n}: reclaim killed"),
         );
     }
 }

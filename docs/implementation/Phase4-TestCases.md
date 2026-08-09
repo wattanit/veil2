@@ -132,8 +132,8 @@ Open an intact vault twice, recording the generation and both index slots. Plant
 ### T4.12 — A read-only vault opens, says so, and is not written to
 *Covers P4.5.a · Verifies FR-23, Spec §4.5, §4.8*
 
-Make a vault directory read-only and open it. List it and check it. Then try to add.
-**Verdict:** it opens; listing and checking succeed; the add exits with the read-only code; the fact that the vault opened read-only is stated at the time it opens, not left to be discovered by the failing add.
+Make a vault directory read-only and open it through the library directly. Extract a file and verify the whole vault.
+**Verdict:** it opens with `Access::ReadOnly`; extraction and verification both succeed. The CLI-level refusal of a write against a read-only vault, and the exit code it carries, is T3.25's — a library-level open is what this case owns.
 
 ---
 
