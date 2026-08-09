@@ -83,8 +83,8 @@ Phase 0 proves nothing about the product. Every item exists to make a later proo
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P0.4.a | Built, carries forward | `deny.toml` covering advisories, licences, sources, and bans; `cargo deny` and `cargo audit` fail the build | Spec §7, HC-6 | T0.4 |
-| P0.4.b | Built, carries forward | The Specification's dependency set pinned; nothing outside it added without a Specification bump | Spec §7 | T0.4 |
-| P0.4.c | Built, carries forward | Duplicate versions of cryptographic crates banned outright | HC-6, Spec §7 | T0.4 |
+| P0.4.b | Built, needs review | `veil-core`'s dependency set is otherwise pinned and matches Spec §7 — except `unicode-normalization`, which is in `Cargo.toml` and used for name normalisation (Spec §4.6) but absent from Spec §7's table | Spec §7 | T0.4 |
+| P0.4.c | Built, carries forward — broader than stated | `deny.toml`'s `multiple-versions = "deny"` bans duplicate versions workspace-wide, not only for cryptographic crates, with two named, justified exceptions (`syn`, `windows-sys`) | HC-6, Spec §7 | T0.4 |
 
 ---
 
@@ -97,7 +97,7 @@ Phase 0 proves nothing about the product. Every item exists to make a later proo
 | P0.5.a | Built, carries forward | A `tracing` capture layer for tests that records every event and its fields | Spec §6 | T0.9 |
 | P0.5.b | Built, carries forward | An assertion helper that fails when a captured event contains any planted marker string, checked against fields as well as message | HC-1, Spec §6 | T0.9 |
 | P0.5.c | Built, carries forward | Canary test: a call site that deliberately logs a marker, asserting the guard reports it | HC-1 | T0.9 |
-| P0.5.d | Built, carries forward | The guard wired into the test harness so later phases apply it by default | HC-1 | T0.10 |
+| P0.5.d | Not yet built | The guard proves itself (T0.10) but is not wired into `tests/harness/mod.rs` — no vault-operation test currently runs under it. Later phases do not get it by default; each must call `support::guarded`/`support::init` itself until the harness wires it in | HC-1 | T0.10 |
 
 ---
 
@@ -108,8 +108,13 @@ Phase 0 proves nothing about the product. Every item exists to make a later proo
 - `veil-core`'s dependency graph contains no `anyhow` and no interactive-input crate.
 - `cargo deny` and `cargo audit` pass, and the lockfile is committed.
 
+**`cargo check --workspace` does not pass yet, by design.** P0.2.d removed `Damaged::Pack` and `Unrepresentable`/`NameNotRepresentable` from `error.rs` without touching their only remaining call sites — `store/pack.rs` (Phase 1 deletes it) and `vault/representable.rs` (Phase 2 deletes it). Scoping the change to Phase 0 alone means the workspace does not build green again until those phases land. Confirmed by `cargo check --workspace --all-targets`: exactly four errors, all in those two files.
+
 ---
 
 ## Open Questions
+
+- **`unicode-normalization` is used and pinned in `veil-core`'s `Cargo.toml` but absent from Spec §7's dependency table.** Resolver: owner, next Specification bump.
+- **Whether the logging guard should be wired into `tests/harness/mod.rs` by default.** Right now it proves itself in isolation (T0.9, T0.10) but nothing outside `logging_guard.rs` invokes it, so Phase 2's real vault-operation tests do not run under it. Resolver: owner, likely at Phase 2.
 
 None.

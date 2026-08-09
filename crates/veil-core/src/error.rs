@@ -2,7 +2,7 @@
 //!
 //! No variant carries plaintext, content, key material, or the password (HC-2)
 //! — enforced by not giving any variant a field that could hold one. Entry
-//! *identity* is fine and necessary: FR-33 and S-4 need failing entries named.
+//! *identity* is fine and necessary: FR-26 and S-3 need failing entries named.
 //!
 //! No `anyhow`. The original Veil flattened every failure into one
 //! string-carrying variant, which is why a wrong password and a corrupt vault
@@ -33,7 +33,7 @@ impl core::fmt::Display for Limit {
 
 /// Which part of a vault was found damaged. Attributed to a component so a
 /// partial failure reads as a list of unreadable files, not a failed vault
-/// (S-4).
+/// (S-3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Damaged {
     /// The plaintext header (§4.2).
@@ -42,15 +42,15 @@ pub enum Damaged {
     IndexSlot,
     /// Both index slots. The vault cannot be opened.
     BothIndexSlots,
-    /// One pack file (§4.5).
-    Pack {
-        /// Identifier of the affected pack.
-        id: u32,
-    },
+    /// One entry's own file is missing or unreadable (§4.5). Confined to
+    /// exactly this entry: under one-file-per-entry storage, damage cannot
+    /// spread past the file it lives in, so there is no further attribution
+    /// to compute.
+    EntryFile,
     /// An entry's stored content failed chunk authentication (§3.3).
     Content,
     /// An entry decrypted and authenticated but did not match its recorded
-    /// content hash (FR-17).
+    /// content hash (FR-18).
     ContentHash,
 }
 
@@ -60,48 +60,9 @@ impl core::fmt::Display for Damaged {
             Self::Header => f.write_str("the vault header"),
             Self::IndexSlot => f.write_str("one index slot"),
             Self::BothIndexSlots => f.write_str("both index slots"),
-            Self::Pack { id } => write!(f, "pack {id:06}"),
+            Self::EntryFile => f.write_str("an entry's stored file"),
             Self::Content => f.write_str("stored content"),
             Self::ContentHash => f.write_str("a content hash"),
-        }
-    }
-}
-
-/// Why a vault's own name for an entry cannot become a filename outside it
-/// without becoming a different name than the vault reports (Spec §4.6;
-/// FR-31, HC-8).
-///
-/// Enforced the same way regardless of which platform is asking: the check's
-/// own answer does not depend on a host fact, which is HC-8's standard turned
-/// on the check itself (Spec §4.6, §11.2 item 1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Unrepresentable {
-    /// One of Windows' reserved device names — `CON`, `PRN`, `AUX`, `NUL`,
-    /// `COM1`–`COM9`, `LPT1`–`LPT9` — matched case-insensitively against the
-    /// name with any extension removed.
-    ReservedName,
-    /// A character no supported platform allows in a filename, or a control
-    /// character.
-    ReservedCharacter,
-    /// The name ends in a dot or a space, which Windows silently strips —
-    /// producing a file whose name does not match what the vault reports.
-    TrailingDotOrSpace,
-    /// Differs from another entry in the same folder only by case, which a
-    /// case-insensitive destination cannot hold as two files.
-    CaseCollision,
-}
-
-impl core::fmt::Display for Unrepresentable {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::ReservedName => f.write_str("it is a name reserved on some platforms"),
-            Self::ReservedCharacter => {
-                f.write_str("it contains a character not every platform allows")
-            }
-            Self::TrailingDotOrSpace => f.write_str("it ends in a dot or a space"),
-            Self::CaseCollision => {
-                f.write_str("it differs from another file here only by letter case")
-            }
         }
     }
 }
@@ -142,7 +103,7 @@ pub enum Error {
     },
 
     /// The vault's format is older than the current one and this release no
-    /// longer reads it (FR-30).
+    /// longer reads it (FR-6).
     #[error(
         "this vault uses format version {version}, which this release no \
          longer reads; the last release able to read it is {last_supported_by}"
@@ -155,7 +116,7 @@ pub enum Error {
     },
 
     /// Stored data was altered, truncated, reordered, or substituted (HC-3).
-    /// `affected` lists every entry it costs, not the first (S-4); empty means
+    /// `affected` lists every entry it costs, not the first (S-3); empty means
     /// the damage belongs to no single entry, such as the header.
     #[error("{what} is damaged; {} entr{} affected", affected.len(), if affected.len() == 1 { "y" } else { "ies" })]
     Corrupt {
@@ -188,50 +149,36 @@ pub enum Error {
     #[error("no file in this vault matches that")]
     NotFound,
 
-    /// The vault already holds a file at that path (FR-34).
+    /// The vault already holds a file at that path (FR-14).
     ///
     /// The full path is a file's identity (FR-13), so a second file under it
     /// would leave the vault unable to say which one any later operation meant.
     #[error("this vault already holds a file at that path; replace it rather than adding a second")]
     AlreadyExists,
 
-    /// The vault's own name for this entry cannot become a filename here
-    /// without becoming a different name than the vault reports (FR-31,
-    /// HC-8). Extraction stops rather than substituting or truncating.
-    ///
-    /// Carries no name, for the reason [`NotFound`](Self::NotFound) carries
-    /// none — the caller already has it, from the vault it holds open.
-    #[error("this file's name cannot be written here as it is: {reason}")]
-    NameNotRepresentable {
-        /// Which entry.
-        id: EntryId,
-        /// Why.
-        reason: Unrepresentable,
-    },
-
-    /// Another process holds this vault open (FR-26).
+    /// Another process holds this vault open (FR-23).
     #[error("this vault is already open somewhere else; nothing has been changed")]
     VaultInUse,
 
     /// The vault changed on disk since it was opened; the write was refused
-    /// rather than applied over the change (FR-27).
+    /// rather than applied over the change (FR-24).
     #[error("this vault changed on disk since it was opened; the change was not overwritten")]
     ChangedOnDisk,
 
     /// The vault opened read-only and a write was attempted (§4.5, §4.8).
     ///
     /// Not an I/O failure — nothing is wrong. Read-only vaults must open, or a
-    /// write-protected drive would make an interrupted compaction permanent
+    /// write-protected drive would make an interruption mid-operation permanent
     /// (HC-4) and verification impossible on the drive that needs it most.
     #[error("this vault is open read-only and cannot be changed; nothing has been altered")]
     ReadOnly,
 
-    /// The storage medium became unavailable mid-operation (FR-28).
+    /// The storage medium became unavailable mid-operation (FR-25).
     #[error("the vault's storage is no longer reachable; the operation stopped where it was")]
     StorageUnavailable,
 
     /// The operation would exceed a configured limit, and carries both numbers
-    /// the message has to name (FR-15).
+    /// the message has to name (FR-16).
     #[error("the {limit} limit is {allowed}; this would make it {actual}. Nothing was added")]
     LimitExceeded {
         /// Which limit.
@@ -243,7 +190,7 @@ pub enum Error {
     },
 
     /// The caller cancelled. `rolled_back` says what it left behind
-    /// (FR-14, FR-19).
+    /// (FR-15, FR-20).
     #[error(
         "cancelled{}",
         if *rolled_back { "; the vault is as it was before this started" }
@@ -255,7 +202,7 @@ pub enum Error {
     },
 
     /// Verification found failing entries — every one, not the first
-    /// (FR-33, S-4). Veil2 stores no redundancy, so this reports loss rather
+    /// (FR-26, S-3). Veil2 stores no redundancy, so this reports loss rather
     /// than repairing it.
     #[error("{} entr{} failed verification and cannot be recovered", entries.len(), if entries.len() == 1 { "y" } else { "ies" })]
     VerificationFailed {

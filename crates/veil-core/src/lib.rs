@@ -15,6 +15,6 @@ pub mod index;
 pub mod store;
 pub mod vault;
 
-pub use error::{Damaged, Error, Limit, Result, Unrepresentable};
+pub use error::{Damaged, Error, Limit, Result};
 pub use index::EntryId;
 pub use vault::{Cancel, Limits, NoProgress, Progress, ProgressReport, Reclaimed, Unit, Vault};

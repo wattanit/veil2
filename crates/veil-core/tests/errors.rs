@@ -18,7 +18,7 @@ fn every_variant() -> Vec<Error> {
             last_supported_by: "2.3.0",
         },
         Error::Corrupt {
-            what: Damaged::Pack { id: 4 },
+            what: Damaged::EntryFile,
             affected: vec![EntryId::new(11), EntryId::new(12)],
         },
         Error::Corrupt {
@@ -79,11 +79,11 @@ fn t0_11_version_errors_carry_both_versions() {
     let rendered = superseded.to_string();
     assert!(
         rendered.contains('1') && rendered.contains("2.3.0"),
-        "FR-30"
+        "FR-6"
     );
 }
 
-/// T0.11 — a limit failure carries both numbers (FR-15).
+/// T0.11 — a limit failure carries both numbers (FR-16).
 #[test]
 fn t0_11_limit_exceeded_names_the_limit_and_the_value() {
     let rendered = Error::LimitExceeded {
@@ -97,7 +97,7 @@ fn t0_11_limit_exceeded_names_the_limit_and_the_value() {
     assert!(rendered.contains("70000000000"));
 }
 
-/// T0.11 — a cancellation states what it left behind (FR-14, FR-19).
+/// T0.11 — a cancellation states what it left behind (FR-15, FR-20).
 ///
 /// This is the state fact the Design Guideline's three-part message needs. An
 /// error that says only "cancelled" forces the caller to invent the answer to
@@ -112,15 +112,15 @@ fn t0_11_cancelled_states_whether_it_rolled_back() {
 }
 
 /// T0.11 — damage and verification carry every affected entry, not the first
-/// (S-4, FR-33).
+/// (S-3, FR-26).
 ///
-/// S-4 rejects two failures at once: one bad region losing everything, and one
+/// S-3 rejects two failures at once: one bad region losing everything, and one
 /// bad region being indistinguishable from total loss. Carrying the full list
 /// is what turns a partial failure into a list of files a user can restore.
 #[test]
 fn t0_11_failures_carry_every_affected_entry() {
     let Error::Corrupt { affected, .. } = (Error::Corrupt {
-        what: Damaged::Pack { id: 4 },
+        what: Damaged::EntryFile,
         affected: vec![EntryId::new(11), EntryId::new(12), EntryId::new(13)],
     }) else {
         panic!("constructed variant did not match");
@@ -157,8 +157,8 @@ fn t0_11_every_variant_renders_a_message() {
 /// The markers are planted in the surrounding state, not in the errors: the
 /// test is that there is no field through which they could arrive.
 ///
-/// *Scope note:* entry identity is permitted here and is not a marker. FR-33
-/// and S-4 require failing entries to be named, so an error that cannot
+/// *Scope note:* entry identity is permitted here and is not a marker. FR-26
+/// and S-3 require failing entries to be named, so an error that cannot
 /// identify an entry cannot satisfy them. The prohibition on entry names
 /// reaching a *log* is a separate rule, covered by T0.7 and T0.8.
 #[test]
