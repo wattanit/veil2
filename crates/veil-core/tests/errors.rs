@@ -77,10 +77,7 @@ fn t0_11_version_errors_carry_both_versions() {
         last_supported_by: "2.3.0",
     };
     let rendered = superseded.to_string();
-    assert!(
-        rendered.contains('1') && rendered.contains("2.3.0"),
-        "FR-6"
-    );
+    assert!(rendered.contains('1') && rendered.contains("2.3.0"), "FR-6");
 }
 
 /// T0.11 — a limit failure carries both numbers (FR-16).

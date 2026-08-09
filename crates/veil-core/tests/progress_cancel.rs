@@ -1,5 +1,5 @@
 //! Phase 2 test cases T2.6 through T2.9 — progress and cancellation
-//! (A-3, FR-14, FR-17, FR-19, Spec §2, §4.8).
+//! (A-3, FR-15, FR-18, FR-20, Spec §2, §4.8).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,9 +7,7 @@ mod harness;
 
 use std::sync::atomic::Ordering;
 
-use harness::{
-    CancelAt, CountingSource, Recorder, SMALL_CAP, add, assert_monotonic, create, pattern,
-};
+use harness::{CancelAt, CountingSource, Recorder, add, assert_monotonic, create, pattern};
 use veil_core::crypto::CHUNK_LEN;
 use veil_core::vault::Unit;
 use veil_core::{Cancel, Error, NoProgress};
@@ -20,7 +18,7 @@ fn multi_chunk() -> Vec<u8> {
 }
 
 /// T2.6 — progress is reported, monotonic, and complete
-/// (A-3, FR-14, FR-19, Spec §4.8).
+/// (A-3, FR-15, FR-20, Spec §4.8).
 ///
 /// A sink called once at the end satisfies "reports progress" and is useless to
 /// a progress bar, which is why monotonic growth is asserted rather than mere
@@ -31,7 +29,7 @@ fn t2_6_progress_is_reported_monotonic_and_complete() {
     let dir = scratch.vault_dir();
     let content = multi_chunk();
 
-    let mut vault = create(&dir, u64::MAX);
+    let mut vault = create(&dir);
 
     let mut ingest = Recorder::default();
     let id = vault
@@ -74,13 +72,13 @@ fn t2_6_progress_is_reported_monotonic_and_complete() {
 }
 
 /// T2.7 — a cancelled ingest leaves no trace in the vault
-/// (FR-14, Spec §4.7).
+/// (FR-15, Spec §4.7).
 #[test]
 fn t2_7_a_cancelled_ingest_leaves_no_trace() {
     let scratch = harness::Scratch::new("cancel-ingest");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     add(&mut vault, "kept.bin", "d", &pattern(3000));
 
     let before_entries = vault.entries().len();
@@ -110,15 +108,24 @@ fn t2_7_a_cancelled_ingest_leaves_no_trace() {
     assert_eq!(vault.entries().len(), before_entries);
     assert_eq!(vault.statistics(), before_stats);
     assert_eq!(vault.generation(), before_generation);
-    harness::assert_statistics_match_recount(&vault, "after a cancelled ingest");
+    harness::assert_statistics_correct(&vault, "after a cancelled ingest");
 
-    // Indistinguishable from a vault where the operation never began: not
-    // merely no *index* trace, but no bytes either. The packs are rolled back
-    // to exactly what they held.
+    // Indistinguishable from a vault where the operation never began, at the
+    // level the API exposes: no entry, no statistics change, no generation
+    // step. The cancelled write's own entry file may still be on disk as
+    // unreferenced residue (Spec §4.5) — there is no rollback to run, because
+    // nothing yet pointed at it, and nothing here sweeps it automatically.
+    let after_files: Vec<_> = harness::snapshot(&dir)
+        .into_iter()
+        .filter(|(name, _)| !name.ends_with(".entry"))
+        .collect();
+    let before_non_entry: Vec<_> = before_files
+        .into_iter()
+        .filter(|(name, _)| !name.ends_with(".entry"))
+        .collect();
     assert_eq!(
-        harness::snapshot(&dir),
-        before_files,
-        "a cancelled ingest changed a file on disk"
+        after_files, before_non_entry,
+        "a cancelled ingest changed something other than its own residue"
     );
 
     // And the vault is sound afterwards, which is what "as it was" has to mean.
@@ -133,19 +140,19 @@ fn t2_7_a_cancelled_ingest_leaves_no_trace() {
 }
 
 /// T2.8 — cancellation takes effect within a bounded number of chunks
-/// (Spec §2, FR-14).
+/// (Spec §2, FR-15).
 ///
 /// **The bound is two chunks, not one, and that is a property of the
 /// construction rather than a slack allowance.** Knowing which chunk is last
 /// requires reading the next one first (STREAM tags the final chunk
 /// differently), so a hook that stops at the boundary after chunk *n* has
-/// already caused chunk *n+1* to be read. What FR-14 needs is that the bound is
+/// already caused chunk *n+1* to be read. What FR-15 needs is that the bound is
 /// a constant and not the file — that is what this asserts.
 #[test]
 fn t2_8_cancellation_takes_effect_within_a_bounded_number_of_chunks() {
     let scratch = harness::Scratch::new("cancel-latency");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, u64::MAX);
+    let mut vault = create(&dir);
 
     let total = CHUNK_LEN * 8;
     let cancel = Cancel::new();
@@ -179,7 +186,7 @@ fn t2_8_cancellation_takes_effect_within_a_bounded_number_of_chunks() {
 }
 
 /// T2.9 — a cancelled extraction removes its partial output
-/// (FR-19, FR-17).
+/// (FR-20, FR-18).
 ///
 /// A truncated plaintext left on disk is indistinguishable from a short file,
 /// which is exactly what HC-3 forbids.
@@ -189,7 +196,7 @@ fn t2_9_a_cancelled_extraction_removes_its_partial_output() {
     let dir = scratch.vault_dir();
     let content = multi_chunk();
 
-    let mut vault = create(&dir, u64::MAX);
+    let mut vault = create(&dir);
     let id = add(&mut vault, "big.bin", "d", &content);
 
     let destination = scratch.path("extracted.bin");

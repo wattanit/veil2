@@ -1,5 +1,5 @@
 //! Phase 2 test cases T2.20 through T2.27 — replace, delete, and statistics
-//! (FR-8, FR-13, FR-21, FR-22, FR-29, HC-4, S-2, Spec §3.2, §4.3, §4.5, §4.6).
+//! (FR-7, FR-13, FR-22, HC-4, S-2, Spec §3.2, §4.3, §4.5, §4.6).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,7 +7,7 @@ mod harness;
 
 use std::io::Read;
 
-use harness::{SMALL_CAP, add, assert_statistics_match_recount, create, open, pattern};
+use harness::{add, assert_statistics_correct, create, open, pattern};
 use veil_core::{Cancel, Error, NoProgress};
 
 /// A source that fails partway, standing in for a disk that goes away.
@@ -36,7 +36,7 @@ impl Read for FailsAfter {
 fn t2_20_replace_matches_on_the_full_path() {
     let scratch = harness::Scratch::new("replace-path");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let work = pattern(1000);
     let personal = pattern(1500);
@@ -92,7 +92,7 @@ fn t2_20_replace_matches_on_the_full_path() {
 fn t2_21_a_failed_replace_leaves_the_original_intact() {
     let scratch = harness::Scratch::new("replace-failure");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let original = pattern(4000);
     let id = add(&mut vault, "doc.bin", "d", &original);
@@ -113,7 +113,7 @@ fn t2_21_a_failed_replace_leaves_the_original_intact() {
     assert_eq!(vault.statistics(), stats);
     assert_eq!(vault.find("d", "doc.bin").unwrap().id, id);
     assert_eq!(harness::read_back(&vault, id).unwrap(), original);
-    assert_statistics_match_recount(&vault, "after a failed replace");
+    assert_statistics_correct(&vault, "after a failed replace");
 
     // And a cancelled one.
     let cancel = Cancel::new();
@@ -128,30 +128,22 @@ fn t2_21_a_failed_replace_leaves_the_original_intact() {
     assert_eq!(vault.generation(), generation);
     assert_eq!(vault.find("d", "doc.bin").unwrap().id, id);
     assert_eq!(harness::read_back(&vault, id).unwrap(), original);
-    assert_statistics_match_recount(&vault, "after a cancelled replace");
+    assert_statistics_correct(&vault, "after a cancelled replace");
 }
 
-/// T2.22 — replace makes the old content reclaimable in the same step
-/// (FR-13, FR-21, FR-8).
+/// T2.22 — replace advances the generation exactly once (FR-13).
 ///
-/// Two generation steps would be the window HC-4 forbids.
+/// Two generation steps would be the window HC-4 forbids. The old entry's
+/// file is removed only after that one commit — never before, and never left
+/// behind afterward.
 #[test]
-fn t2_22_replace_reclaims_the_old_content_in_one_step() {
-    let scratch = harness::Scratch::new("replace-reclaim");
+fn t2_22_replace_advances_the_generation_exactly_once() {
+    let scratch = harness::Scratch::new("replace-generation");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let original = pattern(3000);
     let old_id = add(&mut vault, "doc.bin", "d", &original);
-    let old_stored: u64 = vault
-        .entries()
-        .iter()
-        .find(|e| e.id == old_id)
-        .unwrap()
-        .extents
-        .iter()
-        .map(|x| x.length)
-        .sum();
 
     let before = vault.statistics();
     let generation = vault.generation();
@@ -174,19 +166,19 @@ fn t2_22_replace_reclaims_the_old_content_in_one_step() {
         after.logical_bytes,
         before.logical_bytes - original.len() as u64 + replacement.len() as u64
     );
-    assert_eq!(
-        after.reclaimable_bytes,
-        before.reclaimable_bytes + old_stored
+    assert!(
+        !veil_core::store::exists(&dir, old_id),
+        "the old entry's file was left behind after replace"
     );
-    assert_statistics_match_recount(&vault, "after a replace");
+    assert_statistics_correct(&vault, "after a replace");
 }
 
-/// T2.23 — a deleted entry is immediately unreachable (FR-21).
+/// T2.23 — a deleted entry is immediately unreachable (FR-22).
 #[test]
 fn t2_23_a_deleted_entry_is_immediately_unreachable() {
     let scratch = harness::Scratch::new("delete-unreachable");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let gone = add(&mut vault, "gone.bin", "d", &pattern(800));
     let kept = add(&mut vault, "kept.bin", "d", &pattern(900));
@@ -211,65 +203,32 @@ fn t2_23_a_deleted_entry_is_immediately_unreachable() {
     assert!(vault.entries().iter().all(|e| e.id != gone));
 }
 
-/// T2.24 — delete accounts for what it did not erase (FR-21, FR-8, FR-29).
+/// T2.24 — delete removes the entry's file immediately (FR-22, Spec §4.5).
 ///
-/// The honesty clause, asserted: the bytes are still there, and the figure the
-/// user is shown says so. A user who deletes a file and then hands the vault to
-/// someone else must not believe those bytes are gone.
+/// There is no reclaimable figure to check: deleting already frees the space,
+/// and the file is gone from `entries/` as soon as `delete` returns.
 #[test]
-fn t2_24_delete_accounts_for_what_it_did_not_erase() {
-    let scratch = harness::Scratch::new("delete-accounting");
+fn t2_24_delete_removes_the_entrys_file_immediately() {
+    let scratch = harness::Scratch::new("delete-frees-file");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     add(&mut vault, "kept.bin", "d", &pattern(1200));
     let gone = add(&mut vault, "gone.bin", "d", &pattern(3400));
+    assert!(veil_core::store::exists(&dir, gone));
 
-    let stored: u64 = vault
-        .entries()
-        .iter()
-        .find(|e| e.id == gone)
-        .unwrap()
-        .extents
-        .iter()
-        .map(|x| x.length)
-        .sum();
     let before = vault.statistics();
-    let packs_before: Vec<u64> = veil_core::store::existing_pack_ids(&dir)
-        .unwrap()
-        .into_iter()
-        .map(|id| {
-            std::fs::metadata(veil_core::store::pack_path(&dir, id))
-                .unwrap()
-                .len()
-        })
-        .collect();
 
     vault.delete(gone).unwrap();
     let after = vault.statistics();
 
     assert_eq!(after.entry_count, before.entry_count - 1);
     assert_eq!(after.logical_bytes, before.logical_bytes - 3400);
-    assert_eq!(
-        after.physical_bytes, before.physical_bytes,
-        "delete must not pretend the bytes left"
+    assert!(
+        !veil_core::store::exists(&dir, gone),
+        "delete must free the entry's file immediately"
     );
-    assert_eq!(after.reclaimable_bytes, before.reclaimable_bytes + stored);
-
-    let packs_after: Vec<u64> = veil_core::store::existing_pack_ids(&dir)
-        .unwrap()
-        .into_iter()
-        .map(|id| {
-            std::fs::metadata(veil_core::store::pack_path(&dir, id))
-                .unwrap()
-                .len()
-        })
-        .collect();
-    assert_eq!(
-        packs_before, packs_after,
-        "delete rewrote a pack; that is compaction's job (FR-23)"
-    );
-    assert_statistics_match_recount(&vault, "after a delete");
+    assert_statistics_correct(&vault, "after a delete");
 }
 
 /// T2.25 — entry identifiers are never reused (Spec §3.2, HC-3).
@@ -281,7 +240,7 @@ fn t2_24_delete_accounts_for_what_it_did_not_erase() {
 fn t2_25_entry_identifiers_are_never_reused() {
     let scratch = harness::Scratch::new("identifiers");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let mut ever_issued = Vec::new();
     for i in 0..3 {
@@ -331,16 +290,17 @@ fn t2_25_entry_identifiers_are_never_reused() {
     );
 }
 
-/// T2.26 — statistics match a full recount (FR-8, FR-22).
+/// T2.26 — statistics match a direct sum after any sequence of operations
+/// (FR-7, FR-22).
 ///
 /// Checked after *each* operation. Checking only at the end lets two errors
 /// cancel; checking after each names the operation that diverged.
 #[test]
-fn t2_26_statistics_match_a_full_recount() {
+fn t2_26_statistics_match_a_direct_sum() {
     let scratch = harness::Scratch::new("statistics");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
-    assert_statistics_match_recount(&vault, "empty");
+    let mut vault = create(&dir);
+    assert_statistics_correct(&vault, "empty");
 
     let mut ids = Vec::new();
     for i in 0..6 {
@@ -350,7 +310,7 @@ fn t2_26_statistics_match_a_full_recount() {
             "d",
             &pattern(500 + i * 700),
         ));
-        assert_statistics_match_recount(&vault, &format!("after add {i}"));
+        assert_statistics_correct(&vault, &format!("after add {i}"));
     }
 
     vault
@@ -362,12 +322,12 @@ fn t2_26_statistics_match_a_full_recount() {
             &Cancel::new(),
         )
         .unwrap();
-    assert_statistics_match_recount(&vault, "after replace");
+    assert_statistics_correct(&vault, "after replace");
 
     vault.delete(ids[0]).unwrap();
-    assert_statistics_match_recount(&vault, "after the first delete");
+    assert_statistics_correct(&vault, "after the first delete");
     vault.delete(ids[4]).unwrap();
-    assert_statistics_match_recount(&vault, "after the second delete");
+    assert_statistics_correct(&vault, "after the second delete");
 
     vault
         .replace(
@@ -378,29 +338,27 @@ fn t2_26_statistics_match_a_full_recount() {
             &Cancel::new(),
         )
         .unwrap();
-    assert_statistics_match_recount(&vault, "after a shrinking replace");
+    assert_statistics_correct(&vault, "after a shrinking replace");
 
-    // And across a reopen, since the figures live in the index rather than in
-    // the process. Opening reads them and recomputes nothing, so they are the
-    // same figures rather than figures that happen to agree.
+    // And across a reopen, since the figures are derived from the entries the
+    // index holds rather than cached in the process.
     let expected = vault.statistics();
     drop(vault);
     let vault = open(&dir).unwrap();
     assert_eq!(vault.statistics(), expected);
-    assert_statistics_match_recount(&vault, "after a reopen");
+    assert_statistics_correct(&vault, "after a reopen");
 }
 
-/// T2.27 — statistics are available at open without reading content
-/// (FR-22, S-2).
+/// T2.27 — statistics are available at open without reading any entry file
+/// (FR-7, S-2).
 ///
-/// Deriving reclaimable space by scanning would cost more than the compaction
-/// it advises. Asserted the strong way: the packs are removed, and the figures
-/// are still correct — nothing that scanned them could survive it.
+/// Asserted the strong way: every entry file is removed, and the figures are
+/// still correct — nothing that read one could survive it.
 #[test]
-fn t2_27_statistics_are_available_at_open_without_reading_content() {
+fn t2_27_statistics_are_available_at_open_without_reading_any_entry_file() {
     let scratch = harness::Scratch::new("statistics-at-open");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     for i in 0..5 {
         add(&mut vault, &format!("f{i}.bin"), "d", &pattern(2000));
@@ -408,11 +366,11 @@ fn t2_27_statistics_are_available_at_open_without_reading_content() {
     let deleted = vault.entries()[1].id;
     vault.delete(deleted).unwrap();
     let expected = vault.statistics();
-    assert!(expected.reclaimable_bytes > 0);
+    let ids: Vec<_> = vault.entries().iter().map(|e| e.id).collect();
     drop(vault);
 
-    for id in veil_core::store::existing_pack_ids(&dir).unwrap() {
-        std::fs::remove_file(veil_core::store::pack_path(&dir, id)).unwrap();
+    for id in ids {
+        std::fs::remove_file(veil_core::store::entry_path(&dir, id)).unwrap();
     }
 
     let vault = open(&dir).unwrap();

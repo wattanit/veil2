@@ -17,12 +17,6 @@ const MARKER_NAME: &str = "exec_compensation_2024.csv";
 const MARKER_FOLDER: &str = "HR/salaries";
 const MARKER_CONTENT: &str = "SALARY-ROW-MARKER-9c1f";
 
-/// `Vault::create` still takes a capacity parameter — a leftover of the pack
-/// cap this phase's rewrite makes meaningless. Removing the parameter belongs
-/// to Phase 2, which owns `vault/session.rs`; this suite passes an arbitrary
-/// value and does not test it.
-const UNUSED_CAP: u64 = 4096;
-
 fn password() -> Password {
     Password::new("a sufficiently long password".to_owned())
 }
@@ -53,7 +47,7 @@ fn pattern(len: usize) -> Vec<u8> {
 }
 
 fn create(dir: &Path) -> Vault {
-    Vault::create(dir, &password(), KdfParams::for_tests(), UNUSED_CAP).unwrap()
+    Vault::create(dir, &password(), KdfParams::for_tests()).unwrap()
 }
 
 fn read_back(vault: &Vault, id: EntryId) -> Result<Vec<u8>, Error> {

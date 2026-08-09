@@ -1,25 +1,19 @@
-//! Public API: create, open, ingest, extract, replace, delete, verify, reclaim
+//! Public API: create, open, ingest, extract, replace, delete, verify
 //! (Spec §2, §5.1). Nothing here needs a terminal or a prompt (A-1).
 //!
 //! `name` and `folder` are normalised to NFC wherever a caller supplies one —
 //! `normalize` — so comparison (`find`, `add`, `replace`) is exact equality on
-//! an already-normalised form (Spec §4.6, HC-8).
+//! an already-normalised form (Spec §4.6).
 //!
 //! This file holds the type and the read-only accessors. The operations are
 //! split by what they do to a vault: `session` opens and closes one and owns
 //! the password, `ingest` puts data in, `mutate` changes what is already there,
-//! `read` gets data out, `reclaim` recovers the space `mutate` and a crash left
-//! behind, `damage` says which entries a missing pack costs, and
-//! `representable` says whether a name can leave the vault as a filename
-//! without becoming a different name than the vault reports (Spec §4.6,
-//! FR-31).
+//! `read` gets data out, and `damage` says which entry a missing file costs.
 //!
 //! **Opening a vault reads the header and one index slot, and does nothing
-//! else.** It writes nothing, and it does not walk the packs directory. Both
-//! matter: a write at open advances the generation that FR-27 detects external
-//! change with, and a walk puts vault size into the cost of an open (S-2).
-//! Finding space a crash left behind belongs to `reclaim` and to `info`, which
-//! the user asks for.
+//! else.** It writes nothing, and it does not walk `entries/`. Both matter: a
+//! write at open advances the generation that FR-24 detects external change
+//! with, and a walk puts vault size into the cost of an open (S-2).
 
 mod damage;
 mod ingest;
@@ -29,8 +23,6 @@ mod mutate;
 mod normalize;
 mod progress;
 mod read;
-mod reclaim;
-mod representable;
 mod session;
 mod verify;
 mod walk;
@@ -39,7 +31,6 @@ pub use ingest::FolderOutcome;
 pub use limits::{Limits, MAX_ENTRIES_PER_VAULT, MAX_FILE_SIZE};
 pub use lock::{Access, LOCK_FILE, VaultLock};
 pub use progress::{Cancel, NoProgress, Progress, ProgressReport, Unit};
-pub use reclaim::Reclaimed;
 pub use session::HEADER_FILE;
 pub use verify::{Outcome, Report, Verdict};
 pub use walk::{Found, SkipReason, Skipped, Walk, walk};
@@ -50,7 +41,6 @@ use crate::crypto::{EntryWrapKey, IndexKey};
 use crate::error::{Error, Result};
 use crate::format::Header;
 use crate::index::{Entry, IndexDocument, Statistics};
-use crate::store::total_pack_bytes;
 
 /// An open vault. Holds no process-global state, so several can be open at
 /// once (A-7).
@@ -63,7 +53,6 @@ pub struct Vault {
     index_key: IndexKey,
     entry_wrap_key: EntryWrapKey,
     document: IndexDocument,
-    pack_cap: u64,
     limits: Limits,
     lock: VaultLock,
 }
@@ -94,7 +83,7 @@ impl Vault {
         self.lock.access()
     }
 
-    /// The complete index, served from memory (FR-6).
+    /// The complete index, served from memory (FR-7).
     #[must_use]
     pub fn entries(&self) -> &[Entry] {
         &self.document.entries
@@ -116,13 +105,18 @@ impl Vault {
             .find(|e| e.folder.as_str() == folder.as_ref() && e.name.as_str() == name.as_ref())
     }
 
-    /// The vault's totals, read rather than computed (FR-8, FR-22).
+    /// The vault's totals, derived from the resident entry list on every call
+    /// rather than maintained separately (FR-7, Spec §4.3, §5.1).
+    ///
+    /// Cheap at C-1's scale — summing at most 65,536 in-memory entries costs
+    /// microseconds — so there is nothing here to cache, and nothing that can
+    /// drift from what `entries()` actually holds.
     #[must_use]
     pub fn statistics(&self) -> Statistics {
-        self.document.statistics
+        Statistics::from_entries(&self.document.entries)
     }
 
-    /// The index generation — the external-modification detector (FR-27).
+    /// The index generation — the external-modification detector (FR-24).
     #[must_use]
     pub fn generation(&self) -> u64 {
         self.document.generation
@@ -134,41 +128,7 @@ impl Vault {
         &self.header
     }
 
-    /// Recomputes the statistics from what is actually on disk.
-    ///
-    /// **Never the source of [`statistics`](Self::statistics)**, which FR-22
-    /// requires to be incremental and available the instant a vault opens. This
-    /// walks the packs directory, so its cost follows vault size and it belongs
-    /// only where a user asked for it: reporting the figures, reclaiming space,
-    /// and checking a recount in a test.
-    ///
-    /// The difference between the two is exactly the space an interrupted
-    /// operation left behind. The incremental figures count what committed
-    /// operations put on disk; this counts what is there. A crash leaves bytes
-    /// nothing committed, so this reports more — and that surplus is space the
-    /// user can reclaim.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Io`] if the packs cannot be measured.
-    pub fn recount_statistics(&self) -> Result<Statistics> {
-        let physical = total_pack_bytes(&self.dir)?;
-        let referenced: u64 = self
-            .document
-            .entries
-            .iter()
-            .flat_map(|e| e.extents.iter())
-            .map(|x| x.length)
-            .sum();
-        Ok(Statistics {
-            entry_count: self.document.entries.len() as u64,
-            logical_bytes: self.document.entries.iter().map(|e| e.size).sum(),
-            physical_bytes: physical,
-            reclaimable_bytes: physical.saturating_sub(referenced),
-        })
-    }
-
-    /// The one place every write passes through, so FR-27's check lives here:
+    /// The one place every write passes through, so FR-24's check lives here:
     /// the generation counter only detects anything if something reads it
     /// before writing.
     fn begin_write(&self) -> Result<()> {

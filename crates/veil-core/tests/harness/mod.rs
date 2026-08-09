@@ -14,10 +14,6 @@ use veil_core::crypto::{KdfParams, Password};
 use veil_core::index::{EntryId, Statistics};
 use veil_core::vault::{Cancel, NoProgress, Progress, ProgressReport, Vault};
 
-/// Small enough that multi-pack behaviour costs kilobytes rather than
-/// gigabytes. The cap being a parameter is why this suite runs at all.
-pub const SMALL_CAP: u64 = 4096;
-
 pub fn password() -> Password {
     Password::new("a sufficiently long password".to_owned())
 }
@@ -57,8 +53,8 @@ pub fn pattern(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i % 251) as u8).collect()
 }
 
-pub fn create(dir: &Path, cap: u64) -> Vault {
-    Vault::create(dir, &password(), KdfParams::for_tests(), cap).unwrap()
+pub fn create(dir: &Path) -> Vault {
+    Vault::create(dir, &password(), KdfParams::for_tests()).unwrap()
 }
 
 pub fn open(dir: &Path) -> Result<Vault, Error> {
@@ -208,19 +204,23 @@ impl std::io::Read for CountingSource {
     }
 }
 
-/// Flips one byte in the pack holding the given offset of an entry.
-pub fn flip_byte_in_pack(vault_dir: &Path, pack_id: u32, at: u64) {
-    let path = veil_core::store::pack_path(vault_dir, pack_id);
+/// Flips one byte at the given offset of an entry's own file.
+pub fn flip_byte_in_entry_file(vault_dir: &Path, id: EntryId, at: u64) {
+    let path = veil_core::store::entry_path(vault_dir, id);
     let mut bytes = std::fs::read(&path).unwrap();
     let index = usize::try_from(at).unwrap().min(bytes.len() - 1);
     bytes[index] ^= 0xff;
     std::fs::write(&path, bytes).unwrap();
 }
 
-/// The statistics a full recount produces, as the oracle for the incremental
-/// figures (FR-22).
-pub fn assert_statistics_match_recount(vault: &Vault, label: &str) {
+/// Statistics are derived on every call (FR-7); this asserts an independent
+/// sum over the resident entries agrees with what `statistics()` returned,
+/// which is what would catch a divergence if one were ever introduced.
+pub fn assert_statistics_correct(vault: &Vault, label: &str) {
     let held: Statistics = vault.statistics();
-    let counted = vault.recount_statistics().unwrap();
-    assert_eq!(held, counted, "{label}: statistics diverged from a recount");
+    let counted = Statistics::from_entries(vault.entries());
+    assert_eq!(
+        held, counted,
+        "{label}: statistics diverged from a direct sum"
+    );
 }

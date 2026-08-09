@@ -1,5 +1,5 @@
 //! Phase 2 test cases T2.28 through T2.33 — limits and password change
-//! (FR-2, FR-4, FR-15, A-6, C-1, C-2, HC-4, Spec §3.1).
+//! (FR-2, FR-4, FR-16, A-6, C-1, C-2, HC-4, Spec §3.1).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,7 +7,7 @@ mod harness;
 
 use std::io::Read;
 
-use harness::{SMALL_CAP, add, create, other_password, password, pattern};
+use harness::{add, create, other_password, password, pattern};
 use veil_core::crypto::{KdfParams, Password};
 use veil_core::vault::{Limits, Vault};
 use veil_core::{Cancel, Error, Limit, NoProgress};
@@ -32,14 +32,14 @@ impl Read for Liar {
     }
 }
 
-/// T2.28 — the entry limit is refused by name (FR-15, C-1).
+/// T2.28 — the entry limit is refused by name (FR-16, C-1).
 ///
 /// "Too many files" without the numbers leaves the user unable to act.
 #[test]
 fn t2_28_the_entry_limit_is_refused_by_name() {
     let scratch = harness::Scratch::new("entry-limit");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     vault.set_limits(Limits {
         max_entries: 3,
         ..Limits::default()
@@ -81,12 +81,12 @@ fn t2_28_the_entry_limit_is_refused_by_name() {
 }
 
 /// T2.29 — the file-size limit is enforced against the stream, not the claim
-/// (FR-15, C-2).
+/// (FR-16, C-2).
 #[test]
 fn t2_29_the_file_size_limit_is_enforced_against_the_stream() {
     let scratch = harness::Scratch::new("size-limit");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     vault.set_limits(Limits {
         max_file_size: 4096,
         ..Limits::default()
@@ -95,7 +95,13 @@ fn t2_29_the_file_size_limit_is_enforced_against_the_stream() {
     add(&mut vault, "within.bin", "d", &pattern(4096));
     let generation = vault.generation();
     let stats = vault.statistics();
-    let files = harness::snapshot(&dir);
+    let non_entry_files = |dir: &std::path::Path| {
+        harness::snapshot(dir)
+            .into_iter()
+            .filter(|(name, _)| !name.ends_with(".entry"))
+            .collect::<Vec<_>>()
+    };
+    let before = non_entry_files(&dir);
 
     // A source that is not a file at all, so there is no metadata to read a
     // size from, and one that yields far more than the limit.
@@ -120,15 +126,18 @@ fn t2_29_the_file_size_limit_is_enforced_against_the_stream() {
         other => panic!("expected a named file-size refusal, got {other:?}"),
     }
 
-    assert_eq!(vault.generation(), generation);
+    assert_eq!(vault.generation(), generation, "a generation was consumed");
     assert_eq!(vault.statistics(), stats);
     assert!(vault.entries().iter().all(|e| e.name != "over.bin"));
+    // The header, both index slots, and every other entry's file are
+    // untouched. The refused write's own entry file may exist as unreferenced
+    // residue (Spec §4.5) — nothing here rolls that back, by design.
     assert_eq!(
-        harness::snapshot(&dir),
-        files,
-        "a refused addition left bytes behind"
+        non_entry_files(&dir),
+        before,
+        "a refused addition changed something other than its own residue"
     );
-    harness::assert_statistics_match_recount(&vault, "after a refused addition");
+    harness::assert_statistics_correct(&vault, "after a refused addition");
 
     // The limit applies to replace as well, or it is a limit on one route in.
     assert!(matches!(
@@ -160,7 +169,7 @@ fn t2_30_a_new_password_opens_the_vault_and_the_old_does_not() {
     let scratch = harness::Scratch::new("password-change");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let content = pattern(6000);
     let id = add(&mut vault, "doc.bin", "d", &content);
 
@@ -192,7 +201,7 @@ fn t2_31_password_change_touches_only_the_header() {
     let scratch = harness::Scratch::new("password-scope");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     for i in 0..5 {
         add(&mut vault, &format!("f{i}.bin"), "d", &pattern(3000));
     }
@@ -235,7 +244,7 @@ fn t2_32_two_changes_in_a_row_both_take_effect() {
     let scratch = harness::Scratch::new("password-twice");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = add(&mut vault, "doc.bin", "d", &pattern(1000));
 
     let first = other_password("first");
@@ -279,7 +288,7 @@ fn t2_33_a_wrong_old_password_changes_nothing() {
     let scratch = harness::Scratch::new("password-wrong");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = add(&mut vault, "doc.bin", "d", &pattern(1000));
     let before = harness::snapshot(&dir);
 

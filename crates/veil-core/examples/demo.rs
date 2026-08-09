@@ -69,9 +69,7 @@ fn main() {
 
     // --- 1 -----------------------------------------------------------------
     heading(1, "Create a vault");
-    // A small pack cap so you can watch it span several pack files.
-    let mut vault =
-        Vault::create(&vault_dir, &password, KdfParams::for_tests(), 1_000_000).unwrap();
+    let mut vault = Vault::create(&vault_dir, &password, KdfParams::for_tests()).unwrap();
     println!(
         "    created, format version {}",
         vault.header().format_version
@@ -107,15 +105,13 @@ fn main() {
             println!("      {} — {:?}", s.path.display(), s.reason);
         }
     }
-    println!("    pack files: {:?}", packs(&vault_dir));
+    println!("    entry files: {:?}", entry_files(&vault_dir));
 
     // --- 3 -----------------------------------------------------------------
     heading(3, "Statistics, without reading any stored data");
     let s = vault.statistics();
     println!("    entries          {}", s.entry_count);
     println!("    logical bytes    {}", s.logical_bytes);
-    println!("    physical bytes   {}", s.physical_bytes);
-    println!("    reclaimable      {}", s.reclaimable_bytes);
 
     // --- 4 -----------------------------------------------------------------
     heading(4, "Extract one file and compare it to the original");
@@ -153,24 +149,19 @@ fn main() {
     );
 
     // --- 6 -----------------------------------------------------------------
-    heading(
-        6,
-        "Delete a file, and see the vault say the bytes are still there",
-    );
+    heading(6, "Delete a file, and see its entry file disappear");
     let doomed = vault.find("", "notes.txt").unwrap().id;
+    let existed_before = veil_core::store::exists(&vault_dir, doomed);
     let before = vault.statistics();
     vault.delete(doomed).unwrap();
     let after = vault.statistics();
     println!(
-        "    entries {} -> {},  physical bytes {} -> {} (unchanged),  reclaimable {} -> {}",
+        "    entries {} -> {}, entry file existed before: {existed_before}, exists after: {}",
         before.entry_count,
         after.entry_count,
-        before.physical_bytes,
-        after.physical_bytes,
-        before.reclaimable_bytes,
-        after.reclaimable_bytes
+        veil_core::store::exists(&vault_dir, doomed)
     );
-    println!("    the bytes stay until compaction, and the figures say so");
+    println!("    deleting frees the space immediately");
 
     // --- 7 -----------------------------------------------------------------
     heading(
@@ -223,7 +214,7 @@ fn main() {
     // --- 10 ----------------------------------------------------------------
     heading(
         10,
-        "Now break it on purpose: flip one byte in one pack file",
+        "Now break it on purpose: flip one byte in one entry's file",
     );
     let victim = {
         let v = Vault::open(&vault_dir, &new_password).unwrap();
@@ -232,19 +223,19 @@ fn main() {
             .iter()
             .find(|e| e.name == "holiday.jpg")
             .unwrap();
-        (e.id, e.name.clone(), e.extents[0])
+        (e.id, e.name.clone())
     };
-    let pack = veil_core::store::pack_path(&vault_dir, victim.2.pack_id);
-    let mut bytes = std::fs::read(&pack).unwrap();
-    let at = usize::try_from(victim.2.offset).unwrap() + 100;
+    let entry_file = veil_core::store::entry_path(&vault_dir, victim.0);
+    let mut bytes = std::fs::read(&entry_file).unwrap();
+    let at = 100;
     println!(
-        "    pack {:06}, byte {at}: {:#04x} -> {:#04x}",
-        victim.2.pack_id,
+        "    {}, byte {at}: {:#04x} -> {:#04x}",
+        entry_file.display(),
         bytes[at],
         bytes[at] ^ 0x01
     );
     bytes[at] ^= 0x01;
-    std::fs::write(&pack, bytes).unwrap();
+    std::fs::write(&entry_file, bytes).unwrap();
 
     heading(11, "What the damage costs");
     let vault = Vault::open(&vault_dir, &new_password).expect("the vault still opens");
@@ -336,15 +327,13 @@ fn list(dir: &Path) -> String {
     names.join(", ")
 }
 
-fn packs(dir: &Path) -> Vec<String> {
-    veil_core::store::existing_pack_ids(dir)
+fn entry_files(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir.join(veil_core::store::ENTRIES_DIR))
         .unwrap()
-        .into_iter()
-        .map(|id| {
-            let len = std::fs::metadata(veil_core::store::pack_path(dir, id))
-                .unwrap()
-                .len();
-            format!("{id:06}.pack ({len} bytes)")
+        .flatten()
+        .map(|e| {
+            let len = e.metadata().unwrap().len();
+            format!("{} ({len} bytes)", e.file_name().to_string_lossy())
         })
         .collect()
 }

@@ -1,4 +1,4 @@
-//! Phase 2 test cases T2.35 and T2.36 — property tests (Spec §9; FR-16,
+//! Phase 2 test cases T2.35 and T2.36 — property tests (Spec §9; FR-17,
 //! FR-22).
 //!
 //! `proptest` searches; T2.16 and T2.26 fix one case each. Both are wanted: a
@@ -11,7 +11,7 @@ mod harness;
 
 use proptest::prelude::*;
 
-use harness::{SMALL_CAP, assert_statistics_match_recount, create, pattern};
+use harness::{assert_statistics_correct, create, pattern};
 use veil_core::crypto::CHUNK_LEN;
 use veil_core::{Cancel, NoProgress};
 
@@ -54,14 +54,14 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
     /// T2.35 — any byte sequence at any length survives a round trip
-    /// (Spec §9, FR-16).
+    /// (Spec §9, FR-17).
     #[test]
     fn t2_35_any_content_survives_a_round_trip(
         lengths in prop::collection::vec(interesting_length(), 1..4)
     ) {
         let scratch = harness::Scratch::new(&format!("prop-roundtrip-{}", lengths.len()));
         let dir = scratch.vault_dir();
-        let mut vault = create(&dir, SMALL_CAP);
+        let mut vault = create(&dir);
 
         for (index, length) in lengths.iter().enumerate() {
             let content = pattern(*length);
@@ -91,6 +91,10 @@ proptest! {
     /// T2.36 — any sequence of operations keeps statistics true
     /// (FR-22, Spec §9).
     ///
+    /// "Statistics" here are derived on every call (FR-7); this checks an
+    /// independent sum agrees at every step, which is what would catch a
+    /// divergence if one were ever introduced.
+    ///
     /// T2.26 fixes one sequence; this searches for the one that diverges.
     #[test]
     fn t2_36_any_sequence_of_operations_keeps_statistics_true(
@@ -98,8 +102,8 @@ proptest! {
     ) {
         let scratch = harness::Scratch::new(&format!("prop-stats-{}", steps.len()));
         let dir = scratch.vault_dir();
-        let mut vault = create(&dir, SMALL_CAP);
-        assert_statistics_match_recount(&vault, "empty");
+        let mut vault = create(&dir);
+        assert_statistics_correct(&vault, "empty");
 
         let mut counter = 0usize;
         for (index, step) in steps.iter().enumerate() {
@@ -147,7 +151,7 @@ proptest! {
                     }
                 }
             }
-            assert_statistics_match_recount(&vault, &format!("after step {index}: {step:?}"));
+            assert_statistics_correct(&vault, &format!("after step {index}: {step:?}"));
         }
 
         // The figures survive a close and reopen: they live in the index, not
@@ -157,6 +161,6 @@ proptest! {
         drop(vault);
         let vault = harness::open(&dir).unwrap();
         prop_assert_eq!(vault.statistics(), expected);
-        assert_statistics_match_recount(&vault, "after a reopen");
+        assert_statistics_correct(&vault, "after a reopen");
     }
 }

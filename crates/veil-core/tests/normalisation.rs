@@ -5,7 +5,7 @@
 
 mod harness;
 
-use harness::{SMALL_CAP, add, create, pattern};
+use harness::{add, create, pattern};
 use veil_core::{Cancel, NoProgress};
 
 /// "café.txt", precomposed (`é` is one codepoint, U+00E9) — NFC.
@@ -26,7 +26,7 @@ fn t1_35_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
     // Through `add`, supplying each spelling directly.
     let scratch = harness::Scratch::new("nfc-add-precomposed");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = add(&mut vault, NFC_CAFE, "", &pattern(10));
     assert_eq!(
         vault.entries().iter().find(|e| e.id == id).unwrap().name,
@@ -35,7 +35,7 @@ fn t1_35_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
 
     let scratch = harness::Scratch::new("nfc-add-decomposed");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = add(&mut vault, NFD_CAFE, "", &pattern(10));
     assert_eq!(
         vault.entries().iter().find(|e| e.id == id).unwrap().name,
@@ -46,7 +46,7 @@ fn t1_35_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
     // Through `add_path`, from a file whose real on-disk name is NFD.
     let scratch = harness::Scratch::new("nfc-add-path");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let source = scratch.path(NFD_CAFE);
     std::fs::write(&source, pattern(10)).unwrap();
     let id = vault
@@ -64,7 +64,7 @@ fn t1_35_an_nfd_name_and_its_nfc_spelling_store_as_one_entry() {
 fn t1_36_matching_a_stored_name_by_its_other_spelling() {
     let scratch = harness::Scratch::new("nfc-match");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let id = add(&mut vault, NFC_CAFE, "photos", &pattern(20));
 
     // `find` with the other spelling resolves to the same entry.
@@ -96,7 +96,7 @@ fn t1_36_matching_a_stored_name_by_its_other_spelling() {
 fn t1_37_case_sensitivity_is_unaffected_by_normalisation() {
     let scratch = harness::Scratch::new("nfc-case");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     add(&mut vault, "Report.PDF", "d", &pattern(10));
     add(&mut vault, "report.pdf", "d", &pattern(20));
@@ -116,7 +116,7 @@ fn t1_37_case_sensitivity_is_unaffected_by_normalisation() {
 fn t1_38_a_folder_walk_over_nfd_yielding_paths_produces_nfc_folder_metadata() {
     let scratch = harness::Scratch::new("nfc-walk");
     let dir = scratch.vault_dir();
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
 
     let root = scratch.path("source");
     let folder = root.join(NFD_CAFE.trim_end_matches(".txt")); // an NFD *folder* name

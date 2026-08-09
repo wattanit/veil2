@@ -11,7 +11,6 @@ use crate::crypto::{
 use crate::error::{Error, Result};
 use crate::format::{CURRENT_FORMAT_VERSION, Header, SALT_LEN, unlock};
 use crate::index::IndexDocument;
-use crate::store::DEFAULT_PACK_CAP;
 
 use super::{Access, Limits, Vault, VaultLock};
 
@@ -19,18 +18,12 @@ use super::{Access, Limits, Vault, VaultLock};
 pub const HEADER_FILE: &str = "veil.header";
 
 impl Vault {
-    /// Creates a vault at `dir`. `pack_cap` is a parameter so multi-pack
-    /// behaviour is testable without gigabytes of fixture.
+    /// Creates a vault at `dir` (FR-1).
     ///
     /// # Errors
     ///
     /// [`Error::Io`], [`Error::VaultInUse`], or a cryptographic failure.
-    pub fn create(
-        dir: &Path,
-        password: &Password,
-        params: KdfParams,
-        pack_cap: u64,
-    ) -> Result<Self> {
+    pub fn create(dir: &Path, password: &Password, params: KdfParams) -> Result<Self> {
         check_length(password)?;
         std::fs::create_dir_all(dir)?;
         // The vault's own directory entry, before anything is put inside it.
@@ -69,17 +62,16 @@ impl Vault {
             header,
             master,
             IndexDocument::empty(),
-            pack_cap,
             lock,
         );
         crate::index::write(&vault.dir, &vault.index_key, &vault.document)?;
         Ok(vault)
     }
 
-    /// Opens a vault, decrypting the whole index into memory (FR-6).
+    /// Opens a vault, decrypting the whole index into memory (FR-7).
     ///
-    /// Touches no pack file, so open cost follows entry count and not vault
-    /// size (S-2). Never verifies content — that reads everything (FR-33).
+    /// Touches no entry file, so open cost follows entry count and not vault
+    /// size (S-2). Never verifies content — that reads everything (FR-26).
     ///
     /// # Errors
     ///
@@ -101,15 +93,14 @@ impl Vault {
 
         // Header and one index slot, and that is the whole of opening a vault.
         // Nothing is written — a write here would advance the generation that
-        // FR-27 detects external change with, so a vault opened from a stale
+        // FR-24 detects external change with, so a vault opened from a stale
         // copy would outrank the newer one arriving moments later. Nothing
-        // walks the packs either, which keeps open time off vault size (S-2).
+        // walks `entries/` either, which keeps open time off vault size (S-2).
         Ok(Self::assemble(
             dir.to_path_buf(),
             header,
             master,
             document,
-            DEFAULT_PACK_CAP,
             lock,
         ))
     }
@@ -166,7 +157,7 @@ impl Vault {
     }
 
     /// Re-reads the index from disk, adopting an external writer's change
-    /// (FR-27). The way forward after [`Error::ChangedOnDisk`], without asking
+    /// (FR-24). The way forward after [`Error::ChangedOnDisk`], without asking
     /// for the password again.
     ///
     /// Entry identifiers held from before are stale afterwards; re-read
@@ -179,7 +170,6 @@ impl Vault {
         let document = crate::index::read(&self.dir, &self.index_key)?;
         self.document = document;
         self.document.next_entry_id = next_id_floor(&self.document);
-        self.document.next_pack_id = next_pack_floor(&self.document);
         Ok(())
     }
 
@@ -188,18 +178,15 @@ impl Vault {
         header: Header,
         master: MasterKey,
         mut document: IndexDocument,
-        pack_cap: u64,
         lock: VaultLock,
     ) -> Self {
         document.next_entry_id = next_id_floor(&document);
-        document.next_pack_id = next_pack_floor(&document);
         Self {
             index_key: index_key(&master),
             entry_wrap_key: entry_wrap_key(&master),
             dir,
             header,
             document,
-            pack_cap,
             limits: Limits::default(),
             lock,
         }
@@ -228,26 +215,6 @@ fn next_id_floor(document: &IndexDocument) -> u64 {
     document
         .next_entry_id
         .max(highest.map_or(1, |h| h + 1))
-        .max(1)
-}
-
-/// The stored pack counter, raised to clear every pack the index references.
-///
-/// Derived from the index's own extents and never from the packs directory:
-/// opening a vault reads the header and one index slot, and nothing else. A
-/// pack on disk with a higher identifier than anything referenced is residue,
-/// and appending past it is safe — [`PackSink`](crate::store::PackSink) does
-/// exactly that, rather than truncating on a guess.
-fn next_pack_floor(document: &IndexDocument) -> u32 {
-    let highest = document
-        .entries
-        .iter()
-        .flat_map(|e| e.extents.iter())
-        .map(|x| x.pack_id)
-        .max();
-    document
-        .next_pack_id
-        .max(highest.map_or(1, |h| h.saturating_add(1)))
         .max(1)
 }
 

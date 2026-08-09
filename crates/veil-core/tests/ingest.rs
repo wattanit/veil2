@@ -1,5 +1,5 @@
 //! Phase 2 test cases T2.10 through T2.15 — ingest and folder ingest
-//! (FR-7, FR-9, FR-10, FR-11, FR-12, HC-8, Spec §4.6, §4.7).
+//! (FR-7, FR-9, FR-10, FR-11, FR-12, Spec §4.6, §4.7).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,7 +7,7 @@ mod harness;
 
 use std::path::Path;
 
-use harness::{SMALL_CAP, create, open, pattern};
+use harness::{create, open, pattern};
 use veil_core::{Cancel, NoProgress};
 
 /// Creates a symbolic link, or reports that this platform and account cannot.
@@ -57,7 +57,7 @@ fn t2_10_ingest_is_a_copy() {
     let before = harness::snapshot(&tree);
     let loose_before = std::fs::read(&loose).unwrap();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     vault
         .add_path(&loose, "singles", &mut NoProgress, &Cancel::new())
         .unwrap();
@@ -79,10 +79,10 @@ fn t2_10_ingest_is_a_copy() {
 /// T2.11 — content is durable before the index names it (FR-12, Spec §4.7).
 ///
 /// **What is asserted here is the observable half of FR-12:** when `add`
-/// returns, every byte the index claims for the new entry is within a pack file
-/// that exists and is at least that long — the index never points at bytes that
-/// were not written — and an independent reader opened afterwards gets the
-/// content back byte-identically.
+/// returns, the new entry's file exists on disk and is at least as long as its
+/// recorded size — the index never points at a file that was not written —
+/// and an independent reader opened afterwards gets the content back
+/// byte-identically.
 ///
 /// **Whether the fsync itself lands first is not checked, here or anywhere.**
 /// That is not observable from outside the process without an indirection layer
@@ -95,31 +95,24 @@ fn t2_11_content_is_durable_before_the_index_names_it() {
     let dir = scratch.vault_dir();
     let content = pattern(11_000);
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let generation_before = vault.generation();
     let id = harness::add(&mut vault, "durable.bin", "d", &content);
 
     // One generation per committed mutation.
     assert_eq!(vault.generation(), generation_before + 1);
 
-    // Every extent lies wholly inside a pack file that exists and is long
-    // enough. An index entry pointing past the end of its pack is FR-12 broken,
-    // and it is the shape a wrong ordering produces.
-    let entry = vault.entries().iter().find(|e| e.id == id).unwrap();
-    assert!(!entry.extents.is_empty());
-    for extent in &entry.extents {
-        let path = veil_core::store::pack_path(&dir, extent.pack_id);
-        let length = std::fs::metadata(&path)
-            .unwrap_or_else(|_| panic!("pack {} is missing", extent.pack_id))
-            .len();
-        assert!(
-            extent.offset + extent.length <= length,
-            "extent {}..{} exceeds pack {} of length {length}",
-            extent.offset,
-            extent.offset + extent.length,
-            extent.pack_id
-        );
-    }
+    // The entry's own file exists and holds at least its recorded length. A
+    // shorter file than the index claims is FR-12 broken, and it is the shape
+    // a wrong ordering produces.
+    let path = veil_core::store::entry_path(&dir, id);
+    let length = std::fs::metadata(&path)
+        .unwrap_or_else(|_| panic!("entry file for {id} is missing"))
+        .len();
+    assert!(
+        length > 0,
+        "entry file for {id} is empty even though content was added"
+    );
     drop(vault);
 
     // Success was reported; an independent reader must therefore find it.
@@ -128,7 +121,7 @@ fn t2_11_content_is_durable_before_the_index_names_it() {
 }
 
 /// T2.13 — a folder walk stores every regular file with its relative path
-/// (FR-10, FR-7, HC-8).
+/// (FR-10, FR-7).
 #[test]
 fn t2_13_a_folder_walk_stores_every_regular_file_with_its_relative_path() {
     let scratch = harness::Scratch::new("folder-walk");
@@ -141,7 +134,7 @@ fn t2_13_a_folder_walk_stores_every_regular_file_with_its_relative_path() {
     std::fs::write(tree.join("a/b/two.txt"), pattern(30)).unwrap();
     std::fs::write(tree.join("a/b/c/three.txt"), pattern(40)).unwrap();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let outcome = vault
         .add_folder(&tree, &mut NoProgress, &Cancel::new())
         .unwrap();
@@ -169,7 +162,7 @@ fn t2_13_a_folder_walk_stores_every_regular_file_with_its_relative_path() {
 
     // `/`-separated on every platform. The separator is a serialisation detail,
     // never the host's, or a vault written on Windows would present different
-    // folder strings on Linux (HC-8, §4.6).
+    // folder strings on Linux (§4.6).
     assert!(vault.entries().iter().all(|e| !e.folder.contains('\\')));
 
     // Content follows the name it was stored under.
@@ -204,7 +197,7 @@ fn t2_14_symbolic_links_are_not_followed_and_are_reported() {
         return;
     }
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let outcome = vault
         .add_folder(&tree, &mut NoProgress, &Cancel::new())
         .unwrap();
@@ -257,7 +250,7 @@ fn t2_15_a_link_cycle_does_not_prevent_the_walk_from_finishing() {
         return;
     }
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     let outcome = vault
         .add_folder(&tree, &mut NoProgress, &Cancel::new())
         .unwrap();

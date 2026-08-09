@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use veil_core::crypto::{
     HASH_LEN, NONCE_PREFIX_LEN, WRAPPED_KEY_LEN, generate_master_key, index_key,
 };
-use veil_core::index::{Entry, EntryId, IndexDocument, Statistics, generations};
+use veil_core::index::{Entry, EntryId, IndexDocument, generations};
 use veil_core::{Damaged, Error};
 
 /// A distinctive name of the shape HC-1 exists to protect, taken from the
@@ -56,12 +56,6 @@ fn marked_entry(id: u64) -> Entry {
 fn document_with(entries: Vec<Entry>, generation: u64) -> IndexDocument {
     let mut doc = IndexDocument::empty();
     doc.generation = generation;
-    doc.statistics = Statistics {
-        entry_count: entries.len() as u64,
-        logical_bytes: entries.iter().map(|e| e.size).sum(),
-        physical_bytes: 0,
-        reclaimable_bytes: 0,
-    };
     doc.entries = entries;
     doc
 }

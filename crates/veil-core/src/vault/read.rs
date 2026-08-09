@@ -1,5 +1,5 @@
 //! Getting data back out, and verifying that it is still there
-//! (Spec §4.7, §4.8; FR-16, FR-17, FR-19, FR-33).
+//! (Spec §4.7, §4.8; FR-17, FR-18, FR-19, FR-20, FR-26).
 
 use std::io::Write;
 use std::path::Path;
@@ -7,7 +7,6 @@ use std::path::Path;
 use crate::crypto::{CryptoError, Dek, NONCE_PREFIX_LEN, decrypt_watched, unwrap_dek};
 use crate::error::{Damaged, Error, Result};
 use crate::index::{Entry, EntryId};
-use crate::store::PackSource;
 
 use super::{Cancel, NoProgress, Outcome, Progress, ProgressReport, Report, Unit, Vault, Verdict};
 
@@ -15,7 +14,7 @@ impl Vault {
     /// Writes one entry's content to `dst`, verified.
     ///
     /// Nothing reaches `dst` before it authenticates, and the content hash is
-    /// compared after the final chunk (FR-17). Takes a `Write` rather than a
+    /// compared after the final chunk (FR-18). Takes a `Write` rather than a
     /// path, so no destination is ever chosen in here.
     ///
     /// # Errors
@@ -37,7 +36,7 @@ impl Vault {
     }
 
     /// Extracts one entry to a path, removing the partial output on failure
-    /// (FR-17). Lives here rather than in each frontend so the removal is
+    /// (FR-18). Lives here rather than in each frontend so the removal is
     /// written once.
     ///
     /// # Errors
@@ -66,12 +65,12 @@ impl Vault {
         outcome
     }
 
-    /// Verifies every entry, writing nothing (FR-33, §4.8).
+    /// Verifies every entry, writing nothing (FR-26, §4.8).
     ///
     /// Reuses the extraction path with the output discarded, so "verification
     /// passed" means "extraction will succeed". Failure is per entry:
-    /// verification continues and returns every failure, so one damaged pack
-    /// yields a full list of what it cost (S-4).
+    /// verification continues and returns every failure, so damage to one
+    /// entry's file yields a full list of what it cost (S-3).
     ///
     /// # Errors
     ///
@@ -112,7 +111,7 @@ impl Vault {
         Ok(report)
     }
 
-    /// The single read path: unwrap the entry's key, stream its extents through
+    /// The single read path: unwrap the entry's key, stream its file through
     /// the AEAD, compare the content hash. Extraction and verification both go
     /// through here, which is what makes them agree.
     fn read_entry(
@@ -128,7 +127,18 @@ impl Vault {
 
         let id = entry.id;
         let dek: Dek = unwrap_dek(&self.entry_wrap_key, id.get(), &entry.wrapped_dek)?;
-        let mut source = PackSource::new(&self.dir, &entry.extents);
+
+        // A missing or otherwise unreadable file is damage to exactly this
+        // entry (Spec §4.5, S-3) — with one file per entry, there is no
+        // attribution to compute; the file that failed to open already names
+        // the entry it belongs to.
+        let Ok(mut source) = crate::store::open_for_read(&self.dir, id) else {
+            return Err(Error::Corrupt {
+                what: Damaged::EntryFile,
+                affected: vec![id],
+            });
+        };
+
         let prefix: [u8; NONCE_PREFIX_LEN] = entry.nonce_prefix;
         let total = Some(entry.size);
         let mut stop: Option<Error> = None;
@@ -166,27 +176,17 @@ impl Vault {
                 what: Damaged::ContentHash,
                 affected: vec![id],
             }),
-            Err(CryptoError::Io) => Err(self.attribute_io_failure(entry)),
+            // A read failure mid-stream — the file exists but is short or
+            // otherwise unreadable past its start — is damage to this entry's
+            // own file, the same as a missing one (Spec §4.5).
+            Err(CryptoError::Io) => Err(Error::Corrupt {
+                what: Damaged::EntryFile,
+                affected: vec![id],
+            }),
             Err(_) => Err(Error::Corrupt {
                 what: Damaged::Content,
                 affected: vec![id],
             }),
-        }
-    }
-
-    /// An I/O failure reaching an entry's extents usually means a pack is gone.
-    /// Name the pack rather than folding it into "content is damaged" (S-4).
-    fn attribute_io_failure(&self, entry: &Entry) -> Error {
-        let missing = entry
-            .extents
-            .iter()
-            .find(|x| !crate::store::pack_path(&self.dir, x.pack_id).exists());
-        match missing {
-            Some(extent) => crate::store::damaged_pack(extent.pack_id, vec![entry.id]),
-            None => Error::Corrupt {
-                what: Damaged::Content,
-                affected: vec![entry.id],
-            },
         }
     }
 }

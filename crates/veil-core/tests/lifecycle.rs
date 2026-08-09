@@ -1,15 +1,15 @@
 //! Phase 2 test cases T2.1 through T2.5 — lifecycle and locking
-//! (FR-3, FR-6, FR-22, FR-26, FR-27, FR-33, S-2, A-7, Spec §2, §4.3, §4.4).
+//! (FR-3, FR-7, FR-23, FR-24, FR-26, S-2, A-7, Spec §2, §4.3, §4.4).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod harness;
 
-use harness::{SMALL_CAP, add, create, open, password, pattern};
+use harness::{add, create, open, password, pattern};
 use veil_core::vault::{Access, LOCK_FILE, Vault};
 use veil_core::{Cancel, Error, NoProgress};
 
-/// T2.1 — a second opener is told the vault is in use (FR-26, Spec §2, §6).
+/// T2.1 — a second opener is told the vault is in use (FR-23, Spec §2, §6).
 ///
 /// Not a corruption error and not an I/O error: a user whose vault is open in
 /// another window must be told that, not sent to look for damage.
@@ -18,7 +18,7 @@ fn t2_1_a_second_opener_is_told_the_vault_is_in_use() {
     let scratch = harness::Scratch::new("in-use");
     let dir = scratch.vault_dir();
 
-    let held = create(&dir, SMALL_CAP);
+    let held = create(&dir);
 
     let second = Vault::open(&dir, &password());
     assert!(
@@ -30,12 +30,7 @@ fn t2_1_a_second_opener_is_told_the_vault_is_in_use() {
     // Creating over a held vault is the same conflict arriving by another
     // route, and answering it differently would be two remedies for one
     // condition.
-    let recreate = Vault::create(
-        &dir,
-        &password(),
-        veil_core::crypto::KdfParams::for_tests(),
-        SMALL_CAP,
-    );
+    let recreate = Vault::create(&dir, &password(), veil_core::crypto::KdfParams::for_tests());
     assert!(matches!(recreate, Err(Error::VaultInUse)));
 
     drop(held);
@@ -45,7 +40,7 @@ fn t2_1_a_second_opener_is_told_the_vault_is_in_use() {
 }
 
 /// T2.2 — the lock does not outlive the vault, including on failure
-/// (FR-26, HC-4).
+/// (FR-23, HC-4).
 ///
 /// A leaked lock reports a user's own vault as in use, and the remedy is a file
 /// they were never told about.
@@ -55,7 +50,7 @@ fn t2_2_the_lock_does_not_outlive_the_vault() {
     let dir = scratch.vault_dir();
 
     // An ordinary close.
-    let vault = create(&dir, SMALL_CAP);
+    let vault = create(&dir);
     vault.lock();
     let mut vault = open(&dir).expect("reopens after an ordinary close");
 
@@ -97,7 +92,7 @@ fn t2_3_locking_a_vault_consumes_it() {
     let scratch = harness::Scratch::new("lock-consumes");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     add(&mut vault, "a.bin", "f", &pattern(100));
     vault.lock();
 
@@ -106,37 +101,33 @@ fn t2_3_locking_a_vault_consumes_it() {
     assert!(open(&dir).is_ok());
 }
 
-/// T2.4 — open reads the index and nothing else (FR-6, FR-22, FR-33, S-2, A-7).
+/// T2.4 — open reads the index and nothing else (FR-7, FR-26, S-2, A-7).
 ///
-/// **Asserted by removing the packs, not by timing.** A timing assertion on
-/// shared CI hardware is a flake generator. What S-2 states is that vault size
-/// is not an input to the work done at open; a vault whose pack files are gone
-/// entirely still opening, enumerating every entry, and reporting its
-/// statistics is that property in its strongest form — nothing that reads a
-/// pack could survive it. It is simultaneously the FR-33 assertion: if
-/// verification ran at open, this could not pass.
+/// **Asserted by removing the entry files, not by timing.** A timing
+/// assertion on shared CI hardware is a flake generator. What S-2 states is
+/// that vault size is not an input to the work done at open; a vault whose
+/// entry files are all gone still opening, enumerating every entry, and
+/// reporting its statistics is that property in its strongest form — nothing
+/// that reads an entry file could survive it. It is simultaneously the FR-26
+/// assertion: if verification ran at open, this could not pass.
 #[test]
 fn t2_4_open_reads_the_index_and_nothing_else() {
     let scratch = harness::Scratch::new("open-cost");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     for i in 0..8 {
         add(&mut vault, &format!("f{i}.bin"), "d", &pattern(2000));
     }
     let expected = vault.statistics();
+    let ids: Vec<_> = vault.entries().iter().map(|e| e.id).collect();
     vault.lock();
 
-    let packs = veil_core::store::existing_pack_ids(&dir).unwrap();
-    assert!(
-        packs.len() > 1,
-        "the vault must span packs for this case to mean anything"
-    );
-    for id in &packs {
-        std::fs::remove_file(veil_core::store::pack_path(&dir, *id)).unwrap();
+    for id in &ids {
+        std::fs::remove_file(veil_core::store::entry_path(&dir, *id)).unwrap();
     }
 
-    let vault = open(&dir).expect("a vault opens without its packs");
+    let vault = open(&dir).expect("a vault opens without its entry files");
     assert_eq!(vault.entries().len(), 8);
     assert_eq!(vault.statistics(), expected);
     for entry in vault.entries() {
@@ -148,7 +139,7 @@ fn t2_4_open_reads_the_index_and_nothing_else() {
     // is process-global, which is what keeps the single-vault limit a product
     // decision rather than a structural one.
     let other_dir = scratch.path("Second.veil");
-    create(&other_dir, SMALL_CAP).lock();
+    create(&other_dir).lock();
 
     let a = open(&dir).unwrap();
     let b = open(&other_dir).unwrap();
@@ -159,19 +150,20 @@ fn t2_4_open_reads_the_index_and_nothing_else() {
 }
 
 /// T2.5 — a vault changed on disk since open is not written over
-/// (FR-27, Spec §4.3, §4.4).
+/// (FR-24, Spec §4.3, §4.4).
 ///
 /// **The external writer is a file copy, because that is what it is in life.**
-/// Vaults live in sync folders (§1, motivation 3), so the change arrives as a
-/// daemon replacing index slot files underneath an open vault, not as a second
-/// Veil process — which is also why the advisory lock does not see it, and why
-/// §2's honesty clause names the generation counter as the actual protection.
+/// Requirements §7 names two machines writing one vault as a condition Veil2
+/// detects rather than prevents, so the change arrives as a daemon replacing
+/// index slot files underneath an open vault, not as a second Veil process —
+/// which is also why the advisory lock does not see it, and why §2's honesty
+/// clause names the generation counter as the actual protection.
 #[test]
 fn t2_5_a_vault_changed_on_disk_is_not_written_over() {
     let scratch = harness::Scratch::new("changed-on-disk");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     add(&mut vault, "original.bin", "d", &pattern(200));
 
     // The state a sync daemon would have replicated before the outside write.
@@ -202,7 +194,7 @@ fn t2_5_a_vault_changed_on_disk_is_not_written_over() {
         refused.err()
     );
 
-    // Every other write path passes through the same check, or FR-27 would
+    // Every other write path passes through the same check, or FR-24 would
     // hold for `add` and quietly not for the rest.
     assert!(matches!(
         stale.delete(veil_core::EntryId::new(1)),
@@ -227,9 +219,9 @@ fn t2_5_a_vault_changed_on_disk_is_not_written_over() {
     assert!(after.entries().iter().all(|e| e.name != "late.bin"));
 }
 
-/// T2.41 — a changed vault reloads without the password (FR-27).
+/// T2.41 — a changed vault reloads without the password (FR-24).
 ///
-/// Detecting the change and refusing to write over it is only half of FR-27.
+/// Detecting the change and refusing to write over it is only half of FR-24.
 /// Requiring the password again to get past it would make "offer to reload" a
 /// re-open in disguise, and would mean the safe answer costs more than the
 /// unsafe one.
@@ -238,7 +230,7 @@ fn t2_41_a_changed_vault_reloads_without_the_password() {
     let scratch = harness::Scratch::new("reload");
     let dir = scratch.vault_dir();
 
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     add(&mut vault, "original.bin", "d", &pattern(200));
     let older = harness::snapshot(&dir);
     let outside_id = add(&mut vault, "outside.bin", "d", &pattern(300));
@@ -277,7 +269,7 @@ fn t2_41_a_changed_vault_reloads_without_the_password() {
         )
         .expect("the write succeeds once the change has been adopted");
     assert_eq!(stale.entries().len(), 3);
-    harness::assert_statistics_match_recount(&stale, "after a reload and a write");
+    harness::assert_statistics_correct(&stale, "after a reload and a write");
 
     // The outside entry is still readable, so the reload adopted its content
     // and not only its bookkeeping.

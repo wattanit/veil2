@@ -55,7 +55,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.2.a | Built, carries forward | The whole index decrypted at open and held in memory; browsing thereafter reads no file | FR-7, S-2 | T2.4 |
-| P2.2.b | Built, needs rewrite | Statistics computed by summing the resident entry list, never scanned from disk | FR-7 | T2.27 |
+| P2.2.b | Done | Statistics computed by summing the resident entry list, never scanned from disk | FR-7 | T2.27 |
 | P2.2.c | Built, carries forward | Open touching no entry file, so open cost tracks entry count and not vault size | S-2 | T2.4 |
 
 ---
@@ -81,9 +81,9 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.4.a | Built, carries forward | The source opened read-only, never modified, moved, or unlinked | FR-9, Spec §4.7 | T2.11 |
-| P2.4.b | Built, needs rewrite | Content streamed into `entries/{id}.entry`, fsynced with its containing directory, before the index generation that references it advances | FR-12, Spec §4.5, §4.7 | T2.12 |
+| P2.4.b | Done | Content streamed into `entries/{id}.entry`, fsynced with its containing directory, before the index generation that references it advances | FR-12, Spec §4.5, §4.7 | T2.12 |
 | P2.4.c | Built, carries forward | Success reported only after the index write returns | FR-12 | T2.12 |
-| P2.4.d | Built, needs rewrite | A cancelled or failed ingest advances no generation; the partial entry file is left as unreferenced residue, per Spec §4.5 | FR-15, Spec §4.7 | T2.8 |
+| P2.4.d | Done | A cancelled or failed ingest advances no generation; the partial entry file is left as unreferenced residue, per Spec §4.5 | FR-15, Spec §4.7 | T2.8 |
 | P2.4.e | Built, carries forward | Entry identifiers never reused, including after delete, after emptying the vault, and across a reopen — the counter stored rather than derived | Spec §3.2, §4.3 | T2.25 |
 | P2.4.f | Built, carries forward | The full path — folder and name together — is the entry's identity, compared exactly | FR-13, Spec §4.6 | T2.20 |
 
@@ -110,7 +110,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.6.a | Built, carries forward | Output written to a caller-supplied `Write`, so no path is chosen inside the core | FR-16, S-1, HC-2 | T2.19 |
-| P2.6.b | Built, needs rewrite | Content read directly from `entries/{id}.entry`; a missing file is reported as damage to that entry, with no pack-existence indirection | FR-17, S-3 | T2.17 |
+| P2.6.b | Done | Content read directly from `entries/{id}.entry`; a missing file is reported as damage to that entry, with no pack-existence indirection | FR-17, S-3 | T2.17 |
 | P2.6.c | Built, carries forward | The content hash compared after the final chunk, and failure named with the entry | FR-17, S-3 | T2.17 |
 | P2.6.d | Built, carries forward | Partial output removed on any failure | FR-17, HC-3 | T2.17 |
 | P2.6.e | Built, carries forward | Partial output removed on cancellation as well as on failure | FR-19, FR-17 | T2.10 |
@@ -138,8 +138,8 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.8.a | Built, carries forward | The entry removed from the index and immediately unreachable through the API | FR-22 | T2.23 |
-| P2.8.b | Built, needs rewrite | The index write fsynced, then the entry's file removed — never the reverse | FR-22, Spec §4.5 | T2.24 |
-| P2.8.c | Built, remove entirely | Reclaimable-bytes accounting on delete — no requirement supports it; a deleted entry's space is already freed | superseded | T2.24 |
+| P2.8.b | Done | The index write fsynced, then the entry's file removed — never the reverse | FR-22, Spec §4.5 | T2.24 |
+| P2.8.c | Done | Reclaimable-bytes accounting on delete — no requirement supports it; a deleted entry's space is already freed | superseded | T2.24 |
 
 ---
 
@@ -149,8 +149,8 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P2.9.a | Built, needs rewrite | Entry count and total size computed by summing `entries()` on call; `Statistics.physical_bytes`/`reclaimable_bytes` and `Vault::recount_statistics()` removed | Spec §4.3, §5.1 | T2.26 |
-| P2.9.b | Built, remove entirely | The incremental updates to those removed fields in ingest, replace, and delete | superseded | T2.26 |
+| P2.9.a | Done | Entry count and total size computed by `Statistics::from_entries(&self.document.entries)` on every call; `IndexDocument.statistics` is no longer a persisted field at all, and `Vault::recount_statistics()` is removed | Spec §4.3, §5.1 | T2.26 |
+| P2.9.b | Done | The incremental updates to those removed fields in ingest, replace, and delete | superseded | T2.26 |
 
 ---
 
@@ -186,8 +186,8 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P2.12.a | Built, remove entirely | `vault/damage.rs`'s `missing_packs()`/`referenced_packs()` pack-walk | superseded | — |
-| P2.12.b | Built, needs rewrite | `unreadable_entries()` — one file-existence check per entry, no content read | Spec §5.1, S-3 | T2.41 |
+| P2.12.a | Done | `vault/damage.rs`'s `missing_packs()`/`referenced_packs()` pack-walk | superseded | — |
+| P2.12.b | Done | `unreadable_entries()` — one file-existence check per entry, no content read | Spec §5.1, S-3 | T2.41 |
 
 ---
 
@@ -197,7 +197,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P2.13.a | Built, remove entirely | `vault/reclaim.rs` in full — `compact()`, `Candidate`/`Reclaimed`, garbage-ratio pack selection, copy-forward. Nothing replaces it: delete already frees the file | superseded | — |
+| P2.13.a | Done | `vault/reclaim.rs` in full — `compact()`, `Candidate`/`Reclaimed`, garbage-ratio pack selection, copy-forward. Nothing replaces it: delete already frees the file | superseded | — |
 
 ---
 
@@ -207,7 +207,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P2.14.a | Built, remove entirely | `vault/representable.rs` in full — `check_representable()`, `RESERVED_NAMES`, reserved-character and case-collision checks | superseded | — |
+| P2.14.a | Done | `vault/representable.rs` in full — `check_representable()`, `RESERVED_NAMES`, reserved-character and case-collision checks | superseded | — |
 
 ---
 
@@ -218,8 +218,8 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.15.a | Built, carries forward | The full lifecycle driven through the public API with no process, no terminal, no prompt | A-1, Spec §9 | T2.34 |
-| P2.15.b | Built, needs rewrite | Shared test harness — drop the pack-cap parameter from `create()`, replace `flip_byte_in_pack()` with a direct entry-file corruption helper | Spec §9 | all |
-| P2.15.c | Built, remove entirely | `tests/reclaim.rs`, `tests/representability.rs`, `tests/portability_fixture.rs`, and their example generators | superseded | — |
+| P2.15.b | Done | Shared test harness — `create()` takes no cap parameter; `flip_byte_in_pack()` replaced by `flip_byte_in_entry_file()`; `assert_statistics_match_recount()` replaced by `assert_statistics_correct()` | Spec §9 | all |
+| P2.15.c | Done | `tests/reclaim.rs`, `tests/representability.rs`, `tests/portability_fixture.rs`, and their example generators | superseded | — |
 
 ---
 
@@ -230,7 +230,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
 | P2.16.a | Built, carries forward | Arbitrary byte sequences at arbitrary lengths, including zero, surviving ingest and extraction byte-identically | Spec §9, FR-16 | T2.35 |
-| P2.16.b | Built, needs rewrite | Arbitrary sequences of add, replace, and delete leaving statistics equal to a direct sum, not a recount | FR-22, Spec §9 | T2.36 |
+| P2.16.b | Done | Arbitrary sequences of add, replace, and delete leaving statistics equal to a direct sum, not a recount | FR-22, Spec §9 | T2.36 |
 
 ---
 
@@ -242,7 +242,7 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 |---|---|---|---|---|
 | P2.17.a | Built, carries forward | Verification reusing the extraction path with output discarded | FR-26, Spec §4.8 | T2.37 |
 | P2.17.b | Built, carries forward | Nothing written during verification, no exclusive lock required | Spec §4.8 | T2.40 |
-| P2.17.c | Built, needs rewrite | A failing entry recorded and verification continuing, returning every failure by name — a missing entry file is reported the same way as any other damage | FR-26, S-3 | T2.38 |
+| P2.17.c | Done | A failing entry recorded and verification continuing, returning every failure by name — a missing entry file is reported the same way as any other damage | FR-26, S-3 | T2.38 |
 | P2.17.d | Built, carries forward | Progress reported per entry rather than per byte | Spec §4.8, Design §8.6 | T2.7 |
 | P2.17.e | Built, carries forward | Cancellation returning the entries verified so far and their results | Spec §4.8, FR-15 | T2.39 |
 | P2.17.f | Built, carries forward | Never scheduled, never automatic, never triggered at open | FR-26 | T2.4 |
@@ -253,8 +253,12 @@ Phase 1 proved the format. Phase 2 proves the API — sufficient for both fronte
 
 - The full lifecycle runs with no terminal present (T2.34).
 - Statistics computed after an arbitrary sequence of add, replace, and delete match a direct sum over `entries()` (T2.26, T2.36).
-- A cancelled ingest leaves a vault indistinguishable from one where it never began (T2.8).
+- A cancelled ingest leaves a vault indistinguishable from one where it never began, at the level the API exposes (T2.8).
 - Password change completes in time independent of vault size (T2.30, T2.31).
+
+**`cargo check --workspace` is clean everywhere this phase owns.** `cargo check -p veil-core --lib --examples` passes outright. All 21 non-Phase-4 `veil-core` test binaries pass (`cargo test -p veil-core --test <name>`, run individually since `tests/durability.rs` still fails to build and blocks a combined `cargo test`). `crates/veil-core/tests/durability.rs` remains broken — Phase 4's file, untouched by design. `crates/veil-cli` remains broken — Phase 3's crate, untouched by design (11 errors, all from the now-removed `reclaim`/`representable` API).
+
+**Two Phase 1-era test assertions turned out to be too strict for the new residue model, and were corrected here rather than left failing:** `limits_password.rs`'s T2.29 and `progress_cancel.rs`'s T2.7 both asserted the vault directory was *byte-identical* after a refused or cancelled write. Under one-file-per-entry storage this is no longer true by design — `stage()` has no rollback, so a refused or cancelled write leaves its entry file behind as harmless, unreferenced residue (Spec §4.5). Both tests now exclude `.entry` files from the directory comparison and check the index-visible state (entries/statistics/generation) instead, which is what the requirement actually guarantees.
 
 ---
 

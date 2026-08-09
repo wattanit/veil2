@@ -13,19 +13,30 @@ use super::entry::Entry;
 /// The index layout version, distinct from the vault's format version.
 pub const CURRENT_INDEX_VERSION: u16 = 1;
 
-/// Totals a user needs to decide whether compaction is worth running (FR-8).
-/// Maintained incrementally, never scanned — deriving reclaimable space by
-/// scanning would cost more than the compaction it advises (FR-22).
+/// Entry count and total stored size (FR-7).
+///
+/// **Derived, not maintained.** Computed by summing the resident entry list
+/// on call rather than persisted in the index document — at C-1's 65,536
+/// entries this costs microseconds, which is not what the old incremental
+/// design existed to avoid. It exists as a type only so both frontends
+/// compute the same figures the same way (A-4).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Statistics {
     /// Number of entries.
     pub entry_count: u64,
     /// Plaintext bytes stored.
     pub logical_bytes: u64,
-    /// Bytes occupied on disk.
-    pub physical_bytes: u64,
-    /// Bytes compaction would recover.
-    pub reclaimable_bytes: u64,
+}
+
+impl Statistics {
+    /// Computes the totals from a resident entry list.
+    #[must_use]
+    pub fn from_entries(entries: &[super::Entry]) -> Self {
+        Self {
+            entry_count: entries.len() as u64,
+            logical_bytes: entries.iter().map(|e| e.size).sum(),
+        }
+    }
 }
 
 /// The whole index.
@@ -37,8 +48,6 @@ pub struct IndexDocument {
     /// external-modification detector (FR-24), and what decides which slot a
     /// read takes (§4.4).
     pub generation: u64,
-    /// The totals of FR-8.
-    pub statistics: Statistics,
 
     /// The next identifier to issue, never decreasing.
     ///
@@ -58,7 +67,7 @@ pub struct IndexDocument {
     pub entries: Vec<Entry>,
 
     /// Fields written by a version this build does not know, preserved across
-    /// a read and write cycle (FR-30).
+    /// a read and write cycle (FR-6).
     #[serde(flatten)]
     pub unknown: BTreeMap<String, ciborium::Value>,
 }
@@ -70,7 +79,6 @@ impl IndexDocument {
         Self {
             index_version: CURRENT_INDEX_VERSION,
             generation: 0,
-            statistics: Statistics::default(),
             next_entry_id: 1,
             entries: Vec::new(),
             unknown: BTreeMap::new(),

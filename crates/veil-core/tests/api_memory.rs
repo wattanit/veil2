@@ -85,7 +85,7 @@ fn peak_for(len: usize) -> usize {
     let _ = std::fs::remove_dir_all(&dir);
 
     let password = Password::new("a sufficiently long password".to_owned());
-    let mut vault = Vault::create(&dir, &password, KdfParams::for_tests(), u64::MAX).unwrap();
+    let mut vault = Vault::create(&dir, &password, KdfParams::for_tests()).unwrap();
 
     PEAK.store(LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
     let before = PEAK.load(Ordering::Relaxed);

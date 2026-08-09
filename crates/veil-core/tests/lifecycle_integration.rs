@@ -10,7 +10,7 @@
 
 mod harness;
 
-use harness::{Recorder, SMALL_CAP, assert_monotonic, create, pattern};
+use harness::{Recorder, assert_monotonic, create, pattern};
 use veil_core::crypto::KdfParams;
 use veil_core::vault::Unit;
 use veil_core::vault::Vault;
@@ -33,7 +33,7 @@ fn t2_34_the_full_lifecycle_runs_with_no_terminal_present() {
     std::fs::write(tree.join("photos/2024/two.jpg"), pattern(9000)).unwrap();
 
     // Create.
-    let mut vault = create(&dir, SMALL_CAP);
+    let mut vault = create(&dir);
     assert_eq!(vault.statistics().entry_count, 0);
 
     // Add a single file and a folder, watching progress. One sink per
@@ -68,7 +68,7 @@ fn t2_34_the_full_lifecycle_runs_with_no_terminal_present() {
     // Browse: from memory, no file read.
     assert_eq!(vault.entries().len(), 4);
     assert!(vault.find("photos/2024", "two.jpg").is_some());
-    harness::assert_statistics_match_recount(&vault, "after ingest");
+    harness::assert_statistics_correct(&vault, "after ingest");
 
     // Extract, to a caller-supplied destination.
     let destination = scratch.path("recovered.jpg");
@@ -90,13 +90,15 @@ fn t2_34_the_full_lifecycle_runs_with_no_terminal_present() {
         .unwrap();
     assert_eq!(harness::read_back(&vault, replaced).unwrap(), pattern(7000));
 
-    // Delete, with the accounting that says the bytes are still there.
+    // Delete: immediately unreachable, and its file is gone.
     let before = vault.statistics();
+    let single_size = vault.find("", "readme.md").unwrap().size;
     vault.delete(single).unwrap();
     let after = vault.statistics();
     assert_eq!(after.entry_count, before.entry_count - 1);
-    assert!(after.reclaimable_bytes > before.reclaimable_bytes);
-    harness::assert_statistics_match_recount(&vault, "after the lifecycle mutations");
+    assert_eq!(after.logical_bytes, before.logical_bytes - single_size);
+    assert!(!veil_core::store::exists(&dir, single));
+    harness::assert_statistics_correct(&vault, "after the lifecycle mutations");
 
     // Verify.
     let mut verify_progress = Recorder::default();
