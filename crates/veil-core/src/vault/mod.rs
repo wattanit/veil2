@@ -9,7 +9,10 @@
 //! split by what they do to a vault: `session` opens and closes one and owns
 //! the password, `ingest` puts data in, `mutate` changes what is already there,
 //! `read` gets data out, `reclaim` recovers the space `mutate` and a crash left
-//! behind, and `damage` says which entries a missing pack costs.
+//! behind, `damage` says which entries a missing pack costs, and
+//! `representable` says whether a name can leave the vault as a filename
+//! without becoming a different name than the vault reports (Spec §4.6,
+//! FR-31).
 //!
 //! **Opening a vault reads the header and one index slot, and does nothing
 //! else.** It writes nothing, and it does not walk the packs directory. Both
@@ -27,6 +30,7 @@ mod normalize;
 mod progress;
 mod read;
 mod reclaim;
+mod representable;
 mod session;
 mod verify;
 mod walk;

@@ -27,6 +27,7 @@ Exit codes:
   11  the vault's storage went away
   12  a password was needed and there was no way to ask for one
   13  no file at that path, or a file is already there
+  14  a file's name in the vault cannot be written here as it is
 
 The password is never taken as an argument: arguments are visible in process
 listings and shell history. Use --password-file, or the VEIL_PASSWORD

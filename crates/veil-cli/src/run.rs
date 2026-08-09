@@ -165,8 +165,15 @@ fn save_copy(dir: &Path, file: &str, to: &Path, force: bool, cli: &Cli) -> Run<(
     let vault = open(dir, cli)?;
     let id = locate(&vault, file)?;
 
-    // `--to a-folder` means "into it", which is what anyone typing it expects.
+    // `--to a-folder` means "into it", which is what anyone typing it expects
+    // — and the one place the vault's own name becomes a filename the caller
+    // did not choose every character of, which is exactly what FR-31's check
+    // exists for. Naming an exact destination file names every character
+    // yourself, so there is nothing here for it to catch (Spec §4.6).
     let destination = if to.is_dir() {
+        vault
+            .check_representable(id)
+            .map_err(|e| unrepresentable(e, file))?;
         to.join(split(file).1)
     } else {
         to.to_path_buf()
@@ -359,6 +366,18 @@ fn already_there(error: Error, source: &str) -> Failure {
         Error::AlreadyExists => Failure::AlreadyThere(format!(
             "this vault already holds a file at that path, so {source} was not added. \
              Use `veil replace` to put new content there"
+        )),
+        other => Failure::Vault(other),
+    }
+}
+
+/// Names the path in FR-31's refusal, for the same reason `already_there`
+/// does: the library carries the reason but not the name (HC-1).
+fn unrepresentable(error: Error, file: &str) -> Failure {
+    match error {
+        Error::NameNotRepresentable { reason, .. } => Failure::NotRepresentable(format!(
+            "{file} cannot be saved into that folder under its own name: {reason}. \
+             Choose an exact destination file name instead of a folder"
         )),
         other => Failure::Vault(other),
     }

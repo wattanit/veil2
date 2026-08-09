@@ -67,6 +67,45 @@ impl core::fmt::Display for Damaged {
     }
 }
 
+/// Why a vault's own name for an entry cannot become a filename outside it
+/// without becoming a different name than the vault reports (Spec §4.6;
+/// FR-31, HC-8).
+///
+/// Enforced the same way regardless of which platform is asking: the check's
+/// own answer does not depend on a host fact, which is HC-8's standard turned
+/// on the check itself (Spec §4.6, §11.2 item 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unrepresentable {
+    /// One of Windows' reserved device names — `CON`, `PRN`, `AUX`, `NUL`,
+    /// `COM1`–`COM9`, `LPT1`–`LPT9` — matched case-insensitively against the
+    /// name with any extension removed.
+    ReservedName,
+    /// A character no supported platform allows in a filename, or a control
+    /// character.
+    ReservedCharacter,
+    /// The name ends in a dot or a space, which Windows silently strips —
+    /// producing a file whose name does not match what the vault reports.
+    TrailingDotOrSpace,
+    /// Differs from another entry in the same folder only by case, which a
+    /// case-insensitive destination cannot hold as two files.
+    CaseCollision,
+}
+
+impl core::fmt::Display for Unrepresentable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::ReservedName => f.write_str("it is a name reserved on some platforms"),
+            Self::ReservedCharacter => {
+                f.write_str("it contains a character not every platform allows")
+            }
+            Self::TrailingDotOrSpace => f.write_str("it ends in a dot or a space"),
+            Self::CaseCollision => {
+                f.write_str("it differs from another file here only by letter case")
+            }
+        }
+    }
+}
+
 /// Every way a vault operation can fail. Each variant carries what happened
 /// and what state things are left in.
 ///
@@ -155,6 +194,20 @@ pub enum Error {
     /// would leave the vault unable to say which one any later operation meant.
     #[error("this vault already holds a file at that path; replace it rather than adding a second")]
     AlreadyExists,
+
+    /// The vault's own name for this entry cannot become a filename here
+    /// without becoming a different name than the vault reports (FR-31,
+    /// HC-8). Extraction stops rather than substituting or truncating.
+    ///
+    /// Carries no name, for the reason [`NotFound`](Self::NotFound) carries
+    /// none — the caller already has it, from the vault it holds open.
+    #[error("this file's name cannot be written here as it is: {reason}")]
+    NameNotRepresentable {
+        /// Which entry.
+        id: EntryId,
+        /// Why.
+        reason: Unrepresentable,
+    },
 
     /// Another process holds this vault open (FR-26).
     #[error("this vault is already open somewhere else; nothing has been changed")]
