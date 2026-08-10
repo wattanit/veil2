@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="crates/veil-gui/icons/128x128@2x.png" width="128" alt="Veil2 icon">
+</p>
+
 # Veil2
 
 A file-level encrypted vault for macOS. Files go in individually encrypted; nothing about them — name, size, timestamp, or content — is readable without the password.
