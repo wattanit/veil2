@@ -1,6 +1,6 @@
-//! Phase 5 test cases T5.5, T5.6, and T5.7 — properties of the shell's
-//! configuration and dependency graph rather than of behaviour (Spec §5.3,
-//! HC-1).
+//! Phase 5 test cases T5.5, T5.6, and T5.7, and Phase 6's T6.32 —
+//! properties of the shell's configuration and dependency graph rather
+//! than of behaviour (Spec §5.3, HC-1, Requirements §2.1, §8).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -96,6 +96,44 @@ fn t5_7_devtools_reaches_the_graph_only_with_the_feature_flag() {
         resolved_tauri_features(&["--features", "devtools"]).contains("devtools"),
         "the devtools feature flag did not reach tauri's resolved features"
     );
+}
+
+/// T6.32 — the release states its platform (P6.15.a, Requirements §2.1, §8).
+#[test]
+fn t6_32_the_release_states_its_platform() {
+    let conf = std::fs::read_to_string(manifest_dir().join("tauri.conf.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&conf).unwrap();
+    let long = json["bundle"]["longDescription"]
+        .as_str()
+        .expect("tauri.conf.json must set bundle.longDescription");
+    let short = json["bundle"]["shortDescription"]
+        .as_str()
+        .expect("tauri.conf.json must set bundle.shortDescription");
+
+    assert!(
+        long.contains("macOS") || short.contains("macOS"),
+        "the release's own description does not name macOS"
+    );
+    for forbidden in ["Windows", "Linux"] {
+        assert!(
+            !long.contains(forbidden) || long.contains("not"),
+            "the release's description mentions {forbidden} without disclaiming it"
+        );
+    }
+
+    // Bundling for another platform's format would itself be a claim of
+    // support the release does not make.
+    let targets = json["bundle"]["targets"]
+        .as_array()
+        .expect("tauri.conf.json must list explicit bundle targets, not \"all\"");
+    let macos_only = ["app", "dmg", "updater"];
+    for target in targets {
+        let name = target.as_str().unwrap_or_default();
+        assert!(
+            macos_only.contains(&name),
+            "bundle target {name:?} is not one of this release's macOS targets"
+        );
+    }
 }
 
 /// The `tauri` crate's resolved feature set for this package, via

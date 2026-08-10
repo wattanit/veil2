@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use tauri::Listener as _;
 use tauri::test::{mock_builder, mock_context, noop_assets};
+use tauri::{Listener as _, Manager as _};
 use veil_core::crypto::{KdfParams, Password};
 use veil_core::vault::{Cancel, NoProgress, Vault};
 use veil_gui_lib::state::AppState;
@@ -167,13 +167,192 @@ fn t5_3_progress_arrives_and_cancellation_is_not_blocked_by_the_operation() {
             result.is_err(),
             "a 16 MiB extract cancelled immediately after starting still ran to completion"
         );
-        assert!(
-            result.unwrap_err().contains("cancel"),
-            "the error from a cancelled extract did not name cancellation"
+        assert_eq!(
+            result.unwrap_err().kind,
+            "Cancelled",
+            "the error from a cancelled extract was not kind Cancelled"
         );
         assert!(
             !progress_events.lock().unwrap().is_empty(),
             "no progress event reached the UI-thread event channel before cancellation"
         );
+    });
+}
+
+/// T6.20 — a dropped folder is walked (FR-10), not handed to the single-file
+/// add path as if it were a file's content.
+///
+/// Regression test: confirmed live that dropping a folder silently added
+/// nothing — `add_files` tried to `File::open` the directory and read it,
+/// which fails, and the failure never reached anything the person dropping
+/// it could see. `add_folder` is a different `veil-core` method entirely,
+/// and nothing called it until this fix.
+#[test]
+fn t6_20_a_dropped_folder_is_walked_not_read_as_a_file() {
+    tauri::async_runtime::block_on(async {
+        let scratch = Scratch::new("add-folder");
+        let dir = scratch.vault_dir();
+        let vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+
+        let source_root = scratch.0.join("Photos");
+        std::fs::create_dir_all(source_root.join("2024")).unwrap();
+        std::fs::write(source_root.join("2024").join("a.jpg"), pattern(100)).unwrap();
+        std::fs::write(source_root.join("b.jpg"), pattern(50)).unwrap();
+
+        let app = mock_app();
+        app.state::<AppState>().set_vault(vault).unwrap();
+
+        let result = commands::add_files(
+            app.handle().clone(),
+            vec![source_root.to_string_lossy().into_owned()],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.added.len(),
+            2,
+            "expected both files under the dropped folder to be added, got {:?}",
+            result.added
+        );
+        assert!(
+            result.failed.is_empty(),
+            "unexpected failures: {:?}",
+            result.failed
+        );
+        assert!(
+            result
+                .added
+                .iter()
+                .any(|e| e.name == "a.jpg" && e.folder == "Photos/2024")
+        );
+        assert!(
+            result
+                .added
+                .iter()
+                .any(|e| e.name == "b.jpg" && e.folder == "Photos")
+        );
+    });
+}
+
+/// A colliding path is reported for confirmation, not replaced outright and
+/// not failed outright — and the match is on folder *and* name together, so
+/// `FolderA/x.bin` never collides with `FolderB/x.bin` (Design §8.7, FR-14).
+///
+/// Regression test: the interaction this replaced (dropping a new file onto
+/// an existing row) proved unreliable live — Tauri's own drag-position data
+/// was wrong regardless of where in the window the cursor actually was, and
+/// the standard DOM drag events never fired at all (the webview's own
+/// handler consumes the OS drag first) — so there is no reliable position
+/// to detect a row from at all. Matching by the dropped file's own identity
+/// needs no position data.
+#[test]
+fn t6_33_a_colliding_path_is_held_for_confirmation_matched_by_folder_and_name() {
+    tauri::async_runtime::block_on(async {
+        let scratch = Scratch::new("add-collision");
+        let dir = scratch.vault_dir();
+        let vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+
+        let app = mock_app();
+        app.state::<AppState>().set_vault(vault).unwrap();
+        let handle = app.handle().clone();
+
+        // Dropping "root1" (containing FolderA/x.bin) records the entry's
+        // folder as "root1/FolderA" — the dropped root's own name is the
+        // top-level segment (FR-10), so identity is stable regardless of
+        // where on disk the root happened to sit, and two *different* roots
+        // named "FolderA" do not collide just because both happen to sit
+        // directly under some drop point.
+        let root1 = scratch.0.join("root1");
+        std::fs::create_dir_all(root1.join("FolderA")).unwrap();
+        std::fs::write(root1.join("FolderA").join("x.bin"), pattern(10)).unwrap();
+        let seed = commands::add_files(handle.clone(), vec![root1.to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        assert_eq!(seed.added.len(), 1);
+        assert!(seed.collisions.is_empty());
+        assert_eq!(seed.added[0].folder, "root1/FolderA");
+
+        // "root2" containing FolderB/x.bin does not collide — different
+        // folder, same name — and is added normally.
+        let root2 = scratch.0.join("root2");
+        std::fs::create_dir_all(root2.join("FolderB")).unwrap();
+        std::fs::write(root2.join("FolderB").join("x.bin"), pattern(20)).unwrap();
+        let distinct =
+            commands::add_files(handle.clone(), vec![root2.to_string_lossy().into_owned()])
+                .await
+                .unwrap();
+        assert_eq!(
+            distinct.added.len(),
+            1,
+            "root2/FolderB/x.bin wrongly collided with root1/FolderA/x.bin: {:?}",
+            distinct.collisions
+        );
+        assert!(distinct.collisions.is_empty());
+
+        // A *different* root elsewhere on disk, but with the same basename
+        // "root1" and the same FolderA/x.bin beneath it, does collide — the
+        // identity is the stored folder-and-name pair, not the source path.
+        let root3 = scratch.0.join("nested").join("root1");
+        std::fs::create_dir_all(root3.join("FolderA")).unwrap();
+        std::fs::write(root3.join("FolderA").join("x.bin"), pattern(30)).unwrap();
+        let collided = commands::add_files(handle, vec![root3.to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+        assert!(collided.added.is_empty());
+        assert_eq!(collided.collisions.len(), 1);
+        assert_eq!(collided.collisions[0].folder, "root1/FolderA");
+        assert_eq!(collided.collisions[0].name, "x.bin");
+    });
+}
+
+/// T6.37 — a collision partway through a dropped folder does not cost the
+/// rest of it: `Vault::add_folder` returns on the first error, which is
+/// why `add_files` walks the folder itself instead of calling it.
+#[test]
+fn t6_37_a_collision_partway_through_a_folder_does_not_abort_the_rest() {
+    tauri::async_runtime::block_on(async {
+        let scratch = Scratch::new("add-folder-collision");
+        let dir = scratch.vault_dir();
+        let vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+
+        let app = mock_app();
+        app.state::<AppState>().set_vault(vault).unwrap();
+        let handle = app.handle().clone();
+
+        // Seed one existing entry via a root named "shared": "shared/e.bin".
+        let seed_root = scratch.0.join("first").join("shared");
+        std::fs::create_dir_all(&seed_root).unwrap();
+        std::fs::write(seed_root.join("e.bin"), pattern(5)).unwrap();
+        commands::add_files(
+            handle.clone(),
+            vec![seed_root.to_string_lossy().into_owned()],
+        )
+        .await
+        .unwrap();
+
+        // A different root, elsewhere on disk but with the same basename
+        // "shared", holding ten files — one of which ("e.bin") collides
+        // with the seed above once its own root name is prepended.
+        let batch = scratch.0.join("second").join("shared");
+        std::fs::create_dir_all(&batch).unwrap();
+        for i in 0..10 {
+            std::fs::write(batch.join(format!("f{i}.bin")), pattern(10)).unwrap();
+        }
+        std::fs::write(batch.join("e.bin"), pattern(99)).unwrap();
+
+        let result = commands::add_files(handle, vec![batch.to_string_lossy().into_owned()])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result.added.len(),
+            10,
+            "the nine non-colliding files plus nothing else should have been added, got {:?}",
+            result.added
+        );
+        assert_eq!(result.collisions.len(), 1);
+        assert_eq!(result.collisions[0].name, "e.bin");
+        assert!(result.failed.is_empty());
     });
 }

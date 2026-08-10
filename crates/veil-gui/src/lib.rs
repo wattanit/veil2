@@ -1,11 +1,13 @@
-//! Tauri v2 shell over `veil-core` (Spec §5.3). Phase 5 builds the shell,
-//! the security configuration, and the entry list — the unlock screen,
-//! vault creation, and every other product surface belong to Phase 6.
+//! Tauri v2 shell over `veil-core` (Spec §5.3). Phase 5 built the shell and
+//! the security configuration; Phase 6 builds the product around it — the
+//! unlock screen, vault creation, and every other requirement reachable
+//! from the GUI (A-4).
 
 // `pub` so `tests/` can drive the command layer directly through
 // `tauri::test`'s mock runtime (T5.2, T5.3) — the same "call it through the
 // public surface" discipline `veil-core`'s own integration tests follow.
 pub mod commands;
+pub mod errors;
 #[cfg(debug_assertions)]
 pub mod fixture;
 pub mod state;
@@ -36,12 +38,19 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::open_fixture_vault,
+            commands::create_vault,
+            commands::choose_vault_path,
             commands::list_entries,
             commands::extract_entry,
             commands::close_vault,
             commands::cancel_operation,
             commands::add_files,
             commands::choose_save_path,
+            commands::choose_source_paths,
+            commands::delete_entry,
+            commands::replace_entry,
+            commands::change_password,
+            commands::check_vault,
         ]);
 
     #[cfg(not(debug_assertions))]
@@ -51,12 +60,19 @@ pub fn run() {
         .setup(|app| create_main_window(app.handle()).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
+            commands::create_vault,
+            commands::choose_vault_path,
             commands::list_entries,
             commands::extract_entry,
             commands::close_vault,
             commands::cancel_operation,
             commands::add_files,
             commands::choose_save_path,
+            commands::choose_source_paths,
+            commands::delete_entry,
+            commands::replace_entry,
+            commands::change_password,
+            commands::check_vault,
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {

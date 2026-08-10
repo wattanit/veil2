@@ -1,8 +1,8 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.0
+**Version:** 1.2
 **Status:** approved
-**Date:** 2026-08-09
+**Date:** 2026-08-10
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.0 — upstream
@@ -305,6 +305,37 @@ Progress is reported per entry, and cancellation is available throughout. A canc
 > `IMG_4417.raw` · `IMG_4418.raw` · `notes/2019.md`
 
 Damaged entries are marked in the list afterward, using the same treatment as §4.3, so the result remains visible after the dialog is dismissed. All other files remain usable (S-3); this is visually apparent rather than presenting the vault as broadly compromised.
+
+---
+
+### 8.7 Replacing a file
+
+The vault already supports this at the storage level (FR-13): new content at an existing path, one generation step, never a window with zero intact versions. Added in v1.1 because the GUI needs an interaction for it and none existed to build against; revised in v1.2 after building it against real drag-and-drop behaviour showed the first version's interaction did not work.
+
+**Two paths, both ending at the same confirmation:**
+
+- **By identity, automatically.** Add a file — by drop or by the "Add files…" dialog — whose folder and name already match an entry this vault holds, and that is a replace: matched on folder and name together (never name alone, so `Reports/summary.pdf` never collides with `Archive/summary.pdf`), not on where in the window a drop happened to land. v1.1 specified "or dropping a new file directly onto its row" for this case; built and tested live, that interaction did not work — the drag position a webview reports could not be relied on to say which row a file was dropped onto, reproducibly, regardless of where the cursor actually was. Matching by the file's own identity needs no position at all, which is also closer to what a person dragging a file back in expects: they are not aiming for a row, they are putting the file back.
+- **By explicit choice, for anything else.** A "Replace…" action on the selected entry opens a native file chooser for the new content, with no constraint on the chosen file's own name — for when the replacement's name on disk does not match what is stored (`summary.pdf` in the vault, replaced from a file the person has since renamed to `summary_v2_final.pdf`).
+
+**Confirmed by name either way, and the loss is stated** (§4.1's irreversible-action rule; this is closer to a delete than to the overwrite-a-destination-file case, since the content actually disappears):
+
+> "Replace `IMG_4417.raw`? Its current content in this vault will be gone."
+
+Confirming several at once (every dropped file that collided) states the count instead: "Replace 3 files already in this vault? Their current content will be gone," naming each.
+
+The name and folder do not change — that is the point of replace rather than delete-then-add — but the recorded "added" date does, to when the replacement happened; the file is, from here on, the new content.
+
+### 8.8 Changing the password
+
+Also added in v1.1. Reached from the identity bar, alongside Lock — a labelled control, not an icon, per §2.4.
+
+Requires the vault's current password even though it is already unlocked: `veil-core`'s API requires it, deliberately — an unattended, unlocked vault is not authorization to lock its owner out under a password only the person at the keyboard chose. Requires a new password meeting C-4, typed twice to catch a typo, the same way vault creation does.
+
+**Carries a smaller version of §8.2's disclosure, not the full block** — this is not the vault's first password, but the risk is the same one HC-7 already named at creation:
+
+> "If you forget the new password, this vault is lost the same way it would be with the old one — there is still no recovery."
+
+No strength claim, for the same reason §8.2 makes none.
 
 ---
 

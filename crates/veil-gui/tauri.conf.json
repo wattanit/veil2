@@ -16,7 +16,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
+    "shortDescription": "An encrypted vault for macOS.",
+    "longDescription": "Veil2 stores files in an encrypted vault, browsable as a list rather than a single block to decrypt. Built for and run on macOS (Requirements §2.1); Windows and Linux are not built, not scheduled, and not claimed.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

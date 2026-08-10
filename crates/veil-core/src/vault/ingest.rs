@@ -116,16 +116,12 @@ impl Vault {
         let found = walk(root)?;
         let total = Some(found.files.len() as u64);
         let mut added = Vec::with_capacity(found.files.len());
+        let root_name = root_folder_name(root);
 
         for file in &found.files {
+            let folder = join_folder(&root_name, &file.folder);
             let mut source = std::fs::File::open(&file.path)?;
-            added.push(self.add(
-                &file.name,
-                &file.folder,
-                &mut source,
-                &mut NoProgress,
-                cancel,
-            )?);
+            added.push(self.add(&file.name, &folder, &mut source, &mut NoProgress, cancel)?);
             progress.report(ProgressReport {
                 unit: Unit::Entries,
                 done: added.len() as u64,
@@ -229,4 +225,32 @@ fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
+}
+
+/// The added folder's own name (FR-10): without it, a file directly in one
+/// added folder and a file directly in a *different* added folder would
+/// both land at the vault's root — indistinguishable identities for two
+/// files that are not the same file. `walk`'s own "relative to root, empty
+/// at the root" contract is unchanged; this is `add_folder`'s to apply, not
+/// `walk`'s, since other possible callers of `walk` may have no folder-add
+/// of their own to name.
+///
+/// Falls back to empty only if `root` has no final component to name (for
+/// example `/`) — a path that cannot happen through the GUI's folder picker
+/// or the CLI's argument parsing, both of which require a real directory.
+fn root_folder_name(root: &Path) -> String {
+    root.file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_owned)
+        .unwrap_or_default()
+}
+
+/// `root_name`, then `sub_folder` beneath it if `sub_folder` is not itself
+/// empty — never a leading or trailing stray `/` for the root-level case.
+fn join_folder(root_name: &str, sub_folder: &str) -> String {
+    if sub_folder.is_empty() {
+        root_name.to_owned()
+    } else {
+        format!("{root_name}/{sub_folder}")
+    }
 }

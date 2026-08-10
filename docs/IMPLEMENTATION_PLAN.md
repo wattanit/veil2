@@ -1,12 +1,12 @@
 # Veil2 — Implementation Plan
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
-**Date:** 2026-08-09
+**Date:** 2026-08-10
 **Owner:** wattanit
 **Foundation versions this plan is built against:**
 - Requirements Document v1.0 — upstream
-- Design Guideline v1.0 — upstream
+- Design Guideline v1.1 — upstream
 - Technical Specification v1.0 — upstream
 
 This document owns the **sequencing** of the work: ordered phases expanding the Technical Specification's milestones (Spec §10), each with entry and exit conditions, and each task citing the foundation item that put it there. It defers what to build to the Requirements, how it presents to the Design Guideline, and how it is built to the Specification. No task below restates a format, an algorithm, or a layout — each cites the Spec section that defines it. If implementation finds the Spec wrong or underspecified, that is a Specification version bump, not a correction recorded here.
@@ -207,6 +207,10 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 | P6.13 | Not yet built | Vocabulary audit against the Design §7 table across GUI and CLI alike | Design §7 |
 | P6.14 | Not yet built | Packaging for macOS: bundle UTI, signing, notarisation | Spec §8.2 |
 | P6.15 | Not yet built | The release states the platform it was run on | Requirements §2.1, §8 |
+| P6.16 | Not yet built | Replace flow: confirmed-by-name, content-loss stated (Design §8.7 — added v1.1, closing an A-4 gap the original P6 list left open) | Design §8.7, FR-13, §4.1 |
+| P6.17 | Not yet built | Change-password flow: current password required, new password subject to C-4, a smaller HC-7 disclosure than creation's (Design §8.8 — added v1.1) | Design §8.8, HC-7, C-4 |
+
+**P6.14 (signing and notarisation) needs a real Apple Developer ID certificate and notarisation credentials the owner holds, not this effort.** P6.1–P6.13 and P6.15–P6.17 are built and verified here; P6.14 is picked up separately once those credentials are in hand.
 
 **Exit:** every functional requirement is reachable from the GUI; the vocabulary audit is clean in both applications; the macOS package installs, opens a vault, and is the 2.0.0 release.
 
@@ -236,4 +240,4 @@ These apply to every task in every phase and are part of the definition of done,
 
 - **Exact Argon2id cost parameters on the weakest supported hardware.** Resolver: P1.14, when that hardware is available.
 - **Maximum length of the path metadata recorded under FR-10.** Resolver: Phase 1, before the header/index fields it would constrain are finalised.
-- **Whether Phase 6 ships as one release or the GUI lands incrementally behind a pre-release tag.** Affects nothing technical; affects when the 2.0.0 tag is cut. Resolver: owner, at Phase 5 exit.
+- **Resolved, at Phase 5 exit:** Phase 6 ships as one release. P6.1–P6.13 and P6.15 land as one coherent unit; the 2.0.0 tag is cut once that unit and P6.14 are both done, not incrementally behind pre-release tags.

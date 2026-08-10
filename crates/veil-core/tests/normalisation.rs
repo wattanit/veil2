@@ -133,7 +133,7 @@ fn t1_38_a_folder_walk_over_nfd_yielding_paths_produces_nfc_folder_metadata() {
     assert_eq!(entry.name, NFC_CAFE, "the walked file name must be NFC");
     assert_eq!(
         entry.folder,
-        NFC_CAFE.trim_end_matches(".txt"),
-        "the walked folder segment must be NFC too"
+        format!("source/{}", NFC_CAFE.trim_end_matches(".txt")),
+        "the walked folder segment must be NFC too, with the added root's own name first"
     );
 }

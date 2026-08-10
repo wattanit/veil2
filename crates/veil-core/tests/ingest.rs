@@ -151,12 +151,13 @@ fn t2_13_a_folder_walk_stores_every_regular_file_with_its_relative_path() {
     assert_eq!(
         paths,
         vec![
-            // A file in the root of the added tree carries an empty folder —
-            // not "." and not a platform separator.
-            (String::new(), "root.txt".to_owned()),
-            ("a".to_owned(), "one.txt".to_owned()),
-            ("a/b".to_owned(), "two.txt".to_owned()),
-            ("a/b/c".to_owned(), "three.txt".to_owned()),
+            // The added folder's own name is the top-level segment (FR-10):
+            // without it, a file at the root of one added folder and a file
+            // at the root of a different added folder would collide.
+            ("tree".to_owned(), "root.txt".to_owned()),
+            ("tree/a".to_owned(), "one.txt".to_owned()),
+            ("tree/a/b".to_owned(), "two.txt".to_owned()),
+            ("tree/a/b/c".to_owned(), "three.txt".to_owned()),
         ]
     );
 
@@ -166,7 +167,7 @@ fn t2_13_a_folder_walk_stores_every_regular_file_with_its_relative_path() {
     assert!(vault.entries().iter().all(|e| !e.folder.contains('\\')));
 
     // Content follows the name it was stored under.
-    let three = vault.find("a/b/c", "three.txt").unwrap();
+    let three = vault.find("tree/a/b/c", "three.txt").unwrap();
     assert_eq!(harness::read_back(&vault, three.id).unwrap(), pattern(40));
 }
 
@@ -257,6 +258,6 @@ fn t2_15_a_link_cycle_does_not_prevent_the_walk_from_finishing() {
 
     assert_eq!(outcome.added.len(), 1);
     assert_eq!(vault.entries()[0].name, "file.txt");
-    assert_eq!(vault.entries()[0].folder, "inner");
+    assert_eq!(vault.entries()[0].folder, "tree/inner");
     assert_eq!(outcome.skipped.len(), 1);
 }

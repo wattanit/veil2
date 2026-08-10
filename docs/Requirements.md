@@ -104,7 +104,7 @@ Requirement numbers are continuous across subsections. Subsection headings are f
 
 **FR-9.** Add one or more files. Source files are read and left unmodified; ingest never deletes the original. An interrupted or failed ingest cannot lose data. The retained, unprotected copy is disclosed to the user (FR-27).
 
-**FR-10.** Add a folder. Every regular file beneath it is stored, each recording its path relative to the added root (FR-8).
+**FR-10.** Add a folder. Every regular file beneath it is stored, each recording its path relative to the added root's *parent* — that is, the added root's own name is preserved as the top-level folder segment, not discarded. Without it, a file directly inside one added folder and a same-named file directly inside a *different* added folder would both land at the same path and collide as one identity (FR-13, FR-14) despite being two distinct files (FR-8).
 
 **FR-11.** Do not follow symbolic links during folder ingest. Record each as skipped. Following links risks cycles and can capture data outside the selected tree.
 

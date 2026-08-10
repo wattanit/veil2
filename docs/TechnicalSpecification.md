@@ -226,7 +226,7 @@ On read-only storage — mounted image, write-protected drive, permissions that 
 
 **Ingest is a copy** (FR-9). The source is opened read-only and is never modified, moved, or unlinked. Nothing in `veil-core` deletes a file outside a vault.
 
-**Folder ingest walks regular files only** (FR-10). Symbolic links are not followed and are recorded as skipped (FR-11); following them risks cycles and captures data outside the tree the user selected. Each file's path relative to the added root becomes its `folder` metadata, normalised per §4.6.
+**Folder ingest walks regular files only** (FR-10). Symbolic links are not followed and are recorded as skipped (FR-11); following them risks cycles and captures data outside the tree the user selected. Each file's `folder` metadata is the added root's own name, followed by its path relative to that root, normalised per §4.6 — the root's name is the top-level segment, not discarded, so two different added folders that happen to share a name at some inner level still store distinct identities.
 
 **Both directions stream** (A-2, S-1, FR-21). The source is read in chunk-sized reads, each chunk encrypted and appended to the entry's own file; extraction reads that file sequentially and writes decrypted chunks to the caller's `Write`. Neither direction holds more than a small constant number of chunks, so peak memory is independent of file size at C-2's 64 GiB maximum. BLAKE3 is computed in the same pass, so hashing costs no extra read.
 

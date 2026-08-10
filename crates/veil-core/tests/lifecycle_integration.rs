@@ -67,12 +67,12 @@ fn t2_34_the_full_lifecycle_runs_with_no_terminal_present() {
 
     // Browse: from memory, no file read.
     assert_eq!(vault.entries().len(), 4);
-    assert!(vault.find("photos/2024", "two.jpg").is_some());
+    assert!(vault.find("sources/photos/2024", "two.jpg").is_some());
     harness::assert_statistics_correct(&vault, "after ingest");
 
     // Extract, to a caller-supplied destination.
     let destination = scratch.path("recovered.jpg");
-    let two = vault.find("photos/2024", "two.jpg").unwrap().id;
+    let two = vault.find("sources/photos/2024", "two.jpg").unwrap().id;
     vault
         .extract_to_path(two, &destination, &mut NoProgress, &cancel)
         .unwrap();
@@ -81,7 +81,7 @@ fn t2_34_the_full_lifecycle_runs_with_no_terminal_present() {
     // Replace, matched on the full path.
     let replaced = vault
         .replace(
-            "photos",
+            "sources/photos",
             "one.jpg",
             &mut pattern(7000).as_slice(),
             &mut NoProgress,

@@ -1,43 +1,276 @@
-// Phase 5 foundation shell (Design §3.1–§3.3, §2.3). No unlock screen, no
-// vault creation, no identity bar — those are Phase 6. What this proves is
-// that the entry list renders correctly and densely, that complex-script
-// names render correctly in both themes (P5.5), and that the window behaves
-// as a drop target (P5.6).
-import { invoke } from "@tauri-apps/api/core";
+// Phase 6: the product. Phase 5 built the shell and the list; this file
+// adds the screens Design's Key Moments (§5, §8.1-8.8) describe: first run,
+// unlock, creation, the identity bar, search and grouping, add/extract/
+// delete/replace, locking, checking for damage, and changing the password.
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import * as api from "./api";
+import type { EntryInfo } from "./api";
+import { EntryList, type ListRow } from "./list";
 
-interface EntryInfo {
-  id: number;
-  name: string;
-  folder: string;
-  size: number;
-  addedAt: number;
-}
+const MIN_PASSWORD_LENGTH = 12; // C-4, mirrored client-side; veil-core is the authority.
 
-const ROW_HEIGHT = 28;
-const OVERSCAN = 4;
+// ------------------------------------------------------------------ DOM ---
 
-function requireElement<T extends HTMLElement>(selector: string): T {
-  const el = document.querySelector<T>(selector);
-  if (!el) {
-    throw new Error(`index.html is missing ${selector}`);
+function el<T extends HTMLElement>(id: string): T {
+  const found = document.getElementById(id);
+  if (!found) {
+    throw new Error(`index.html is missing #${id}`);
   }
-  return el;
+  return found as T;
 }
 
-const statusEl = requireElement<HTMLDivElement>("#status");
-const dropEl = requireElement<HTMLDivElement>("#drop-affordance");
-const scrollEl = requireElement<HTMLDivElement>("#list-scroll");
-const spacerEl = requireElement<HTMLDivElement>("#list-spacer");
+const screens = {
+  firstRun: el<HTMLElement>("screen-first-run"),
+  unlock: el<HTMLElement>("screen-unlock"),
+  create: el<HTMLElement>("screen-create"),
+  locked: el<HTMLElement>("screen-locked"),
+  vault: el<HTMLElement>("screen-vault"),
+};
 
-let entries: EntryInfo[] = [];
-const rowPool = new Map<number, HTMLDivElement>();
-
-function setStatus(message: string): void {
-  statusEl.textContent = message;
+function showScreen(name: keyof typeof screens): void {
+  for (const [key, section] of Object.entries(screens)) {
+    section.hidden = key !== name;
+  }
 }
 
-function formatSize(bytes: number): string {
+// -------------------------------------------------------------- naming ---
+
+// A vault's name is its directory's filename — neither the header nor the
+// index records one (Phase6-ToDo.md's own note). Strips a trailing
+// `.veil` the same way a person reading the path would.
+function vaultNameFromPath(path: string): string {
+  const base = path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? path;
+  return base.replace(/\.veil$/i, "");
+}
+
+// ------------------------------------------------------------- session ---
+
+// What screen-vault, once open, needs to remember between actions.
+let currentPath = "";
+let currentSummary: api.VaultSummary | null = null;
+let allEntries: EntryInfo[] = [];
+let selectedId: number | null = null;
+let searchTerm = "";
+let grouped = false;
+
+// ------------------------------------------------------- first run (§8.1) -
+
+el<HTMLButtonElement>("first-run-create").addEventListener("click", () => {
+  void startCreate();
+});
+el<HTMLButtonElement>("first-run-open").addEventListener("click", () => {
+  void startOpen();
+});
+
+async function startOpen(): Promise<void> {
+  const path = await api.chooseVaultPath("open");
+  if (!path) {
+    return;
+  }
+  currentPath = path;
+  el<HTMLElement>("unlock-name").textContent = vaultNameFromPath(path);
+  el<HTMLElement>("unlock-location").textContent = path;
+  setUnlockOutcome(null);
+  el<HTMLInputElement>("unlock-password").value = "";
+  showScreen("unlock");
+}
+
+async function startCreate(): Promise<void> {
+  const path = await api.chooseVaultPath("create");
+  if (!path) {
+    return;
+  }
+  currentPath = path;
+  el<HTMLElement>("create-name").textContent = vaultNameFromPath(path);
+  el<HTMLElement>("create-location").textContent = path;
+  const form = el<HTMLFormElement>("create-form");
+  form.reset();
+  el<HTMLButtonElement>("create-button").disabled = true;
+  showScreen("create");
+}
+
+// --------------------------------------------------------- unlock (§5) ---
+
+function setUnlockOutcome(html: string | null): void {
+  const outcome = el<HTMLElement>("unlock-outcome");
+  if (html === null) {
+    outcome.hidden = true;
+    outcome.innerHTML = "";
+    return;
+  }
+  outcome.hidden = false;
+  outcome.innerHTML = html;
+}
+
+el<HTMLFormElement>("unlock-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void unlock();
+});
+
+async function unlock(): Promise<void> {
+  const password = el<HTMLInputElement>("unlock-password").value;
+  const button = el<HTMLButtonElement>("unlock-button");
+  const field = el<HTMLInputElement>("unlock-password");
+  setUnlockOutcome(null);
+  button.classList.add("working");
+  button.disabled = true;
+  field.disabled = true;
+  try {
+    const summary = await api.openVault(currentPath, password);
+    await enterVault(summary);
+  } catch (raw) {
+    const error = api.describeError(raw);
+    setUnlockOutcome(unlockOutcomeHtml(error));
+  } finally {
+    button.classList.remove("working");
+    button.disabled = false;
+    field.disabled = false;
+  }
+}
+
+// FR-2: wrong password and a damaged vault are different messages, never
+// the same "something went wrong". FR-5/FR-6: format mismatches name the
+// versions involved.
+function unlockOutcomeHtml(error: api.ErrorInfo): string {
+  switch (error.kind) {
+    case "WrongPassword":
+      return "<p>That password didn&rsquo;t work. Try again.</p>";
+    case "NotAVault":
+    case "Corrupt":
+      return (
+        "<p><strong>This vault can&rsquo;t be read.</strong> It may be incomplete or damaged.</p>" +
+        `<p>${escapeHtml(error.message)}</p>` +
+        "<p>If you have a backup, work from that copy instead of retrying here.</p>"
+      );
+    case "FormatTooNew":
+      return `<p>${escapeHtml(error.message)}</p>`;
+    case "FormatSuperseded":
+      return (
+        `<p>${escapeHtml(error.message)}</p>` +
+        "<p>A future release may offer to convert it.</p>"
+      );
+    case "VaultInUse":
+      return `<p>${escapeHtml(error.message)}</p><p>Close it elsewhere, then try again.</p>`;
+    default:
+      return `<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+
+// ---------------------------------------------------- creating (§8.2) ---
+
+const createPassword = el<HTMLInputElement>("create-password");
+const createConfirm = el<HTMLInputElement>("create-password-confirm");
+const createAcknowledge = el<HTMLInputElement>("create-acknowledge");
+const createButton = el<HTMLButtonElement>("create-button");
+const createHint = el<HTMLElement>("create-password-hint");
+
+function updateCreateValidity(): void {
+  const password = createPassword.value;
+  let hint = "";
+  if (password.length > 0 && password.length < MIN_PASSWORD_LENGTH) {
+    hint = `A vault password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  } else if (createConfirm.value.length > 0 && createConfirm.value !== password) {
+    hint = "Those two passwords don't match";
+  }
+  createHint.textContent = hint;
+  createHint.hidden = hint === "";
+
+  createButton.disabled =
+    password.length < MIN_PASSWORD_LENGTH ||
+    password !== createConfirm.value ||
+    !createAcknowledge.checked;
+}
+
+for (const input of [createPassword, createConfirm, createAcknowledge]) {
+  input.addEventListener("input", updateCreateValidity);
+}
+
+el<HTMLFormElement>("create-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void create();
+});
+
+async function create(): Promise<void> {
+  try {
+    const summary = await api.createVault(currentPath, createPassword.value);
+    await enterVault(summary);
+  } catch (raw) {
+    const error = api.describeError(raw);
+    createHint.textContent = error.message;
+    createHint.hidden = false;
+  }
+}
+
+// --------------------------------------------------------- locking (§8.5) -
+
+el<HTMLButtonElement>("identity-lock").addEventListener("click", () => {
+  void lock();
+});
+el<HTMLButtonElement>("locked-unlock-again").addEventListener("click", () => {
+  el<HTMLElement>("unlock-name").textContent = vaultNameFromPath(currentPath);
+  el<HTMLElement>("unlock-location").textContent = currentPath;
+  setUnlockOutcome(null);
+  el<HTMLInputElement>("unlock-password").value = "";
+  showScreen("unlock");
+});
+
+async function lock(): Promise<void> {
+  await api.closeVault();
+  el<HTMLElement>("locked-name").textContent = vaultNameFromPath(currentPath);
+  currentSummary = null;
+  allEntries = [];
+  clearSelection();
+  showScreen("locked");
+}
+
+// Quitting the app locks the vault (Design §8.5, FR-3) — there is no
+// "leave it open" setting, so no handler here offers one. The Rust side
+// holds no vault-specific cleanup that outlives the process; state simply
+// stops existing when the process does.
+
+// -------------------------------------------------------- vault screen ---
+
+const list = new EntryList(el("list-scroll"), el("list-spacer"), {
+  onActivate: (entry) => {
+    void extract(entry);
+  },
+});
+
+async function enterVault(summary: api.VaultSummary): Promise<void> {
+  currentSummary = summary;
+  clearSelection();
+  searchTerm = "";
+  el<HTMLInputElement>("search-input").value = "";
+  el<HTMLElement>("identity-name").textContent = vaultNameFromPath(currentPath);
+  const readonlyNote = el<HTMLElement>("identity-readonly-note");
+  readonlyNote.hidden = summary.access !== "readOnly";
+  setControlsDisabled(summary.access === "readOnly");
+  showScreen("vault");
+  await refreshList();
+}
+
+function setControlsDisabled(disabled: boolean): void {
+  for (const id of ["add-files-button", "identity-change-password"]) {
+    el<HTMLButtonElement>(id).disabled = disabled;
+    el<HTMLButtonElement>(id).title = disabled
+      ? "Read-only — this vault can't be changed from here."
+      : "";
+  }
+}
+
+async function refreshList(): Promise<void> {
+  allEntries = await api.listEntries();
+  renderStatistics();
+  renderList();
+}
+
+function renderStatistics(): void {
+  const bytes = allEntries.reduce((sum, e) => sum + e.size, 0);
+  el<HTMLElement>("statistics-line").textContent =
+    `${allEntries.length.toLocaleString()} files · ${humanSize(bytes)} stored`;
+}
+
+function humanSize(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;
@@ -45,92 +278,226 @@ function formatSize(bytes: number): string {
     value /= 1024;
     unit += 1;
   }
-  const precision = unit === 0 ? 0 : 1;
-  return `${value.toFixed(precision)} ${units[unit]}`;
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function formatAdded(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function renderRow(el: HTMLDivElement, entry: EntryInfo, index: number): void {
-  el.className = "entry-row";
-  el.style.top = `${index * ROW_HEIGHT}px`;
-  el.dataset.id = String(entry.id);
-  el.innerHTML =
-    `<span class="col-name">${escapeHtml(entry.name)}</span>` +
-    `<span class="col-folder">${escapeHtml(entry.folder)}</span>` +
-    `<span class="col-size">${formatSize(entry.size)}</span>` +
-    `<span class="col-added">${formatAdded(entry.addedAt)}</span>`;
-}
-
-function escapeHtml(value: string): string {
-  const div = document.createElement("div");
-  div.textContent = value;
-  return div.innerHTML;
-}
-
-// A windowed view: only rows near the viewport ever exist in the DOM (P5.4.d,
-// Design §2.3), regardless of how many thousand entries a vault holds.
-function renderVisible(): void {
-  spacerEl.style.height = `${entries.length * ROW_HEIGHT}px`;
-
-  const viewportHeight = scrollEl.clientHeight;
-  const scrollTop = scrollEl.scrollTop;
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const last = Math.min(
-    entries.length - 1,
-    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN,
+function visibleEntries(): EntryInfo[] {
+  const term = searchTerm.trim().toLowerCase();
+  if (term === "") {
+    return allEntries;
+  }
+  return allEntries.filter(
+    (e) => e.name.toLowerCase().includes(term) || e.folder.toLowerCase().includes(term),
   );
-
-  for (const [index, el] of rowPool) {
-    if (index < first || index > last) {
-      el.remove();
-      rowPool.delete(index);
-    }
-  }
-
-  for (let index = first; index <= last; index += 1) {
-    const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-    let el = rowPool.get(index);
-    if (!el) {
-      el = document.createElement("div");
-      spacerEl.appendChild(el);
-      rowPool.set(index, el);
-    }
-    renderRow(el, entry, index);
-  }
 }
 
-async function loadEntries(): Promise<void> {
-  entries = await invoke<EntryInfo[]>("list_entries");
-  renderVisible();
+// P6.5.b: a flat grouping view, not a tree — one level, no create/rename/drag.
+function renderList(): void {
+  const entries = visibleEntries();
+  if (!grouped) {
+    list.setRows(entries.map((entry): ListRow => ({ kind: "entry", entry })));
+    return;
+  }
+  const byFolder = new Map<string, EntryInfo[]>();
+  for (const entry of entries) {
+    const bucket = byFolder.get(entry.folder) ?? [];
+    bucket.push(entry);
+    byFolder.set(entry.folder, bucket);
+  }
+  const rows: ListRow[] = [];
+  for (const [folder, entriesInFolder] of [...byFolder.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    rows.push({ kind: "group", label: folder });
+    for (const entry of entriesInFolder) {
+      rows.push({ kind: "entry", entry });
+    }
+  }
+  list.setRows(rows);
 }
 
-async function openFixture(): Promise<void> {
+el<HTMLInputElement>("search-input").addEventListener("input", (event) => {
+  searchTerm = (event.target as HTMLInputElement).value;
+  renderList();
+});
+el<HTMLInputElement>("group-toggle").addEventListener("change", (event) => {
+  grouped = (event.target as HTMLInputElement).checked;
+  renderList();
+});
+
+// --------------------------------------------------------- status/error --
+
+function setStatus(message: string): void {
+  el<HTMLElement>("status").textContent = message;
+}
+
+// P6.10: three parts — what happened, the current state, what can be done
+// — rendered at the action's own location (here, the status line beneath
+// the controls bar) rather than as a system notification.
+function describeForStatus(action: string, error: api.ErrorInfo): string {
+  const advice: Record<string, string> = {
+    VaultInUse: "Close it elsewhere, then try again.",
+    ChangedOnDisk: "Reload the vault to see the change.",
+    StorageUnavailable: "Reconnect the volume and try again.",
+    LimitExceeded: "Remove something first, or use a smaller file.",
+    ReadOnly: "This vault can't be changed from here.",
+    Cancelled: "",
+  };
+  const suffix = advice[error.kind] ? ` ${advice[error.kind]}` : "";
+  return `${action}: ${error.message}${suffix}`;
+}
+
+// -------------------------------------------------------- operation bar --
+
+function showOperation(label: string): void {
+  el<HTMLElement>("operation-bar").hidden = false;
+  el<HTMLElement>("operation-label").textContent = label;
+  el<HTMLElement>("operation-progress-fill").style.width = "0%";
+}
+
+function hideOperation(): void {
+  el<HTMLElement>("operation-bar").hidden = true;
+}
+
+el<HTMLButtonElement>("operation-cancel").addEventListener("click", () => {
+  void api.cancelOperation();
+});
+
+interface ProgressPayload {
+  done: number;
+  total: number | null;
+}
+
+void getCurrentWebview().listen<ProgressPayload>("operation-progress", (event) => {
+  const { done, total } = event.payload;
+  if (total) {
+    el<HTMLElement>("operation-progress-fill").style.width = `${Math.min(100, (done / total) * 100)}%`;
+  }
+});
+
+// -------------------------------------------------------------- extract --
+
+async function extract(entry: EntryInfo): Promise<void> {
+  const destination = await api.chooseSavePath(entry.name);
+  if (!destination) {
+    return;
+  }
+  // FR-19's overwrite confirmation is the native save dialog's own — macOS
+  // asks before returning a path that already exists, so there is nothing
+  // for this layer to add on top of the dialog it already used.
+  showOperation(`Saving a copy of ${entry.name}…`);
   try {
-    const summary = await invoke<{ entryCount: number }>("open_fixture_vault");
-    setStatus(`${summary.entryCount} files (fixture vault)`);
-    await loadEntries();
-  } catch (error) {
-    // The fixture command is debug-only (Phase5-ToDo.md, P5.1/scope note) —
-    // in a release build this fails, and there is deliberately no unlock
-    // screen yet to fall back to. That is Phase 6's job.
-    setStatus("No vault open.");
-    console.info("open_fixture_vault unavailable:", error);
+    await api.extractEntry(entry.id, destination);
+    hideOperation();
+    // FR-27: stated every time, plainly, as completion-state text.
+    setStatus(`Saved to ${folderOf(destination)}. This copy is not protected.`);
+  } catch (raw) {
+    hideOperation();
+    setStatus(describeForStatus(`Couldn't save a copy of ${entry.name}`, api.describeError(raw)));
   }
+}
+
+function folderOf(path: string): string {
+  const parts = path.split(/[/\\]/);
+  parts.pop();
+  return parts.pop() ?? path;
+}
+
+// ------------------------------------------------------------------ add --
+
+el<HTMLButtonElement>("add-files-button").addEventListener("click", () => {
+  void addViaDialog();
+});
+
+async function addViaDialog(): Promise<void> {
+  const paths = await api.chooseSourcePaths(true);
+  if (paths.length > 0) {
+    await runAdd(paths);
+  }
+}
+
+// A dropped or chosen path whose folder and name already match an entry is
+// not added or silently replaced — it is held by the backend as a
+// `Collision` (P6.0's `add_files`) and confirmed here before anything is
+// replaced (Design §8.7, §4.1's irreversible-action rule). Matched by
+// identity, never by where in the window a drop happened to land: an
+// earlier version tried to detect "dropped onto row X" from the drag's
+// on-screen position, which real testing showed was unreliable in this
+// Tauri version — the position it reports does not correspond to where the
+// cursor actually was, live and reproducibly, and standard DOM drag events
+// never fire at all here (the webview's own native handler consumes the OS
+// drag first). Identity-based matching needs no position data at all.
+async function runAdd(paths: string[]): Promise<void> {
+  showOperation(`Adding ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
+  try {
+    const result = await api.addFiles(paths);
+    hideOperation();
+    await refreshList();
+    reportAddResult(result);
+    if (result.collisions.length > 0) {
+      confirmReplaceBatch(result.collisions);
+    }
+  } catch (raw) {
+    hideOperation();
+    setStatus(describeForStatus("Couldn't add those files", api.describeError(raw)));
+  }
+}
+
+function reportAddResult(result: api.AddResult): void {
+  if (result.added.length === 0 && result.collisions.length === 0) {
+    if (result.failed.length > 0) {
+      setStatus(`Could not add ${result.failed.length} file${result.failed.length === 1 ? "" : "s"}.`);
+    }
+    return;
+  }
+  // FR-27/FR-9: the exact disclosure, once, on completion.
+  const failedNote = result.failed.length > 0 ? ` ${result.failed.length} could not be added.` : "";
+  setStatus(
+    `Added ${result.added.length} file${result.added.length === 1 ? "" : "s"}. ` +
+      `The originals are still on your disk — Veil doesn't delete them.${failedNote}`,
+  );
+}
+
+function confirmReplaceBatch(collisions: api.Collision[]): void {
+  const label =
+    collisions.length === 1
+      ? `Replace ${collisions[0]!.name}? Its current content in this vault will be gone.`
+      : `Replace ${collisions.length} files already in this vault? Their current content will be gone.`;
+  openModal(
+    escapeHtml(label),
+    [
+      { label: "Cancel", run: () => {} },
+      { label: "Replace", caution: true, run: () => void runReplaceBatch(collisions) },
+    ],
+    collisions.map((c) => (c.folder ? `${c.folder}/${c.name}` : c.name)),
+  );
+}
+
+async function runReplaceBatch(collisions: api.Collision[]): Promise<void> {
+  showOperation(`Replacing ${collisions.length} file${collisions.length === 1 ? "" : "s"}…`);
+  let replaced = 0;
+  const failed: string[] = [];
+  for (const collision of collisions) {
+    try {
+      await api.replaceEntry(collision.folder, collision.name, collision.path);
+      replaced += 1;
+    } catch (raw) {
+      failed.push(`${collision.name}: ${api.describeError(raw).message}`);
+    }
+  }
+  hideOperation();
+  await refreshList();
+  const failedNote = failed.length > 0 ? ` ${failed.length} could not be replaced.` : "";
+  setStatus(`Replaced ${replaced} file${replaced === 1 ? "" : "s"}.${failedNote}`);
 }
 
 function setupDropTarget(): void {
+  const dropEl = el<HTMLElement>("drop-affordance");
   void getCurrentWebview().onDragDropEvent((event) => {
     const payload = event.payload;
+    if (screens.vault.hidden) {
+      return;
+    }
     if (payload.type === "enter" || payload.type === "over") {
       const count = "paths" in payload ? payload.paths.length : 0;
       if (count > 0) {
@@ -145,60 +512,252 @@ function setupDropTarget(): void {
     }
     if (payload.type === "drop") {
       dropEl.hidden = true;
-      void handleDrop(payload.paths);
+      void runAdd(payload.paths);
     }
   });
 }
 
-async function handleDrop(paths: string[]): Promise<void> {
-  if (paths.length === 0) {
-    return;
+// --------------------------------------------------------------- modal ---
+
+function openModal(
+  body: string,
+  actions: Array<{ label: string; caution?: boolean; run: () => void }>,
+  listItems: string[] = [],
+): void {
+  el<HTMLElement>("modal-body").innerHTML = body;
+  const listEl = el<HTMLElement>("modal-list");
+  listEl.innerHTML = listItems.map((item) => `<div>${escapeHtml(item)}</div>`).join("");
+  const actionsEl = el<HTMLElement>("modal-actions");
+  actionsEl.innerHTML = "";
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    if (action.caution) {
+      button.classList.add("caution");
+    }
+    button.addEventListener("click", () => {
+      closeModal();
+      action.run();
+    });
+    actionsEl.appendChild(button);
   }
-  setStatus(`Adding ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
-  try {
-    await invoke("add_files", { paths });
-    await loadEntries();
-    setStatus(`${entries.length} files`);
-  } catch (error) {
-    setStatus(`Could not add files: ${String(error)}`);
-  }
+  el<HTMLElement>("modal-overlay").hidden = false;
 }
 
-// Double-clicking a row extracts it (P5.6.d, Design §3.3, FR-17). Delegated
-// on the spacer rather than attached per row, since rows are pooled and
-// reused as the list scrolls (renderVisible).
-function setupExtraction(): void {
-  spacerEl.addEventListener("dblclick", (event) => {
+function closeModal(): void {
+  el<HTMLElement>("modal-overlay").hidden = true;
+}
+
+// ------------------------------------------------------------- selection -
+
+function clearSelection(): void {
+  selectedId = null;
+  el<HTMLButtonElement>("replace-selected-button").disabled = true;
+  el<HTMLButtonElement>("delete-selected-button").disabled = true;
+}
+
+function setupSelection(): void {
+  el<HTMLElement>("list-spacer").addEventListener("click", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
     const id = row?.dataset.id;
-    if (id === undefined) {
+    selectedId = id === undefined ? null : Number(id);
+    for (const rowEl of el<HTMLElement>("list-spacer").querySelectorAll(".entry-row")) {
+      rowEl.classList.toggle("selected", rowEl === row);
+    }
+    el<HTMLButtonElement>("replace-selected-button").disabled = selectedId === null;
+    el<HTMLButtonElement>("delete-selected-button").disabled = selectedId === null;
+  });
+  window.addEventListener("keydown", (event) => {
+    if ((event.key === "Delete" || event.key === "Backspace") && selectedId !== null) {
+      const entry = allEntries.find((e) => e.id === selectedId);
+      if (entry) {
+        confirmDelete([entry]);
+      }
+    }
+  });
+  el<HTMLButtonElement>("replace-selected-button").addEventListener("click", () => {
+    void replaceSelected();
+  });
+  el<HTMLButtonElement>("delete-selected-button").addEventListener("click", () => {
+    const entry = allEntries.find((e) => e.id === selectedId);
+    if (entry) {
+      confirmDelete([entry]);
+    }
+  });
+}
+
+// ------------------------------------------------------------ delete ---
+
+function confirmDelete(entries: EntryInfo[]): void {
+  const label =
+    entries.length === 1 && entries[0]
+      ? `Delete ${entries[0].name}?`
+      : `Delete ${entries.length} files?`;
+  openModal(escapeHtml(label), [
+    { label: "Cancel", run: () => {} },
+    {
+      label: "Delete",
+      caution: true,
+      run: () => void runDelete(entries),
+    },
+  ]);
+}
+
+async function runDelete(entries: EntryInfo[]): Promise<void> {
+  for (const entry of entries) {
+    try {
+      await api.deleteEntry(entry.id);
+    } catch (raw) {
+      setStatus(describeForStatus(`Couldn't delete ${entry.name}`, api.describeError(raw)));
       return;
     }
-    const entry = entries.find((candidate) => String(candidate.id) === id);
-    if (entry) {
-      void handleExtract(entry);
-    }
-  });
+  }
+  clearSelection();
+  await refreshList();
 }
 
-async function handleExtract(entry: EntryInfo): Promise<void> {
-  const destination = await invoke<string | null>("choose_save_path", {
-    suggestedName: entry.name,
-  });
-  if (!destination) {
+// ------------------------------------------------------------ replace ---
+
+// The explicit path (Design §8.7): select an entry, choose *any* file as
+// its new content regardless of that file's own name — unlike the
+// identity-matched replace in `runAdd`, this does not require the new
+// file to share the old one's name.
+async function replaceSelected(): Promise<void> {
+  const entry = allEntries.find((e) => e.id === selectedId);
+  if (!entry) {
     return;
   }
-  setStatus(`Extracting ${entry.name}…`);
+  const paths = await api.chooseSourcePaths(false);
+  const sourcePath = paths[0];
+  if (sourcePath === undefined) {
+    return;
+  }
+  confirmReplace(entry, sourcePath);
+}
+
+function confirmReplace(entry: EntryInfo, sourcePath: string): void {
+  openModal(
+    `Replace ${escapeHtml(entry.name)}? Its current content in this vault will be gone.`,
+    [
+      { label: "Cancel", run: () => {} },
+      {
+        label: "Replace",
+        caution: true,
+        run: () => void runReplace(entry, sourcePath),
+      },
+    ],
+  );
+}
+
+async function runReplace(entry: EntryInfo, sourcePath: string): Promise<void> {
   try {
-    await invoke("extract_entry", { id: entry.id, destination });
-    setStatus(`Saved ${entry.name}`);
-  } catch (error) {
-    setStatus(`Could not extract ${entry.name}: ${String(error)}`);
+    await api.replaceEntry(entry.folder, entry.name, sourcePath);
+    await refreshList();
+    setStatus(`Replaced ${entry.name}.`);
+  } catch (raw) {
+    setStatus(describeForStatus(`Couldn't replace ${entry.name}`, api.describeError(raw)));
   }
 }
 
-scrollEl.addEventListener("scroll", renderVisible);
-window.addEventListener("resize", renderVisible);
+// -------------------------------------------------------- check for damage
+
+el<HTMLButtonElement>("identity-check").addEventListener("click", () => {
+  const estimateSeconds = Math.max(1, Math.round(allEntries.reduce((s, e) => s + e.size, 0) / (200 * 1024 * 1024)));
+  openModal(
+    `Check ${allEntries.length} files for damage? This reads the whole vault — about ${estimateSeconds}s.`,
+    [
+      { label: "Cancel", run: () => {} },
+      { label: "Check", run: () => void runCheck() },
+    ],
+  );
+});
+
+async function runCheck(): Promise<void> {
+  showOperation("Checking for damage…");
+  try {
+    const report = await api.checkVault();
+    hideOperation();
+    await refreshList();
+    if (report.failures.length === 0) {
+      const partial = report.complete ? "" : " The check was stopped early, so this covers only what it reached.";
+      openModal(`Checked ${report.checked} files. No damage found.${partial}`, [
+        { label: "OK", run: () => {} },
+      ]);
+    } else {
+      openModal(
+        `<strong>${report.failures.length} files are damaged.</strong> ` +
+          "Their data in this vault can't be recovered — Veil doesn't keep a spare copy. " +
+          "If you have a backup, restore these files from it.",
+        [{ label: "OK", run: () => {} }],
+        report.failures.map((f) => (f.folder ? `${f.folder}/${f.name}` : f.name)),
+      );
+    }
+  } catch (raw) {
+    hideOperation();
+    setStatus(describeForStatus("Couldn't finish checking", api.describeError(raw)));
+  }
+}
+
+// ------------------------------------------------------- change password -
+
+el<HTMLButtonElement>("identity-change-password").addEventListener("click", () => {
+  openChangePasswordModal();
+});
+
+function openChangePasswordModal(): void {
+  const body =
+    '<input type="password" id="cp-current" placeholder="Current password" autocomplete="current-password" />' +
+    '<input type="password" id="cp-new" placeholder="New password" autocomplete="new-password" />' +
+    '<input type="password" id="cp-new-confirm" placeholder="Retype new password" autocomplete="new-password" />' +
+    "<p>If you forget the new password, this vault is lost the same way it would be " +
+    "with the old one — there is still no recovery.</p>" +
+    '<p id="cp-hint" class="hint" hidden></p>';
+  openModal(body, [
+    { label: "Cancel", run: () => {} },
+    { label: "Change password", run: () => void submitChangePassword() },
+  ]);
+}
+
+async function submitChangePassword(): Promise<void> {
+  const current = (document.getElementById("cp-current") as HTMLInputElement | null)?.value ?? "";
+  const next = (document.getElementById("cp-new") as HTMLInputElement | null)?.value ?? "";
+  const confirm = (document.getElementById("cp-new-confirm") as HTMLInputElement | null)?.value ?? "";
+  if (next.length < MIN_PASSWORD_LENGTH || next !== confirm) {
+    setStatus("The new password must be at least 12 characters and match its retype.");
+    return;
+  }
+  try {
+    await api.changePassword(current, next);
+    setStatus("Password changed.");
+  } catch (raw) {
+    setStatus(describeForStatus("Couldn't change the password", api.describeError(raw)));
+  }
+}
+
+// -------------------------------------------------------------- startup --
+
 setupDropTarget();
-setupExtraction();
-void openFixture();
+setupSelection();
+showScreen("firstRun");
+
+// First run (Design §8.1) shows exactly two choices and nothing else — no
+// third button for the fixture, in dev builds or otherwise. The fixture
+// (Phase 5's bypass, still useful for the rendering checks it was built
+// for — P5.5, P6.4) is reachable only by calling `__loadFixture()` from
+// the devtools console (`cargo tauri dev --features devtools`), which
+// touches no DOM a screenshot or T6.4 would see. In a release build
+// `open_fixture_vault` does not exist at all, so this just errors.
+(window as unknown as { __loadFixture: () => void }).__loadFixture = () => {
+  void (async () => {
+    const summary = await api.openFixtureVault();
+    currentPath = "Fixture Vault.veil";
+    await enterVault(summary);
+  })();
+};
+
+function escapeHtml(value: string): string {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}

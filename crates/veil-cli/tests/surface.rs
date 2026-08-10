@@ -80,7 +80,7 @@ fn t3_1_the_whole_lifecycle_runs_from_the_shell() {
     let delete = run(&[
         "delete",
         &vault,
-        "photos/one.jpg",
+        "tree/photos/one.jpg",
         "--password-file",
         new_password.to_str().unwrap(),
     ]);
