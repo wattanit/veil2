@@ -48,6 +48,35 @@ cargo tauri dev      # development, with live reload
 cargo tauri build    # a release .app / .dmg
 ```
 
+### Signing and notarizing a release build
+
+`cargo tauri build` produces an unsigned app unless it's told which certificate to sign with. That identity is deliberately kept out of `tauri.conf.json` — it's a real name, not something to commit — and instead lives in a local, gitignored file Tauri merges in automatically on macOS:
+
+```sh
+cp crates/veil-gui/tauri.macos.conf.json.example crates/veil-gui/tauri.macos.conf.json
+```
+
+Edit that copy's `signingIdentity` to match a certificate already in your keychain — list what's available with:
+
+```sh
+security find-identity -v -p codesigning
+```
+
+and use the exact string after the quotation marks, e.g. `Developer ID Application: Your Name (TEAMID1234)`.
+
+**Notarization** goes through environment variables instead, at build time, so it never touches any file at all:
+
+```sh
+export APPLE_ID="you@example.com"
+export APPLE_PASSWORD="an app-specific password"   # not your Apple ID password — see below
+export APPLE_TEAM_ID="TEAMID1234"
+cd crates/veil-gui && cargo tauri build
+```
+
+With all three set, `cargo tauri build` signs, submits for notarization, and staples the ticket in one step — no separate manual submission.
+
+The app-specific password is generated at **appleid.apple.com** → *Sign-In and Security* → *App-Specific Passwords*. Apple requires this because two-factor accounts can't hand their normal password to a command-line tool; the app-specific password is scoped to this one purpose and can be revoked independently of the real password.
+
 ## Using the CLI
 
 ```

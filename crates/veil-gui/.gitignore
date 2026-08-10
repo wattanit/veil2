@@ -1,1 +1,6 @@
 /gen/schemas
+
+# Merged automatically by Tauri at build time (JSON Merge Patch, macOS
+# only) — this is where bundle.macOS.signingIdentity lives, so a real
+# name never has to sit in the tracked tauri.conf.json.
+tauri.macos.conf.json

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && esbuild src/main.ts --bundle --outfile=main.js --format=esm --target=es2022"
+    "build": "tsc --noEmit && mkdir -p dist && cp index.html styles.css dist/ && esbuild src/main.ts --bundle --outfile=dist/main.js --format=esm --target=es2022"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1"

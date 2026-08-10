@@ -4,9 +4,9 @@
   "version": "2.0.0",
   "identifier": "com.veil2.app",
   "build": {
-    "frontendDist": "ui",
-    "beforeDevCommand": "npm run build",
-    "beforeBuildCommand": "npm run build"
+    "frontendDist": "ui/dist",
+    "beforeDevCommand": { "script": "npm run build", "cwd": "ui" },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "ui" }
   },
   "app": {
     "windows": [],
@@ -25,6 +25,20 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["veil"],
+        "name": "Veil2 Vault",
+        "role": "Editor",
+        "exportedType": {
+          "identifier": "com.veil2.app.vault",
+          "conformsTo": ["com.apple.package"]
+        }
+      }
+    ],
+    "macOS": {
+      "hardenedRuntime": true
+    }
   }
 }
