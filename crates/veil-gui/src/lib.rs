@@ -23,6 +23,12 @@ fn create_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Re
         .inner_size(900.0, 600.0)
         .resizable(true)
         .incognito(true)
+        // A native overlay title bar (traffic lights floating over the
+        // content, no title text) instead of the plain default bar — the
+        // frontend reserves a matching drag strip (`#title-bar`) so the
+        // window stays movable without a visible title area.
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
         .build()?;
     Ok(())
 }

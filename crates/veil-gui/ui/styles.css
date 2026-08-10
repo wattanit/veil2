@@ -58,6 +58,16 @@ body {
   position: relative;
 }
 
+/* Reserves room for the overlay title bar's traffic lights (macOS) and
+   doubles as the window's drag handle, present on every screen — there is
+   no native title area left to grab otherwise. Height matches macOS's
+   traffic-light row across the OS versions Tauri's overlay style targets. */
+#title-bar {
+  flex-shrink: 0;
+  height: 28px;
+  background: var(--surface);
+}
+
 #status {
   padding: 8px 12px;
   color: var(--text-muted);
@@ -116,6 +126,12 @@ body {
      what a double-click here does. */
   cursor: default;
   user-select: none;
+  /* Only ever background/shadow — never `top` (that's the virtualizer's
+     scroll-repositioning property); a transition there would make fast
+     scrolling visibly lag behind the actual list position. */
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 /* `accent` is already the token for selection and in-progress states
@@ -183,7 +199,10 @@ body {
 .screen {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Fills whatever height #app has left below #title-bar, rather than
+     100% of the viewport — the two would overlap otherwise. */
+  flex: 1;
+  min-height: 0;
 }
 
 .screen[hidden] {
@@ -221,6 +240,7 @@ input[type="search"] {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
+  transition: border-color 120ms ease;
 }
 
 button {
@@ -231,12 +251,27 @@ button {
   border-radius: 4px;
   padding: 6px 12px;
   cursor: default;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
 }
 
 button:disabled {
   color: var(--text-muted);
   cursor: default;
   opacity: 0.6;
+}
+
+/* Keyboard-driven focus only — a mouse click on a button or field is
+   already its own confirmation and does not need a ring on top of it. */
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="search"]:focus-visible,
+input[type="checkbox"]:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* §2.2: `caution` is used only for irreversible actions. */
@@ -434,7 +469,9 @@ button.working::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, black 40%, transparent);
+  background: color-mix(in srgb, black 25%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
 #modal-overlay[hidden] {

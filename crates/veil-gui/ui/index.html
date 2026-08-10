@@ -8,6 +8,11 @@
   </head>
   <body>
     <main id="app">
+      <!-- The overlay title bar's traffic lights float over this strip
+           (macOS); it also makes the window draggable from any screen,
+           since there is no native title bar to grab. -->
+      <div id="title-bar" data-tauri-drag-region aria-hidden="true"></div>
+
       <!-- First run (Design §8.1): exactly two choices, nothing else. -->
       <section id="screen-first-run" class="screen" hidden>
         <div class="centered">
