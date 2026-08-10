@@ -10,15 +10,21 @@
     <main id="app">
       <!-- The overlay title bar's traffic lights float over this strip
            (macOS); it also makes the window draggable from any screen,
-           since there is no native title bar to grab. -->
-      <div id="title-bar" data-tauri-drag-region aria-hidden="true"></div>
+           since there is no native title bar to grab and hiding the
+           native title (Tier 1) left nothing identifying the app. -->
+      <div id="title-bar" data-tauri-drag-region aria-hidden="true">
+        <span id="title-bar-name">Veil 2</span>
+      </div>
 
-      <!-- First run (Design §8.1): exactly two choices, nothing else. -->
+      <!-- First run (Design §8.1): exactly two choices, nothing else — the
+           name and version are identification, not a third choice. -->
       <section id="screen-first-run" class="screen" hidden>
         <div class="centered">
+          <h1>Veil 2</h1>
           <button type="button" id="first-run-create">Create a vault</button>
           <button type="button" id="first-run-open">Open a vault</button>
         </div>
+        <span id="first-run-version" class="muted"></span>
       </section>
 
       <!-- Unlock (Design §5): name, location, password, unlock button — and
@@ -36,7 +42,7 @@
               placeholder="Password"
               autocomplete="current-password"
             />
-            <button type="submit" id="unlock-button">Unlock</button>
+            <button type="submit" id="unlock-button" class="primary">Unlock</button>
           </form>
         </div>
       </section>
@@ -76,7 +82,7 @@
                 I understand this password cannot be recovered.
               </label>
             </div>
-            <button type="submit" id="create-button" disabled>
+            <button type="submit" id="create-button" class="primary" disabled>
               Create vault
             </button>
           </form>
@@ -89,7 +95,7 @@
         <div class="centered">
           <h1>Locked</h1>
           <p id="locked-name" class="muted"></p>
-          <button type="button" id="locked-unlock-again">Unlock</button>
+          <button type="button" id="locked-unlock-again" class="primary">Unlock</button>
         </div>
       </section>
 
@@ -121,7 +127,7 @@
           <button type="button" id="delete-selected-button" class="caution" disabled>
             Delete
           </button>
-          <button type="button" id="add-files-button">Add files…</button>
+          <button type="button" id="add-files-button" class="primary">Add files…</button>
         </div>
         <div id="drop-affordance" hidden></div>
         <div id="status" role="status"></div>

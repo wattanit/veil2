@@ -2,6 +2,7 @@
 // adds the screens Design's Key Moments (§5, §8.1-8.8) describe: first run,
 // unlock, creation, the identity bar, search and grouping, add/extract/
 // delete/replace, locking, checking for damage, and changing the password.
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "./api";
 import type { EntryInfo } from "./api";
@@ -60,6 +61,12 @@ el<HTMLButtonElement>("first-run-create").addEventListener("click", () => {
 });
 el<HTMLButtonElement>("first-run-open").addEventListener("click", () => {
   void startOpen();
+});
+
+// Read from the running build rather than hardcoded, so it can't drift
+// from tauri.conf.json's own version field.
+void getVersion().then((version) => {
+  el<HTMLElement>("first-run-version").textContent = `v${version}`;
 });
 
 async function startOpen(): Promise<void> {
@@ -533,6 +540,13 @@ function openModal(
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = action.label;
+    // Every action here is either "Cancel" (dismiss, stays plain) or the
+    // dialog's one forward action (Replace, Delete, Check, OK, …) — the
+    // latter is always styled as the primary choice, filled `caution`
+    // instead of `accent` when it is also the destructive one.
+    if (action.label !== "Cancel") {
+      button.classList.add("primary");
+    }
     if (action.caution) {
       button.classList.add("caution");
     }
