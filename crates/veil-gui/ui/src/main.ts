@@ -6,6 +6,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "./api";
 import type { EntryInfo } from "./api";
+import { damagedFileMessage } from "./damage";
 import { extensionOf } from "./extension";
 import { EntryList, formatDate, type ListRow } from "./list";
 import { isPreviewable } from "./previewable";
@@ -510,7 +511,15 @@ async function extract(entry: EntryInfo): Promise<void> {
     setStatus(`Saved to ${folderOf(destination)}. This copy is not protected.`);
   } catch (raw) {
     hideOperation();
-    setStatus(describeForStatus(`Couldn't save a copy of ${entry.name}`, api.describeError(raw)));
+    const error = api.describeError(raw);
+    // Design §6: a verification failure gets its own three-part message
+    // (damaged, copy removed, other files fine) rather than the generic
+    // fallback below, which never names any of that.
+    setStatus(
+      error.kind === "Corrupt"
+        ? damagedFileMessage(entry.name, true)
+        : describeForStatus(`Couldn't save a copy of ${entry.name}`, error),
+    );
   }
 }
 
@@ -896,6 +905,17 @@ function setupOverlays(): void {
   });
   el<HTMLButtonElement>("details-close").addEventListener("click", closeDetails);
   el<HTMLButtonElement>("preview-close").addEventListener("click", closePreview);
+
+  // P8.7.c: quitting the application is the third path Spec §5.3's
+  // honesty clause names alongside closing and locking — the same
+  // clearing calls `lock()` makes, not a second implementation written
+  // for this event. `beforeunload` is the one signal a webview gives
+  // before its document goes away, however the window came to close.
+  window.addEventListener("beforeunload", () => {
+    closeContextMenu();
+    closeDetails();
+    closePreview();
+  });
 }
 
 // ------------------------------------------------------------ details ---
@@ -983,8 +1003,17 @@ async function openPreview(entry: EntryInfo): Promise<void> {
       body.appendChild(pre);
     }
   } catch (raw) {
+    const error = api.describeError(raw);
     const message = document.createElement("p");
-    message.textContent = api.describeError(raw).message;
+    // Design §8.10: a failed integrity check is worded exactly as an
+    // extraction failure (§6) — the same `damagedFileMessage` `extract()`
+    // calls, not a preview-specific rewrite of it. Preview never writes
+    // anywhere to remove (T7.13, T7.14), so its own call omits that
+    // clause rather than claiming one. Any other refusal kind
+    // (PreviewTooLarge, PreviewUnsupported, PreviewNotText, NotFound) was
+    // already worded completely by `preview.rs` itself — shown as-is.
+    message.textContent =
+      error.kind === "Corrupt" ? damagedFileMessage(entry.name, false) : error.message;
     body.appendChild(message);
   }
 }

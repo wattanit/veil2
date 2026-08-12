@@ -1,6 +1,7 @@
-//! Phase 5 test cases T5.5, T5.6, and T5.7, Phase 6's T6.32, and Phase 7's
-//! T7.15 — properties of the shell's configuration and dependency graph
-//! rather than of behaviour (Spec §5.3, HC-1, Requirements §2.1, §8).
+//! Phase 5 test cases T5.5, T5.6, and T5.7, Phase 6's T6.32, Phase 7's
+//! T7.15, and Phase 8's T8.21 — properties of the shell's configuration
+//! and source structure rather than of behaviour (Spec §5.3, HC-1,
+//! Requirements §2.1, §8, Design §8.10).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -179,6 +180,53 @@ fn t7_15_no_tracing_dependency_or_call_exists_in_veil_gui() {
          Cargo.toml check above did not expect:\n  {}",
         offending.join("\n  ")
     );
+}
+
+/// T8.21 (P8.7.c) — quitting reuses `lock()`'s own clearing calls, not a
+/// second implementation written for `beforeunload`.
+///
+/// A source-and-manifest scan, the same class of check T5.6 and T7.15
+/// already make: `closeContextMenu`/`closeDetails`/`closePreview` are each
+/// defined exactly once, and both `lock()` and the `beforeunload` handler
+/// call all three — proving the two call sites share one routine rather
+/// than each composing its own.
+#[test]
+fn t8_21_quitting_reuses_locks_own_clearing_calls_not_a_second_implementation() {
+    let source =
+        std::fs::read_to_string(manifest_dir().join("ui").join("src").join("main.ts")).unwrap();
+
+    for name in ["closeContextMenu", "closeDetails", "closePreview"] {
+        let definitions = source.matches(&format!("function {name}(")).count();
+        assert_eq!(
+            definitions, 1,
+            "{name} should be defined exactly once, not duplicated for a second call site"
+        );
+    }
+
+    let lock_body = between(&source, "async function lock(): Promise<void> {", "\n}");
+    let unload_body = between(&source, "\"beforeunload\", () => {", "\n  });");
+
+    for name in ["closeContextMenu", "closeDetails", "closePreview"] {
+        let call = format!("{name}();");
+        assert!(
+            lock_body.contains(&call),
+            "lock() should call {call} to clear preview/details state on lock (Design §8.10, FR-3)"
+        );
+        assert!(
+            unload_body.contains(&call),
+            "the beforeunload handler should call {call}, the same routine lock() uses"
+        );
+    }
+}
+
+/// The text between the end of `start` and the next occurrence of `end` —
+/// enough to isolate one function's body from the rest of the file
+/// without a full parser.
+fn between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_idx = source.find(start).expect("start marker not found") + start.len();
+    let rest = &source[start_idx..];
+    let end_idx = rest.find(end).expect("end marker not found");
+    &rest[..end_idx]
 }
 
 /// The `tauri` crate's resolved feature set for this package, via

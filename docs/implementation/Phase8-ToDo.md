@@ -119,10 +119,10 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.7.a | Not yet built | One clearing routine, called from every path that ends a preview: closing the overlay revokes any object URL created for it (P8.6.c) and drops the held payload reference | FR-30, Spec §5.3 | T8.19 |
-| P8.7.b | Not yet built | `lock()`'s existing clearing sequence (already clears `allEntries`, `selectedIds`, etc.) extended to also call P8.7.a's routine and dismiss the details panel if open — the same function reference, not a parallel one written for this call site | FR-3, FR-30, Design §8.10 | T8.20 |
-| P8.7.c | Not yet built | The same routine runs on application exit (`beforeunload`), rather than a second implementation of "clear preview state" written for that event | FR-30, Spec §5.3 | T8.21 |
-| P8.7.d | Not yet built | None of P8.7.a–c surfaces a visible message — Design §8.10 is explicit that this is not an event worth announcing, only a defect if it fails to happen | Design §8.10, §7 | T8.22 |
+| P8.7.a | Done | `closePreview()`: revokes the object URL a successful image preview created (`previewObjectUrl`) and clears `#preview-body`. Built alongside P8.6 itself, since a correct `openPreview()` needed somewhere to clean up on close from the start — not deferred and then added here | FR-30, Spec §5.3 | T8.19 |
+| P8.7.b | Done | `lock()` calls `closeContextMenu()`, `closeDetails()`, and `closePreview()` — also built alongside P8.4–P8.6, for the same reason: leaving any of the three open across a lock, even one nested inside `#screen-vault` and so already hidden visually, would leave its content and (for preview) its object URL sitting uncleared | FR-3, FR-30, Design §8.10 | T8.20 |
+| P8.7.c | Done | `beforeunload` calls the identical `closeContextMenu()`/`closeDetails()`/`closePreview()` `lock()` calls — proved, not just written, by `tests/structure.rs`'s new T8.21: each of the three is defined exactly once, and both call sites' source text contains all three calls | FR-30, Spec §5.3 | T8.21 |
+| P8.7.d | Done | None of P8.7.a–c surfaces a visible message — confirmed by inspection: none of the three functions calls `setStatus`, `openModal`, or anything else that would announce itself | Design §8.10, §7 | T8.22 |
 
 ---
 
@@ -132,7 +132,7 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.8.a | Not yet built | A failed integrity check surfaced through `preview_entry` (the same `Corrupt`-family error `extract` already reports) is shown inside the preview overlay with the identical wording the existing extraction-failure path uses elsewhere in this screen — reusing that string/formatting function, not a preview-specific rewrite of it | FR-18, FR-30, Design §6, §8.10 | T8.23 |
+| P8.8.a | Done | New shared module `ui/src/damage.ts`'s `damagedFileMessage(name, removedCopy)` implements Design §6's three-part verification-failure message (damaged, copy removed, other files unaffected) for the first time on either surface — **found while implementing this item:** neither `extract()` nor the CLI's `save-copy` ever actually composed §6's specific wording; both just showed the raw underlying error text through a generic fallback. `extract()`'s catch block and `openPreview()`'s catch block now both call the same function for a `Corrupt`-kind error, `removedCopy: true` only for `extract()` (preview never writes anywhere to remove, T7.13/T7.14) — proving "worded exactly as an extraction failure" by sharing the function rather than by copying a string between two call sites. The CLI's own `save-copy` is left as it was; implementing §6 there too would reopen Phase 3's closed record, out of this phase's scope | FR-18, FR-30, Design §6, §8.10 | T8.23 |
 
 ---
 
@@ -180,3 +180,4 @@ The grouping control offers none/folder/extension and groups collapse and expand
 
 - **Whether P7.5's still-open "base64 payload size near C-5's cap" question gets resolved here.** Phase 8 is the first place a frontend actually receives a `preview_entry` payload over IPC, so a real near-cap image fixture, exercised through this phase's overlay, is the natural place to finally measure it — carried over from Phase 7's own open item rather than restated as new.
 - **Preview's keyboard shortcut and a collapsed group's exact visual treatment**, per Design Guideline §9, remain open past this phase's exit — neither blocks it, per the Plan's own sequencing note.
+- **`veil_core::Error::Corrupt`'s own `Display` text says "N entr{y,ies} affected" — the fixed vocabulary's own forbidden word, in the one place neither audit looks.** Found while writing P8.8: `crates/veil-cli/tests/audits.rs`'s T3.31 and `crates/veil-gui/tests/vocabulary.rs`'s T6.31 both scan literal source strings, but this text is composed at runtime inside `veil-core`, and neither audit's fixtures ever provoke a genuinely corrupted vault to see what it actually prints. `damagedFileMessage` (P8.8.a) never repeats this text — it composes its own wording from the file's name and a fixed clause, so nothing this phase's own strings say is affected. Fixing `veil-core`'s own `Display` implementation is out of this phase's scope (Phase 0–4's closed record, per the Plan's own scope note); resolver: a future phase, or a `veil-core` patch, once someone decides whether an audit should be extended to cover genuinely-corrupted fixtures at all.
