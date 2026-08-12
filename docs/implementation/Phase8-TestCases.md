@@ -64,8 +64,8 @@ Collapse a group, then switch the grouping control to a different option; separa
 ### T8.4 — Comparators sort correctly per column, ascending and descending
 *Covers P8.2.b, P8.2.c · Verifies Design §3.2*
 
-Run `sort.ts`'s four comparators (name, folder, size, added) under `node`, via the esbuild-bundle-and-shell mechanism T7.4 established, against a fixture list including mixed-case names, equal sizes, and equal timestamps.
-**Verdict:** name and folder sort case-insensitively; size and added sort numerically; each comparator's reversed form (for descending) produces the exact reverse of its ascending output, including a stable order for equal keys.
+Run `sort.ts`'s four comparators (name, folder, size, added) under `node`, via the esbuild-bundle-and-shell mechanism T7.4 established, against a fixture list including mixed-case names and two rows tied on folder, size, and added.
+**Verdict:** name and folder sort case-insensitively; size and added sort numerically. Descending negates the ascending comparator rather than reversing the ascending-sorted array, so for keys with no tie the two are identical, but a tied pair keeps its own original relative order in *both* directions — only the distinct groups around it swap position. This is deliberate: a person clicking a header twice should see only what actually differs reorder, not a tied pair's own order flip for no visible reason.
 
 ### T8.5 — Clicking a header cycles ascending, then descending; a different header resets
 *Covers P8.2.a, P8.2.b, P8.2.d · Verifies Design §3.2*

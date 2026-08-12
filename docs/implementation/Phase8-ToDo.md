@@ -38,10 +38,10 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.1.a | Not yet built | `#group-toggle`'s boolean checkbox replaced with a three-way control (none / folder / extension); module state `grouping: 'none' \| 'folder' \| 'extension'` replaces `grouped: boolean` in `main.ts` | FR-8, FR-29, Design §3.2 | T8.1 |
-| P8.1.b | Not yet built | `renderList()` gains an extension-grouping branch, wiring up P7.2.b's dormant `extensionOf` (`ui/src/extension.ts`) as its first caller anywhere in the frontend; the no-extension bucket is a reserved group, labelled the same way the CLI's `(no extension)` group is (T7.5), so the two peers agree | FR-29, Design §3.2 | T8.1 |
-| P8.1.c | Not yet built | Per-group collapse/expand: a `Set<string>` of collapsed group keys in module state; a collapsed header still renders its row count | Design §3.2 | T8.2 |
-| P8.1.d | Not yet built | Changing the grouping choice, or a lock/reopen cycle, clears the collapsed-set back to empty (every group expanded) | Design §3.2 | T8.3 |
+| P8.1.a | Done | `#group-toggle`'s boolean checkbox replaced with `#group-select`, a three-way `<select>` (none / folder / extension); module state `grouping: 'none' \| 'folder' \| 'extension'` replaces `grouped: boolean` in `main.ts` | FR-8, FR-29, Design §3.2 | T8.1 |
+| P8.1.b | Done | `renderList()` gains an extension-grouping branch, wiring up P7.2.b's dormant `extensionOf` (`ui/src/extension.ts`) as its first caller anywhere in the frontend; the no-extension bucket is a reserved group, labelled `(no extension)` the same way the CLI's peer group is (T7.5) | FR-29, Design §3.2 | T8.1 |
+| P8.1.c | Done | Per-group collapse/expand: a `Set<string>` of collapsed group keys in module state, toggled by clicking a `.group-header`; a collapsed header still renders its row count (`list.ts`'s `ListRow` group variant gained `key`/`count`/`collapsed`) | Design §3.2 | T8.2 |
+| P8.1.d | Done | Changing the grouping choice (the `#group-select` change handler), or a lock/reopen cycle (`enterVault()`), clears the collapsed-set back to empty (every group expanded) | Design §3.2 | T8.3 |
 
 ---
 
@@ -51,10 +51,10 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.2.a | Not yet built | The four column headers (`col-name`, `col-folder`, `col-size`, `col-added` in `index.html`) become clickable, each with an arrow glyph shown only on the active column | Design §3.2 | T8.5 |
-| P8.2.b | Not yet built | Sort state `{ column, direction }` in `main.ts`; first click on a header sorts ascending by it, a second click on the same header reverses to descending, a click on a different header resets to ascending on the new one | Design §3.2 | T8.4, T8.5 |
-| P8.2.c | Not yet built | Comparator logic extracted as pure functions in a new module, `ui/src/sort.ts` (one comparator per column: case-insensitive string for name/folder, numeric for size, numeric for added), so it is testable the way `extension.ts` is rather than only by driving the DOM; applied within each group when grouped, across the whole list when not | Design §3.2 | T8.4, T8.6 |
-| P8.2.d | Not yet built | No separate sort control exists in the controls bar — sort is reached only by clicking a header, per Design §3.2 | Design §3.2 | T8.5 |
+| P8.2.a | Done | The four column headers (`col-name`, `col-folder`, `col-size`, `col-added` in `index.html`) gained `data-column` and a nested `.sort-arrow` span; clickable via a listener on `#list-header`, styled with a pointer cursor | Design §3.2 | T8.5 |
+| P8.2.b | Done | Sort state `sortColumn: SortColumn \| null` / `sortDirection` in `main.ts`; first click on a header sorts ascending by it, a second click on the same header reverses to descending, a click on a different header resets to ascending on the new one; `updateSortArrows()` reflects the active column/direction | Design §3.2 | T8.4, T8.5 |
+| P8.2.c | Done | Comparator logic extracted as pure functions in a new module, `ui/src/sort.ts` (case-insensitive `localeCompare` for name/folder, numeric subtraction for size/added), tested the way `extension.ts` is (`crates/veil-gui/tests/sort.rs`) rather than only by driving the DOM. `renderList()` applies `applySort()` to the flat list *before* bucketing into groups, so each group's bucket inherits the already-sorted order — no second per-group sort pass needed. **One correction found while testing:** descending negates the ascending comparator rather than reversing the ascending-sorted array; for a stable sort these agree only when no two rows tie — a tied pair keeps its own relative order in both directions. T8.4's fixture and Phase8-TestCases.md's verdict were corrected to describe this rather than the (wrong) "exact reverse including ties" claim the test first asserted and failed | Design §3.2 | T8.4, T8.6 |
+| P8.2.d | Done | No separate sort control exists in the controls bar — sort is reached only by clicking a header, per Design §3.2 | Design §3.2 | T8.5 |
 
 ---
 

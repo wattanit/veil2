@@ -6,7 +6,9 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "./api";
 import type { EntryInfo } from "./api";
+import { extensionOf } from "./extension";
 import { EntryList, type ListRow } from "./list";
+import { sortEntries, type SortColumn, type SortDirection } from "./sort";
 
 const MIN_PASSWORD_LENGTH = 12; // C-4, mirrored client-side; veil-core is the authority.
 
@@ -52,7 +54,23 @@ let currentSummary: api.VaultSummary | null = null;
 let allEntries: EntryInfo[] = [];
 let selectedId: number | null = null;
 let searchTerm = "";
-let grouped = false;
+
+// P8.1: one choice among none, by folder, and by extension (Design §3.2,
+// FR-8, FR-29) — never both dimensions at once.
+type Grouping = "none" | "folder" | "extension";
+let grouping: Grouping = "none";
+
+// Which groups are collapsed, by group key. Cleared whenever the grouping
+// choice changes or the vault is locked and reopened (Design §3.2) — never
+// otherwise, so a collapse survives an unrelated search or refresh.
+let collapsedGroups = new Set<string>();
+
+// P8.2: no sort until a header is clicked once — `null` means "whatever
+// order list_entries returned", the same order the list showed before this
+// phase. There is no separate sort control (Design §3.2); a header click is
+// the only way to reach either field.
+let sortColumn: SortColumn | null = null;
+let sortDirection: SortDirection = "asc";
 
 // ------------------------------------------------------- first run (§8.1) -
 
@@ -248,6 +266,7 @@ async function enterVault(summary: api.VaultSummary): Promise<void> {
   clearSelection();
   searchTerm = "";
   el<HTMLInputElement>("search-input").value = "";
+  collapsedGroups.clear();
   el<HTMLElement>("identity-name").textContent = vaultNameFromPath(currentPath);
   const readonlyNote = el<HTMLElement>("identity-readonly-note");
   readonlyNote.hidden = summary.access !== "readOnly";
@@ -298,26 +317,59 @@ function visibleEntries(): EntryInfo[] {
   );
 }
 
-// P6.5.b: a flat grouping view, not a tree — one level, no create/rename/drag.
+// P6.5.b, P8.1: a flat grouping view, not a tree — one level, no
+// create/rename/drag, only collapse/expand (Design §3.2).
+function groupKey(entry: EntryInfo): string {
+  return grouping === "extension" ? extensionOf(entry.name) ?? "" : entry.folder;
+}
+
+// Never empty — an empty key gets the grouping mode's own reserved label
+// (Design §3.2), the same word the CLI's peer output uses for the same
+// case (`output::label` in `veil-cli`) where a shared word exists.
+function groupLabel(key: string): string {
+  if (key !== "") {
+    return key;
+  }
+  return grouping === "extension" ? "(no extension)" : "(root)";
+}
+
+// P8.2.c: applied before grouping, not after — a `Map`'s buckets fill in
+// the order entries are pushed into them, so sorting the flat list first
+// leaves each group's own bucket in that same sorted order, with no second
+// sort pass needed per group.
+function applySort(entries: EntryInfo[]): EntryInfo[] {
+  return sortColumn === null ? entries : sortEntries(entries, sortColumn, sortDirection);
+}
+
 function renderList(): void {
-  const entries = visibleEntries();
-  if (!grouped) {
+  const entries = applySort(visibleEntries());
+  if (grouping === "none") {
     list.setRows(entries.map((entry): ListRow => ({ kind: "entry", entry })));
     return;
   }
-  const byFolder = new Map<string, EntryInfo[]>();
+  const byGroup = new Map<string, EntryInfo[]>();
   for (const entry of entries) {
-    const bucket = byFolder.get(entry.folder) ?? [];
+    const key = groupKey(entry);
+    const bucket = byGroup.get(key) ?? [];
     bucket.push(entry);
-    byFolder.set(entry.folder, bucket);
+    byGroup.set(key, bucket);
   }
   const rows: ListRow[] = [];
-  for (const [folder, entriesInFolder] of [...byFolder.entries()].sort(([a], [b]) =>
+  for (const [key, entriesInGroup] of [...byGroup.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    rows.push({ kind: "group", label: folder });
-    for (const entry of entriesInFolder) {
-      rows.push({ kind: "entry", entry });
+    const collapsed = collapsedGroups.has(key);
+    rows.push({
+      kind: "group",
+      key,
+      label: groupLabel(key),
+      count: entriesInGroup.length,
+      collapsed,
+    });
+    if (!collapsed) {
+      for (const entry of entriesInGroup) {
+        rows.push({ kind: "entry", entry });
+      }
     }
   }
   list.setRows(rows);
@@ -327,8 +379,44 @@ el<HTMLInputElement>("search-input").addEventListener("input", (event) => {
   searchTerm = (event.target as HTMLInputElement).value;
   renderList();
 });
-el<HTMLInputElement>("group-toggle").addEventListener("change", (event) => {
-  grouped = (event.target as HTMLInputElement).checked;
+el<HTMLSelectElement>("group-select").addEventListener("change", (event) => {
+  grouping = (event.target as HTMLSelectElement).value as Grouping;
+  // Design §3.2: changing the grouping choice returns every group to
+  // expanded — the previous mode's collapsed keys have no meaning under
+  // the new one anyway (a folder path is not an extension).
+  collapsedGroups.clear();
+  renderList();
+});
+
+// P8.2.a, P8.2.b: a click on a header sorts ascending by it; a second click
+// on the same header reverses to descending; a click on a different header
+// starts that column over at ascending.
+function updateSortArrows(): void {
+  for (const header of el<HTMLElement>("list-header").querySelectorAll<HTMLElement>(
+    "[data-column]",
+  )) {
+    const arrow = header.querySelector<HTMLElement>(".sort-arrow");
+    if (!arrow) {
+      continue;
+    }
+    arrow.textContent =
+      header.dataset.column === sortColumn ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
+  }
+}
+
+el<HTMLElement>("list-header").addEventListener("click", (event) => {
+  const header = (event.target as HTMLElement).closest<HTMLElement>("[data-column]");
+  const column = header?.dataset.column as SortColumn | undefined;
+  if (!column) {
+    return;
+  }
+  if (sortColumn === column) {
+    sortDirection = sortDirection === "asc" ? "desc" : "asc";
+  } else {
+    sortColumn = column;
+    sortDirection = "asc";
+  }
+  updateSortArrows();
   renderList();
 });
 
@@ -573,7 +661,19 @@ function clearSelection(): void {
 
 function setupSelection(): void {
   el<HTMLElement>("list-spacer").addEventListener("click", (event) => {
-    const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
+    const target = event.target as HTMLElement;
+    const groupHeader = target.closest<HTMLElement>(".group-header");
+    if (groupHeader) {
+      const key = groupHeader.dataset.key ?? "";
+      if (collapsedGroups.has(key)) {
+        collapsedGroups.delete(key);
+      } else {
+        collapsedGroups.add(key);
+      }
+      renderList();
+      return;
+    }
+    const row = target.closest<HTMLElement>(".entry-row");
     const id = row?.dataset.id;
     selectedId = id === undefined ? null : Number(id);
     for (const rowEl of el<HTMLElement>("list-spacer").querySelectorAll(".entry-row")) {

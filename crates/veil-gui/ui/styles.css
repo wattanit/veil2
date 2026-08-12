@@ -129,6 +129,22 @@ body {
   padding: 0 8px;
 }
 
+/* P8.2: every column header sorts on click — the whole span is the target,
+   not just its text, and there is no separate sort control anywhere else
+   (Design §3.2). */
+#list-header > span[data-column] {
+  cursor: pointer;
+  user-select: none;
+}
+
+#list-header > span[data-column]:hover {
+  color: var(--text);
+}
+
+.sort-arrow {
+  font-size: 0.85em;
+}
+
 #list-scroll {
   flex: 1;
   overflow-y: auto;
@@ -301,7 +317,8 @@ body {
 
 input[type="text"],
 input[type="password"],
-input[type="search"] {
+input[type="search"],
+select {
   font: inherit;
   color: inherit;
   background: var(--surface-raised);
@@ -309,6 +326,10 @@ input[type="search"] {
   border-radius: var(--radius-sm);
   padding: 6px 8px;
   transition: border-color 120ms ease;
+}
+
+select {
+  cursor: default;
 }
 
 button {
@@ -337,6 +358,7 @@ input[type="text"]:focus-visible,
 input[type="password"]:focus-visible,
 input[type="search"]:focus-visible,
 input[type="checkbox"]:focus-visible,
+select:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -565,8 +587,10 @@ button.primary.working::after {
   font-size: var(--font-metadata);
 }
 
-/* §3.2: a flat grouping header — no expand/collapse chrome implies
-   nesting; there is exactly one level, per §1.2's "not a tree". */
+/* §3.2: a flat grouping header — clicking it collapses or expands its own
+   rows, but it still cannot be renamed, created, or dragged, and there is
+   still exactly one level (§1.2's "not a tree"); collapse/expand chrome
+   does not imply nesting the way an indented disclosure triangle would. */
 .group-header {
   position: absolute;
   left: 0;
@@ -574,6 +598,7 @@ button.primary.working::after {
   height: var(--row-height);
   display: flex;
   align-items: center;
+  gap: 6px;
   padding: 0 8px;
   background: var(--surface-raised);
   color: var(--text-muted);
@@ -584,6 +609,41 @@ button.primary.working::after {
      uppercasing it would hurt reading a real name back. */
   letter-spacing: 0.02em;
   border-bottom: 1px solid var(--border);
+  cursor: default;
+  user-select: none;
+}
+
+.group-header:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
+}
+
+/* A right-pointing triangle that rotates to point down when expanded —
+   collapsed is the "closed" shape, matching Finder's own convention. */
+.group-caret {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--text-muted);
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+  flex: none;
+}
+
+.group-header.collapsed .group-caret {
+  transform: rotate(0deg);
+}
+
+.group-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 /* ------------------------------------------------------------------ modal */

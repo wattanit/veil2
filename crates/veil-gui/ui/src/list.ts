@@ -8,8 +8,14 @@ const ROW_HEIGHT = 28;
 const OVERSCAN = 4;
 
 // A group header renders differently from an entry row (P6.5.b) and has no
-// entry of its own to carry.
-export type ListRow = { kind: "entry"; entry: EntryInfo } | { kind: "group"; label: string };
+// entry of its own to carry. `key` identifies the group for collapse
+// tracking (P8.1.c) independently of `label`, which is the resolved,
+// never-empty text main.ts has already chosen for the group's grouping mode
+// (e.g. "(no extension)") — this module renders it as-is rather than
+// re-deriving a fallback for an empty group.
+export type ListRow =
+  | { kind: "entry"; entry: EntryInfo }
+  | { kind: "group"; key: string; label: string; count: number; collapsed: boolean };
 
 export class EntryList {
   private rows: ListRow[] = [];
@@ -90,9 +96,13 @@ export class EntryList {
   private renderRow(el: HTMLDivElement, row: ListRow, index: number): void {
     el.style.top = `${index * ROW_HEIGHT}px`;
     if (row.kind === "group") {
-      el.className = "group-header";
+      el.className = row.collapsed ? "group-header collapsed" : "group-header";
       delete el.dataset.id;
-      el.textContent = row.label || "(root)";
+      el.dataset.key = row.key;
+      el.innerHTML =
+        '<span class="group-caret" aria-hidden="true"></span>' +
+        `<span class="group-label">${escapeHtml(row.label)}</span>` +
+        `<span class="group-count">${row.count.toLocaleString()}</span>`;
       return;
     }
     const entry = row.entry;
