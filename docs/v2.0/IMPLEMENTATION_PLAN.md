@@ -31,7 +31,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 2. Tests exist at the level the Spec's testing strategy (§9) prescribes for that kind of work.
 3. `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test`, `cargo deny check`, `cargo audit` all pass locally (Spec §8.1). There is no CI; these gates run before every commit.
 
-**Per-phase to-do lists and test cases** live in `docs/implementation/`, one pair per phase, each citing the requirement it verifies. They are written as each phase is reached, against this plan's task list for that phase.
+**Per-phase to-do lists and test cases** live in `docs/v2.0/implementation/`, one pair per phase, each citing the requirement it verifies. They are written as each phase is reached, against this plan's task list for that phase.
 
 ---
 
