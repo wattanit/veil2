@@ -4569,7 +4569,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "veil-cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4583,7 +4583,7 @@ dependencies = [
 
 [[package]]
 name = "veil-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "aead-stream",
  "argon2",
@@ -4607,7 +4607,7 @@ dependencies = [
 
 [[package]]
 name = "veil-gui"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "serde",
  "serde_json",

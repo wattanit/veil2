@@ -17,7 +17,7 @@ Veil2 is not a mounted encrypted volume. A vault is a `.veil` bundle you create,
 
 ## Status
 
-Version 2.0.0. Builds for, ships on, and makes claims about **macOS only** — Windows and Linux are not built and not scheduled. One shared core library drives both a command-line application and a graphical application.
+Version 2.0.1. Builds for, ships on, and makes claims about **macOS only** — Windows and Linux are not built and not scheduled. One shared core library drives both a command-line application and a graphical application.
 
 ## Repository layout
 

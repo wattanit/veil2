@@ -249,9 +249,17 @@ pub async fn open_fixture_vault<R: Runtime>(app: AppHandle<R>) -> Result<VaultSu
 /// A native dialog for choosing where a vault is, or will be (P6.0.c,
 /// Design §5, §8.1, §8.2). `mode` is `"open"` (an existing `.veil`
 /// directory) or `"create"` (a new one, named here the same way a native
-/// Save panel names any new file — `.veil` is a directory Finder treats as
-/// an ordinary one without a bundle registration this phase does not add,
-/// which P6.14's packaging work owns).
+/// Save panel names any new file).
+///
+/// `"open"` picks a *file*, not a folder, despite a vault being a
+/// directory on disk. `.veil` is registered as a package-conforming UTI
+/// (P6.14's packaging work), which is what makes Finder show a vault as
+/// one document rather than a browsable folder — but it also means macOS
+/// no longer treats a `.veil` directory as a valid folder-picker
+/// selection at all (the same way you pick a `.app` or `.rtfd` through an
+/// Open File panel, never an Open Folder one). A folder picker here
+/// stopped being able to select a vault the moment that registration
+/// landed; confirmed live.
 #[tauri::command]
 pub async fn choose_vault_path<R: Runtime>(
     app: AppHandle<R>,
@@ -260,7 +268,11 @@ pub async fn choose_vault_path<R: Runtime>(
     run_blocking(move || {
         use tauri_plugin_dialog::DialogExt;
         let chosen = match mode.as_str() {
-            "open" => app.dialog().file().blocking_pick_folder(),
+            "open" => app
+                .dialog()
+                .file()
+                .add_filter("Veil2 Vault", &["veil"])
+                .blocking_pick_file(),
             "create" => app
                 .dialog()
                 .file()
