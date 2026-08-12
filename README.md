@@ -125,5 +125,7 @@ There is no CI pipeline; these run locally.
 - [`docs/Requirements.md`](docs/Requirements.md) — what Veil2 must do, and why. Start here.
 - [`docs/DesignGuideline.md`](docs/DesignGuideline.md) — visual language, interaction policy, and the fixed vocabulary both applications use.
 - [`docs/TechnicalSpecification.md`](docs/TechnicalSpecification.md) — the format, the cryptographic construction, and the build.
+- [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — how the 2.1 work is sequenced into phases.
+- [`docs/implementation/`](docs/implementation/) — per-phase to-do lists and test cases for 2.1, written as each phase is reached.
 - [`docs/v2.0/IMPLEMENTATION_PLAN.md`](docs/v2.0/IMPLEMENTATION_PLAN.md) — how the 2.0.0 work was sequenced into phases.
 - [`docs/v2.0/implementation/`](docs/v2.0/implementation/) — per-phase to-do lists and test cases for 2.0.0, the record of what was actually verified.
