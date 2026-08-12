@@ -52,10 +52,10 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.2.a | Not yet built | Rust implementation of FR-29's rule: substring of `name` after its last `.`, none if that `.` is the first character or nothing follows it (a trailing dot), lowercased for comparison | FR-29 | T7.4 |
-| P7.2.b | Not yet built | TypeScript implementation of the same rule, as a small pure module (`crates/veil-gui/ui/src/extension.ts`) exporting one function — no other frontend change in this phase, since the grouping control it feeds is Phase 8's work | FR-29 | T7.4 |
-| P7.2.c | Not yet built | One shared fixture list of name → expected-extension pairs, read by both implementations' tests rather than duplicated by hand into two literals | FR-29, Spec §9 | T7.4 |
-| P7.2.d | Not yet built | A Rust test (`crates/veil-gui/tests/extension_parity.rs`) that runs the TypeScript function under `node` against the fixture list and diffs its output against the Rust implementation's — mechanical parity with no new frontend test-framework dependency, the same proportionality call Phase 5 made declining a WebDriver suite | FR-29, Spec §7, §9 | T7.4 |
+| P7.2.a | Done | Rust implementation of FR-29's rule (`crates/veil-cli/src/extension.rs`): substring of `name` after its last `.`, none if that `.` is the first character or nothing follows it (a trailing dot), lowercased for comparison | FR-29 | T7.4 |
+| P7.2.b | Done | TypeScript implementation of the same rule, as a small pure module (`crates/veil-gui/ui/src/extension.ts`) exporting one function — no other frontend change in this phase, since the grouping control it feeds is Phase 8's work | FR-29 | T7.4 |
+| P7.2.c | Done | One shared fixture list of name → expected-extension pairs, living once in `tests/extension_parity.rs`, checked against both implementations there rather than copied into a second literal | FR-29, Spec §9 | T7.4 |
+| P7.2.d | Done | A Rust test, relocated to `crates/veil-cli/tests/extension_parity.rs` (not `veil-gui` as first planned — the Rust half of the rule lives in `veil-cli`, since that is its actual consumer via `--group`, so the parity check belongs beside it) — a minimal `src/lib.rs` was added to `veil-cli` so the integration test could call `extension_of` directly rather than through a subprocess. It bundles `extension.ts` with the frontend's own `esbuild` (no new dependency) and runs the result under `node` | FR-29, Spec §7, §9 | T7.4 |
 
 ---
 
