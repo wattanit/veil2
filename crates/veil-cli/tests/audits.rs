@@ -7,10 +7,11 @@ mod harness;
 
 use harness::{Scratch, run};
 
-const COMMANDS: [&str; 9] = [
+const COMMANDS: [&str; 10] = [
     "create",
     "add",
     "list",
+    "detail",
     "save-copy",
     "replace",
     "delete",
@@ -51,6 +52,10 @@ fn everything_it_says(scratch: &Scratch) -> String {
         ],
         vec!["list".into(), vault.clone()],
         vec!["list".into(), vault.clone(), "--group".into()],
+        vec!["list".into(), vault.clone(), "--group=extension".into()],
+        vec!["detail".into(), vault.clone(), "docs/report.pdf".into()],
+        // Refused: no such file (FR-28's NotFound path, same words as delete's).
+        vec!["detail".into(), vault.clone(), "docs/ghost.pdf".into()],
         vec!["info".into(), vault.clone()],
         vec!["check".into(), vault.clone()],
         vec![
@@ -192,6 +197,8 @@ fn t3_32_nothing_leaks_into_any_output() {
     let destination = scratch.path("out.txt");
     for args in [
         vec!["list", &vault],
+        vec!["list", &vault, "--group=extension"],
+        vec!["detail", &vault, "hr/notes.txt"],
         vec!["info", &vault],
         vec!["check", &vault],
         vec![

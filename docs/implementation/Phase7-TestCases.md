@@ -78,11 +78,11 @@ Run the Rust function and, via `node`, the TypeScript function against one share
 Add files of several extensions, including one with none, then `list --group=extension` in table and JSON.
 **Verdict:** one group per distinct extension, lowercased, the extensionless file under its own reserved group, in both output modes.
 
-### T7.6 — Bare `--group` is unchanged
-*Covers P7.3.a, P7.6.b · Verifies FR-29, A-4*
+### T7.6 — Bare `--group`'s table output is unchanged; its JSON output is not
+*Covers P7.3.a, P7.3.c, P7.6.b · Verifies FR-29, A-4*
 
-Run `list --group` against a vault with entries in several folders; compare its output against a recording of the same command taken before this phase's change.
-**Verdict:** byte-identical output. Folder grouping behaves exactly as it did before `--group` took a value.
+Run `list --group` (table) against a vault with entries in several folders; compare its output against a recording of the same command taken before this phase's change. Then run `list --group --format json` against the same vault.
+**Verdict:** the table is byte-identical to the pre-change recording. The JSON is **not** identical to before — it now groups (`{"groups": [...]}`) where it previously always printed a flat `{"files": [...]}` regardless of `--group`. This is the one documented exception to "no script observes any difference" (Spec §5.2): the prior JSON behavior was never documented or tested as intentional, so this is a gap closed, not a behavior broken.
 
 ### T7.7 — Omitted `--group` stays flat
 *Covers P7.3.a, P7.6.b · Verifies FR-29*
@@ -155,10 +155,8 @@ Add a file whose content and whose name both contain a distinctive marker. Call 
 ## Vocabulary
 
 ### T7.16 — New CLI strings hold the fixed vocabulary
-*Covers P7.6.c · Verifies Design §7*
 
-Collect `detail`'s help text, `--group`'s help text, and every refusal message this phase adds (unsupported extension, over-cap, invalid text), and search for Design §7's forbidden words and off-vocabulary terms.
-**Verdict:** none appears.
+**Superseded — no separate case.** `detail`'s and `--group`'s help text and refusal messages are checked by extending `tests/audits.rs`'s existing T3.31 (vocabulary) and T3.32 (disclosure) to scan them, rather than by a second scanner built to do the same thing (P7.6.c). One real finding this surfaced: the `GroupBy` enum's own doc comments, which clap turns into `--help`'s "Possible values" text, said "each entry's..." — caught by T3.31, fixed to "each file's...". `preview_entry`'s own refusal messages (unsupported extension, over-cap, invalid text) are not yet coverable here — they do not exist until P7.4 — and will be added to the same two audits' scan lists when Preview is built, rather than reopening this case number for them.
 
 ---
 

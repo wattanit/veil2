@@ -65,9 +65,9 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.3.a | Not yet built | `--group` becomes `clap`'s optional-value form: omitted stays flat, bare defaults to `folder`, `--group=extension` is new | FR-29, Spec §5.2 | T7.5, T7.6, T7.7 |
-| P7.3.b | Not yet built | Table output grouped by extension, group label lowercased, one reserved group for entries with none | FR-29, Design §3.2 | T7.5 |
-| P7.3.c | Not yet built | JSON output carries the same grouping | FR-29, Design §3.4 | T7.5 |
+| P7.3.a | Done | `--group` becomes `clap`'s optional-value form (`num_args = 0..=1`, `require_equals = true`, `default_missing_value = "folder"`): omitted stays flat, bare defaults to `folder`, `--group=extension` is new. Table output for a bare `--group` is unchanged byte-for-byte | FR-29, Spec §5.2 | T7.5, T7.6, T7.7 |
+| P7.3.b | Done | Table output grouped by extension, group label lowercased, one reserved group (`(no extension)`) for entries with none | FR-29, Design §3.2 | T7.5 |
+| P7.3.c | Done | JSON output carries the same grouping (`{"groups": [{"group": ..., "files": [...]}]}`, `group: null` for the no-extension bucket) — **new for a bare `--group` too**: JSON ignored `--group` entirely before this task and always printed a flat listing, undocumented and untested, so this closes a gap rather than preserving one. Built from the same `output::group_key` the table renders by, so the two output modes cannot disagree about what a group is | FR-29, Design §3.4 | T7.5 |
 
 ---
 
@@ -102,9 +102,9 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.6.a | Not yet built | `assert_cmd` coverage for `detail`, found and not-found, table and JSON | Spec §9, A-4 | T7.1, T7.2, T7.3 |
-| P7.6.b | Not yet built | `assert_cmd` coverage for `list --group`, omitted / bare / `=extension`, including a regression case asserting bare `--group` is byte-identical to its pre-Phase-7 output | Spec §9, A-4 | T7.5, T7.6, T7.7 |
-| P7.6.c | Not yet built | Every string this phase adds — `detail`'s and `--group`'s help text, every refusal message — searched against Design §7's forbidden words and fixed vocabulary | Design §7 | T7.16 |
+| P7.6.a | Done | `assert_cmd` coverage for `detail`, found and not-found, table and JSON | Spec §9, A-4 | T7.1, T7.2, T7.3 |
+| P7.6.b | Done | `assert_cmd` coverage for `list --group`, omitted / bare / `=extension`, including a case confirming bare `--group`'s table output is byte-identical to its pre-Phase-7 form and a case confirming its JSON output is not (P7.3.c) | Spec §9, A-4 | T7.5, T7.6, T7.7 |
+| P7.6.c | Done | **No separate mechanism written.** `tests/audits.rs`'s existing T3.31/T3.32 already scan every command's `--help` text and a run over the whole surface including failure paths (Design §7); `detail`, `detail`'s not-found case, and `list --group=extension` were added to what they scan, in both audits, rather than building a second scanner for the same thing. One real finding from running it: the `GroupBy` enum's own doc comments — clap's source for its `--help` "Possible values" text — said "each entry's...", which T3.31 correctly failed on; fixed to "each file's..." | Design §7 | T3.31, T3.32 |
 
 ---
 
