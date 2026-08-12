@@ -1,6 +1,6 @@
-//! Phase 5 test cases T5.5, T5.6, and T5.7, and Phase 6's T6.32 —
-//! properties of the shell's configuration and dependency graph rather
-//! than of behaviour (Spec §5.3, HC-1, Requirements §2.1, §8).
+//! Phase 5 test cases T5.5, T5.6, and T5.7, Phase 6's T6.32, and Phase 7's
+//! T7.15 — properties of the shell's configuration and dependency graph
+//! rather than of behaviour (Spec §5.3, HC-1, Requirements §2.1, §8).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -134,6 +134,51 @@ fn t6_32_the_release_states_its_platform() {
             "bundle target {name:?} is not one of this release's macOS targets"
         );
     }
+}
+
+/// T7.15 (P7.7.b) — no `tracing` call, and no `tracing` dependency, exists
+/// anywhere in this crate.
+///
+/// `preview_entry` is the first place this crate handles new plaintext
+/// (Requirements C-5), so P7.7.b asks for the same "no log line names an
+/// operation's content" discipline every other command holds to. Read
+/// literally, though, no command here holds to that discipline by
+/// *logging carefully* — none of them logs at all. `veil-gui` carries no
+/// `tracing` dependency (only `veil-core`'s does, for its own guard,
+/// `tests/logging_guard.rs`, which cannot reach this crate's commands).
+/// So the guarantee is proved by construction, the same class of check
+/// T5.6 already makes for persistent storage APIs: absence, not careful
+/// use.
+#[test]
+fn t7_15_no_tracing_dependency_or_call_exists_in_veil_gui() {
+    let manifest = std::fs::read_to_string(manifest_dir().join("Cargo.toml")).unwrap();
+    assert!(
+        !manifest.contains("tracing"),
+        "veil-gui/Cargo.toml now depends on tracing — P7.7.b's \"proved by \
+         construction\" no longer holds; either instrument preview_entry \
+         (and audit what it logs) or keep this crate free of the dependency"
+    );
+
+    let mut offending = Vec::new();
+    let mut stack = vec![manifest_dir().join("src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if std::fs::read_to_string(&path).unwrap().contains("tracing") {
+                offending.push(path.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "tracing is referenced in this crate's own source, which the \
+         Cargo.toml check above did not expect:\n  {}",
+        offending.join("\n  ")
+    );
 }
 
 /// The `tauri` crate's resolved feature set for this package, via

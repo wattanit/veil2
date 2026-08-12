@@ -46,6 +46,10 @@ pub struct EntryInfo {
     pub folder: String,
     /// Plaintext length in bytes.
     pub size: u64,
+    /// The source file's own modification time, from before it was added,
+    /// as a Unix timestamp in seconds. Shown by the details panel (FR-28,
+    /// P7.1.a) as "Modified", distinct from `added_at`.
+    pub source_mtime: u64,
     /// When it was added (or last replaced, P6.16.d), as a Unix timestamp
     /// in seconds.
     pub added_at: u64,
@@ -62,6 +66,7 @@ impl EntryInfo {
             name: entry.name.clone(),
             folder: entry.folder.clone(),
             size: entry.size,
+            source_mtime: entry.source_mtime,
             added_at: entry.added_at,
             unreadable,
         }
@@ -160,8 +165,9 @@ impl<R: Runtime> Progress for EventProgress<R> {
 
 /// Runs `f` on a worker thread and flattens the join result into the same
 /// error type every command already returns, so each command site does not
-/// repeat that plumbing.
-async fn run_blocking<T, F>(f: F) -> Result<T, ErrorInfo>
+/// repeat that plumbing. `pub(crate)` so `preview` (P7.4) can reuse it rather
+/// than duplicate it.
+pub(crate) async fn run_blocking<T, F>(f: F) -> Result<T, ErrorInfo>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, ErrorInfo> + Send + 'static,
@@ -478,7 +484,7 @@ pub async fn replace_entry<R: Runtime>(
                 .iter()
                 .find(|e| e.id == id)
                 .map(|e| EntryInfo::from_entry(e, false))
-                .ok_or_else(|| internal("replaced entry not found in its own vault"))
+                .ok_or_else(|| internal("replaced file not found in its own vault"))
         })
     })
     .await

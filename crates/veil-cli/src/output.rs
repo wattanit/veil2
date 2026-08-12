@@ -6,8 +6,9 @@
 
 use std::io::Write;
 
-use crate::cli::Format;
+use crate::cli::{Format, GroupBy};
 use crate::failure::Run;
+use veil_cli::extension::extension_of;
 
 /// One file, as the table and the JSON both see it.
 #[derive(Debug, serde::Serialize)]
@@ -79,29 +80,21 @@ pub fn table(rows: &[FileRow]) -> Run<()> {
     Ok(())
 }
 
-/// The same listing, grouped by folder.
-pub fn grouped(rows: &[FileRow]) -> Run<()> {
+/// The same listing, grouped by folder or by extension (FR-8, FR-29).
+pub fn grouped(rows: &[FileRow], by: GroupBy) -> Run<()> {
     let mut out = std::io::stdout().lock();
     if rows.is_empty() {
         writeln!(out, "No files.")?;
         return Ok(());
     }
 
-    let mut folders: Vec<&str> = rows.iter().map(|r| r.folder.as_str()).collect();
-    folders.sort_unstable();
-    folders.dedup();
+    let mut keys: Vec<Option<String>> = rows.iter().map(|r| group_key(r, by)).collect();
+    keys.sort();
+    keys.dedup();
 
-    for folder in folders {
-        writeln!(
-            out,
-            "\n{}",
-            if folder.is_empty() {
-                "(no folder)"
-            } else {
-                folder
-            }
-        )?;
-        for row in rows.iter().filter(|r| r.folder == folder) {
+    for key in &keys {
+        writeln!(out, "\n{}", label(by, key.as_deref()))?;
+        for row in rows.iter().filter(|r| group_key(r, by) == *key) {
             writeln!(
                 out,
                 "  {}  {}  {}",
@@ -118,6 +111,30 @@ pub fn grouped(rows: &[FileRow]) -> Run<()> {
         plural(rows.len())
     )?;
     Ok(())
+}
+
+/// The group one row belongs to under `by`: a folder path, never absent, or
+/// a file extension, absent for a name with none (FR-29). `pub` so `report`
+/// builds grouped JSON from the same rule the table above renders by,
+/// rather than a second copy of it.
+#[must_use]
+pub fn group_key(row: &FileRow, by: GroupBy) -> Option<String> {
+    match by {
+        GroupBy::Folder => Some(row.folder.clone()),
+        GroupBy::Extension => extension_of(&row.name),
+    }
+}
+
+/// The heading one group prints under, in the table view. Design §3.2's
+/// reserved bucket for "no folder" or "no extension" — never blank, since a
+/// blank heading would look like a rendering error rather than a group.
+fn label(by: GroupBy, key: Option<&str>) -> String {
+    match (by, key) {
+        (GroupBy::Folder, Some(folder)) if !folder.is_empty() => folder.to_owned(),
+        (GroupBy::Folder, _) => "(no folder)".to_owned(),
+        (GroupBy::Extension, Some(ext)) => ext.to_owned(),
+        (GroupBy::Extension, None) => "(no extension)".to_owned(),
+    }
 }
 
 /// Writes a line of prose to standard output, for a command whose result is a

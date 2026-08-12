@@ -41,6 +41,16 @@ pub enum Format {
     Json,
 }
 
+/// What `list --group` groups by (FR-8, FR-29). A view arrangement, never a
+/// directory tree: neither variant implies rename, create, or move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum GroupBy {
+    /// By each file's recorded folder path.
+    Folder,
+    /// By each file's extension.
+    Extension,
+}
+
 /// `veil` — keep files in an encrypted vault.
 #[derive(Debug, Parser)]
 #[command(name = "veil", version, about, after_help = EXIT_CODES)]
@@ -92,9 +102,25 @@ pub enum Command {
         /// Show only files whose name contains this.
         #[arg(long)]
         name: Option<String>,
-        /// Group the listing by folder.
-        #[arg(long)]
-        group: bool,
+        /// Group the listing. Bare `--group` groups by folder, exactly as
+        /// this flag always has; `--group=extension` groups by file
+        /// extension instead (FR-29). Omitted, the listing stays flat.
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            require_equals = true,
+            default_missing_value = "folder"
+        )]
+        group: Option<GroupBy>,
+    },
+
+    /// Show everything recorded about one file.
+    Detail {
+        /// The vault.
+        vault: PathBuf,
+        /// The file, as folder and name together: work/2024/report.pdf
+        file: String,
     },
 
     /// Save an unprotected copy of one file out of a vault.

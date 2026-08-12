@@ -4,10 +4,11 @@
 use std::path::PathBuf;
 
 use veil_core::Damaged;
+use veil_core::index::Entry;
 use veil_core::vault::Vault;
 use veil_core::vault::{Outcome, SkipReason, Skipped};
 
-use crate::cli::Format;
+use crate::cli::{Format, GroupBy};
 use crate::failure::{Failure, Run};
 use crate::output::{self, FileRow};
 use crate::progress::{Stderr, cancel_on_interrupt};
@@ -33,12 +34,13 @@ impl From<&Skipped> for SkippedRow {
     }
 }
 
-/// Lists the files a vault holds, filtered and optionally grouped (FR-7, FR-8).
+/// Lists the files a vault holds, filtered and optionally grouped (FR-7,
+/// FR-8, FR-29).
 pub fn list(
     vault: &Vault,
     folder: Option<&str>,
     name: Option<&str>,
-    group: bool,
+    group: Option<GroupBy>,
     format: Format,
 ) -> Run<()> {
     let mut rows: Vec<FileRow> = vault
@@ -51,9 +53,80 @@ pub fn list(
     rows.sort_by(|a, b| (&a.folder, &a.name).cmp(&(&b.folder, &b.name)));
 
     match (format, group) {
-        (Format::Json, _) => output::json(&serde_json::json!({ "files": rows })),
-        (Format::Table, true) => output::grouped(&rows),
-        (Format::Table, false) => output::table(&rows),
+        (Format::Json, None) => output::json(&serde_json::json!({ "files": rows })),
+        (Format::Json, Some(by)) => {
+            output::json(&serde_json::json!({ "groups": grouped_json(&rows, by) }))
+        }
+        (Format::Table, None) => output::table(&rows),
+        (Format::Table, Some(by)) => output::grouped(&rows, by),
+    }
+}
+
+/// The JSON shape of a grouped listing: one object per group, each carrying
+/// the group's own key — a folder string, or an extension string that is
+/// `null` for the reserved no-extension bucket (FR-29) — and its files, built
+/// from the same [`output::group_key`] the table view groups by, so the two
+/// output modes cannot disagree about what a group is.
+fn grouped_json(rows: &[FileRow], by: GroupBy) -> Vec<serde_json::Value> {
+    let mut keys: Vec<Option<String>> = rows.iter().map(|r| output::group_key(r, by)).collect();
+    keys.sort();
+    keys.dedup();
+
+    keys.into_iter()
+        .map(|key| {
+            let files: Vec<&FileRow> = rows
+                .iter()
+                .filter(|r| output::group_key(r, by) == key)
+                .collect();
+            serde_json::json!({ "group": key, "files": files })
+        })
+        .collect()
+}
+
+/// One file's complete recorded metadata (FR-28) — a superset of `FileRow`.
+///
+/// No content hash: Design §8.9 keeps it off the GUI's own detail panel, and
+/// that decision is held here too, so the two peers agree on what "detail"
+/// means (A-4).
+#[derive(Debug, serde::Serialize)]
+struct DetailInfo {
+    name: String,
+    folder: String,
+    size: u64,
+    /// The source file's own modification time, from before it was added.
+    modified: u64,
+    /// When it was added to the vault (or last replaced).
+    added: u64,
+}
+
+/// Reports everything FR-28 covers for one file. Requires no content read:
+/// every field comes from the resident index, the same as `list`'s.
+pub fn detail(entry: &Entry, format: Format) -> Run<()> {
+    let info = DetailInfo {
+        name: entry.name.clone(),
+        folder: entry.folder.clone(),
+        size: entry.size,
+        modified: entry.source_mtime,
+        added: entry.added_at,
+    };
+
+    match format {
+        Format::Json => output::json(&info),
+        Format::Table => output::say(
+            format,
+            &format!(
+                "Name      {}\n\
+                 Folder    {}\n\
+                 Size      {} bytes\n\
+                 Modified  {}\n\
+                 Added     {}",
+                info.name,
+                info.folder,
+                output::count(info.size),
+                output::stamp(info.modified),
+                output::stamp(info.added),
+            ),
+        ),
     }
 }
 
