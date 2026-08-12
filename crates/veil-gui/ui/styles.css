@@ -815,17 +815,23 @@ button.primary.working::after {
 #preview-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 8px 12px;
   background: var(--surface-raised);
   border-bottom: 1px solid var(--border);
 }
 
 #preview-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#preview-close {
+  flex: none;
 }
 
 #preview-body {
