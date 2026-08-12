@@ -106,6 +106,9 @@ body {
   flex-direction: column;
   min-height: 0;
   border-top: 1px solid var(--border);
+  /* Anchors the details popover and the preview overlay (P8.5, P8.6) to
+     the list area specifically, not the whole window. */
+  position: relative;
 }
 
 #list-header {
@@ -728,4 +731,131 @@ button.primary.working::after {
 /* §2.2: `caution` on Delete, matching the toolbar button it mirrors. */
 .context-menu button.caution {
   color: var(--caution);
+}
+
+/* Shared by details' and preview's own close controls — small, square,
+   no border, distinct from the bordered buttons the rest of the app uses
+   for a standing action rather than a dismissal. */
+.icon-button {
+  border: none;
+  background: transparent;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.icon-button:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* --------------------------------------------------------------- details */
+
+/* Design §8.9: a lightweight popover, not a modal — no backdrop, and it
+   never blocks interaction with the rest of the screen while open. */
+#details-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 25;
+  max-width: 320px;
+  padding: 8px 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px color-mix(in srgb, black 25%, transparent);
+}
+
+#details-panel[hidden] {
+  display: none;
+}
+
+#details-close {
+  float: right;
+}
+
+#details-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  clear: right;
+}
+
+#details-body dt {
+  color: var(--text-muted);
+  font-size: var(--font-metadata);
+}
+
+#details-body dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------- preview */
+
+/* Design §8.10: above the list, not a separate window and not a
+   replacement for it — #list-viewport (its positioned ancestor) still
+   shows the identity bar, controls, and statistics line above it. */
+#preview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+#preview-overlay[hidden] {
+  display: none;
+}
+
+#preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+#preview-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#preview-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+#preview-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* FR-30: text — `.md` included — shown unrendered, in the body font. A
+   `<pre>` preserves the original line breaks and spacing exactly (this is
+   raw file content, not prose reflowed for reading), but browsers default
+   it to a monospace font, which `font-family: inherit` overrides. */
+#preview-body pre {
+  width: 100%;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+#preview-body p {
+  color: var(--text-muted);
 }

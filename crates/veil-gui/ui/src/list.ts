@@ -144,7 +144,7 @@ export class EntryList {
       `<span class="col-name">${escapeHtml(entry.name)}</span>` +
       `<span class="col-folder">${escapeHtml(entry.folder)}</span>` +
       `<span class="col-size">${formatSize(entry.size)}</span>` +
-      `<span class="col-added">${formatAdded(entry.addedAt)}</span>`;
+      `<span class="col-added">${formatDate(entry.addedAt)}</span>`;
   }
 
 }
@@ -161,7 +161,10 @@ function formatSize(bytes: number): string {
   return `${value.toFixed(precision)} ${units[unit]}`;
 }
 
-function formatAdded(epochSeconds: number): string {
+// Shared by the Added column here and the details panel's Added/Modified
+// fields (P8.5) — one date rendering, not a second copy of it for the
+// panel to drift from.
+export function formatDate(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",

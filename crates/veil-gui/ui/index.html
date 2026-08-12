@@ -142,6 +142,25 @@
           <div id="list-scroll">
             <div id="list-spacer"></div>
           </div>
+
+          <!-- Details (Design §8.9): a lightweight, non-modal popover
+               opened from the context menu's "Show details". -->
+          <div id="details-panel" role="dialog" hidden>
+            <button type="button" id="details-close" class="icon-button" aria-label="Close">✕</button>
+            <dl id="details-body"></dl>
+          </div>
+
+          <!-- Preview (Design §8.10): an overlay above the list, not a
+               separate window and not a replacement for it — closing it
+               returns to exactly the selection and scroll position it was
+               opened from. -->
+          <div id="preview-overlay" role="dialog" hidden>
+            <div id="preview-header">
+              <span id="preview-name"></span>
+              <button type="button" id="preview-close" class="icon-button" aria-label="Close">✕</button>
+            </div>
+            <div id="preview-body"></div>
+          </div>
         </div>
         <div id="operation-bar" hidden>
           <span id="operation-label"></span>

@@ -7,7 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "./api";
 import type { EntryInfo } from "./api";
 import { extensionOf } from "./extension";
-import { EntryList, type ListRow } from "./list";
+import { EntryList, formatDate, type ListRow } from "./list";
 import { isPreviewable } from "./previewable";
 import { nextSelection, type ClickKind } from "./selection";
 import { sortEntries, type SortColumn, type SortDirection } from "./sort";
@@ -257,8 +257,16 @@ async function lock(): Promise<void> {
   clearSelection();
   // The context menu is a sibling of the screens, not inside #screen-vault
   // — left open, it would float over the locked screen bound to entries
-  // that no longer exist.
+  // that no longer exist. Details and preview are nested inside
+  // #screen-vault, so hiding that screen already hides them visually, but
+  // closing them here still matters: it revokes preview's object URL and
+  // drops both panels' content rather than leaving it sitting invisibly
+  // in the DOM. This is FR-3's clearing extended to preview content
+  // (Design §8.10) — P8.7 is where that guarantee gets proved, not just
+  // done here.
   closeContextMenu();
+  closeDetails();
+  closePreview();
   showScreen("locked");
 }
 
@@ -835,7 +843,10 @@ function closeContextMenu(): void {
   el<HTMLElement>("context-menu").hidden = true;
 }
 
-function setupContextMenu(): void {
+// Right-click, the details popover, and the preview overlay are all
+// non-modal — none of them blocks the rest of the screen, so all three
+// dismiss the same two ways: an outside click, or Escape.
+function setupOverlays(): void {
   el<HTMLElement>("list-spacer").addEventListener("contextmenu", (event) => {
     const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
     if (!row) {
@@ -855,26 +866,127 @@ function setupContextMenu(): void {
     openContextMenu(event.clientX, event.clientY, selectedEntries());
   });
   document.addEventListener("mousedown", (event) => {
+    const target = event.target as Node;
     const menu = el<HTMLElement>("context-menu");
-    if (!menu.hidden && !menu.contains(event.target as Node)) {
+    if (!menu.hidden && !menu.contains(target)) {
       closeContextMenu();
+    }
+    const details = el<HTMLElement>("details-panel");
+    if (!details.hidden && !details.contains(target)) {
+      closeDetails();
+    }
+    const preview = el<HTMLElement>("preview-overlay");
+    if (!preview.hidden && !preview.contains(target)) {
+      closePreview();
     }
   });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !el<HTMLElement>("context-menu").hidden) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    if (!el<HTMLElement>("context-menu").hidden) {
       closeContextMenu();
     }
+    if (!el<HTMLElement>("details-panel").hidden) {
+      closeDetails();
+    }
+    if (!el<HTMLElement>("preview-overlay").hidden) {
+      closePreview();
+    }
   });
+  el<HTMLButtonElement>("details-close").addEventListener("click", closeDetails);
+  el<HTMLButtonElement>("preview-close").addEventListener("click", closePreview);
 }
 
-// P8.5 replaces this stub with the real details panel (Design §8.9).
+// ------------------------------------------------------------ details ---
+
+function closeDetails(): void {
+  el<HTMLElement>("details-panel").hidden = true;
+}
+
+// Design §8.9: FR-28's fields, labelled the same words the list columns
+// use, plus Modified — which the list has no room for — and no content
+// hash, the same decision `detail`'s CLI output already made (P7.1.d).
 function showDetails(entry: EntryInfo): void {
-  void entry;
+  const body = el<HTMLElement>("details-body");
+  body.innerHTML = "";
+  const rows: Array<[string, string]> = [
+    ["Name", entry.name],
+    ["Folder", entry.folder],
+    // Exact bytes here, not the rounded form the list uses (Design §8.9).
+    ["Size", `${entry.size.toLocaleString()} bytes`],
+    ["Modified", formatDate(entry.sourceMtime)],
+    ["Added", formatDate(entry.addedAt)],
+  ];
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    body.append(dt, dd);
+  }
+  el<HTMLElement>("details-panel").hidden = false;
 }
 
-// P8.6 replaces this stub with the real preview overlay (Design §8.10).
-function openPreview(entry: EntryInfo): void {
-  void entry;
+// ------------------------------------------------------------ preview ---
+
+// Holds the one object URL a successful image preview creates, so closing
+// it (here, on lock, or on exit — Design §8.10, FR-3, FR-30) always has
+// something concrete to revoke rather than trusting the DOM alone to drop
+// it (Spec §5.3's honesty clause: dereferenced promptly on every path that
+// ends a preview, not zeroised on a timeline this layer controls).
+let previewObjectUrl: string | null = null;
+
+function closePreview(): void {
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  el<HTMLElement>("preview-body").innerHTML = "";
+  el<HTMLElement>("preview-overlay").hidden = true;
+}
+
+// RFC 4648 decoding is `atob`'s job here — unlike `preview.rs`'s own
+// encoder, there is no "avoid a new dependency" reason to write this out:
+// the platform already provides it.
+function base64ToBlob(base64: string, mime: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+// Design §8.10: opens above the list; an image renders from its payload,
+// text (including `.md`, unrendered per FR-30) shows in the body font. A
+// failed integrity check is reported here rather than silently — P8.8
+// matches its exact wording to the extraction-failure path elsewhere;
+// this shows whatever `describeError` already gives in the meantime.
+async function openPreview(entry: EntryInfo): Promise<void> {
+  el<HTMLElement>("preview-name").textContent = entry.name;
+  const body = el<HTMLElement>("preview-body");
+  body.innerHTML = "";
+  el<HTMLElement>("preview-overlay").hidden = false;
+  try {
+    const payload = await api.previewEntry(entry.id);
+    if (payload.kind === "image") {
+      const blob = base64ToBlob(payload.base64, payload.mime);
+      previewObjectUrl = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.src = previewObjectUrl;
+      img.alt = entry.name;
+      body.appendChild(img);
+    } else {
+      const pre = document.createElement("pre");
+      pre.textContent = payload.content;
+      body.appendChild(pre);
+    }
+  } catch (raw) {
+    const message = document.createElement("p");
+    message.textContent = api.describeError(raw).message;
+    body.appendChild(message);
+  }
 }
 
 // ------------------------------------------------------------ replace ---
@@ -1000,7 +1112,7 @@ async function submitChangePassword(): Promise<void> {
 
 setupDropTarget();
 setupSelection();
-setupContextMenu();
+setupOverlays();
 showScreen("firstRun");
 
 // First run (Design §8.1) shows exactly two choices and nothing else — no

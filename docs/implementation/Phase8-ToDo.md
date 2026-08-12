@@ -92,10 +92,10 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.5.a | Not yet built | `api.ts`'s `EntryInfo` interface gains `sourceMtime: number` — the Rust struct (`commands.rs`) has carried this since Phase 7 (P7.1.a); the frontend type never picked it up, since nothing consumed it until now | FR-28, Spec §5.1 | T8.16 |
-| P8.5.b | Not yet built | A details panel/popover, opened from **Show details** (P8.4.c): name, folder, exact byte size, `Modified` (from `sourceMtime`), `Added` — labelled the same words the list columns use, plus `Modified`, which the list has no room for | FR-28, Design §8.9 | T8.16 |
-| P8.5.c | Not yet built | No content hash shown — the same decision Phase 7's `detail` CLI output already made (P7.1.d), held here too so the two peers agree | FR-28, Design §8.9 | T8.16 |
-| P8.5.d | Not yet built | Dismissible freely (a close control, click-outside, or Escape) — not a modal blocking the rest of the screen | Design §8.9 | T8.16 |
+| P8.5.a | Done | `api.ts`'s `EntryInfo` interface gains `sourceMtime: number` — the Rust struct (`commands.rs`) has carried this since Phase 7 (P7.1.a); the frontend type never picked it up, since nothing consumed it until now | FR-28, Spec §5.1 | T8.16 |
+| P8.5.b | Done | A details panel/popover (`#details-panel`, absolutely positioned within `#list-viewport`), opened from **Show details** (P8.4.c, now real rather than a stub): name, folder, exact byte size, `Modified` (from `sourceMtime`), `Added` — labelled the same words the list columns use, plus `Modified`, which the list has no room for. `list.ts`'s private `formatAdded` became the exported `formatDate`, reused here for both `Modified` and `Added` rather than a second date formatter | FR-28, Design §8.9 | T8.16 |
+| P8.5.c | Done | No content hash shown — the same decision Phase 7's `detail` CLI output already made (P7.1.d), held here too so the two peers agree | FR-28, Design §8.9 | T8.16 |
+| P8.5.d | Done | Dismissible via its own close button, an outside click, or Escape (`setupOverlays()`, generalised from P8.4's context-menu dismissal to cover all three of it, details, and preview) — not a modal, never blocks the rest of the screen | Design §8.9 | T8.16 |
 
 ---
 
@@ -105,11 +105,11 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.6.a | Not yet built | `api.ts` gains `previewEntry(id)`, a typed wrapper over `invoke('preview_entry', ...)` returning the `PreviewPayload` union (`{ kind: 'image', mime, base64 }` / `{ kind: 'text', content }`, matching `preview.rs`'s `#[serde(tag = "kind")]` shape) | FR-30, Spec §5.3 | T8.17 |
-| P8.6.b | Not yet built | Preview opens as an overlay above the list (not a separate window, not a route change); its header names the file and carries a close control | Design §8.10 | T8.17 |
-| P8.6.c | Not yet built | An `Image` payload is rendered by building an object URL from the base64 (`data:` URL or a `Blob` + `URL.createObjectURL`) | FR-30, Spec §5.3 | T8.18 |
-| P8.6.d | Not yet built | A `Text` payload — including `.md`, per FR-30's decision not to render Markdown — is shown unrendered, in the body font, not monospace | FR-30, Design §8.10 | T8.18 |
-| P8.6.e | Not yet built | Closing the overlay returns to exactly the selection and scroll position it was opened from | Design §8.10 | T8.17 |
+| P8.6.a | Done | `api.ts` gains `previewEntry(id)`, a typed wrapper over `invoke('preview_entry', ...)` returning the `PreviewPayload` union (`{ kind: 'image', mime, base64 }` / `{ kind: 'text', content }`, matching `preview.rs`'s `#[serde(tag = "kind")]` shape). **Found while wiring this up:** the vocabulary audit's exact-match allowlist (`tests/vocabulary.rs`) already carves out `extract_entry`/`delete_entry`/`replace_entry` as Tauri command names containing the denylisted word "entry" for a non-prose reason; `preview_entry` needed the identical entry, added rather than left to fail | FR-30, Spec §5.3 | T8.17 |
+| P8.6.b | Done | Preview opens as `#preview-overlay`, absolutely positioned within `#list-viewport` (covers the list area; identity bar, controls, and statistics line stay visible above it) — not a separate window, not a route change; its header names the file and carries a close control | Design §8.10 | T8.17 |
+| P8.6.c | Done | An `Image` payload is rendered via a `Blob` (decoded from the base64 with the platform's own `atob`, not a hand-written decoder — unlike `preview.rs`'s encoder, there is no dependency to avoid on this side) and `URL.createObjectURL`, per Spec §5.3's own anticipated mechanism (its honesty clause already names "revoking any object URL created" specifically) | FR-30, Spec §5.3 | T8.18 |
+| P8.6.d | Done | A `Text` payload — including `.md`, per FR-30's decision not to render Markdown — is shown in a `<pre>` (preserves the original line breaks and spacing) with `font-family: inherit` overriding the browser's default monospace, and `white-space: pre-wrap` so long lines still wrap | FR-30, Design §8.10 | T8.18 |
+| P8.6.e | Done | Closing the overlay returns to exactly the selection and scroll position it was opened from — true by construction, since the overlay sits on top of a list that is never re-rendered, re-scrolled, or re-selected by opening or closing it | Design §8.10 | T8.17 |
 
 ---
 
@@ -165,6 +165,8 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 **Preview's server-side guarantees (no disk touch, no ciphertext read on refusal, no disclosure) are Phase 7's closed record (T7.9–T7.15) and are not re-proved here.** Phase 8 only has to prove it *calls* `preview_entry` correctly and clears what it receives — not that `preview_entry` itself behaves, which would be redoing Phase 7's work.
 
 **FR-24 (staleness) is not specifically exercised by this phase's new controls.** Grouping, sorting, selection, and preview all read from the same `allEntries` snapshot the list already held before this phase; none of them re-reads the vault directory independently, so none of them introduces a new staleness path beyond what Phase 6 already covers.
+
+**A failed preview (a damaged entry, or one that vanished between the menu opening and the call landing) already shows something in the overlay today** — whatever `describeError` returns — rather than failing silently. What it does not yet do is match the extraction-failure path's *exact* wording; that comparison and correction is P8.8's own job, not redone here.
 
 ---
 
