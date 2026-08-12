@@ -97,6 +97,14 @@ pub enum Command {
         group: bool,
     },
 
+    /// Show everything recorded about one file.
+    Detail {
+        /// The vault.
+        vault: PathBuf,
+        /// The file, as folder and name together: work/2024/report.pdf
+        file: String,
+    },
+
     /// Save an unprotected copy of one file out of a vault.
     SaveCopy {
         /// The vault.

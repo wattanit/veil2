@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use veil_core::Damaged;
+use veil_core::index::Entry;
 use veil_core::vault::Vault;
 use veil_core::vault::{Outcome, SkipReason, Skipped};
 
@@ -54,6 +55,53 @@ pub fn list(
         (Format::Json, _) => output::json(&serde_json::json!({ "files": rows })),
         (Format::Table, true) => output::grouped(&rows),
         (Format::Table, false) => output::table(&rows),
+    }
+}
+
+/// One file's complete recorded metadata (FR-28) — a superset of `FileRow`.
+///
+/// No content hash: Design §8.9 keeps it off the GUI's own detail panel, and
+/// that decision is held here too, so the two peers agree on what "detail"
+/// means (A-4).
+#[derive(Debug, serde::Serialize)]
+struct DetailInfo {
+    name: String,
+    folder: String,
+    size: u64,
+    /// The source file's own modification time, from before it was added.
+    modified: u64,
+    /// When it was added to the vault (or last replaced).
+    added: u64,
+}
+
+/// Reports everything FR-28 covers for one file. Requires no content read:
+/// every field comes from the resident index, the same as `list`'s.
+pub fn detail(entry: &Entry, format: Format) -> Run<()> {
+    let info = DetailInfo {
+        name: entry.name.clone(),
+        folder: entry.folder.clone(),
+        size: entry.size,
+        modified: entry.source_mtime,
+        added: entry.added_at,
+    };
+
+    match format {
+        Format::Json => output::json(&info),
+        Format::Table => output::say(
+            format,
+            &format!(
+                "Name      {}\n\
+                 Folder    {}\n\
+                 Size      {} bytes\n\
+                 Modified  {}\n\
+                 Added     {}",
+                info.name,
+                info.folder,
+                output::count(info.size),
+                output::stamp(info.modified),
+                output::stamp(info.added),
+            ),
+        ),
     }
 }
 

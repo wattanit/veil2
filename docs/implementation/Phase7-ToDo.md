@@ -38,11 +38,11 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.1.a | Not yet built | `EntryInfo` (`veil-gui/src/commands.rs`) gains `source_mtime`, serialised alongside the fields already there; no `veil-core` change | FR-28, Spec §5.1 | T7.1 |
-| P7.1.b | Not yet built | `veil detail <vault> <file>` table output: name, folder, exact byte size, `Modified` (source mtime), `Added` — identity argument matches `save-copy`/`replace`/`delete` | FR-28, Spec §5.2, Design §8.9 | T7.1 |
-| P7.1.c | Not yet built | `--format json` output for `detail`, same fields, exact byte integer | FR-28, Design §3.4 | T7.2 |
-| P7.1.d | Not yet built | No content hash in either output — the same decision Design §8.9 makes for the GUI panel, held here too so the two peers agree | FR-28, Design §8.9 | T7.1, T7.2 |
-| P7.1.e | Not yet built | `NotFound` (exit 13) when the folder-and-name identity matches nothing | FR-28, FR-2, HC-3 | T7.3 |
+| P7.1.a | Done | `EntryInfo` (`veil-gui/src/commands.rs`) gains `source_mtime`, serialised alongside the fields already there; no `veil-core` change | FR-28, Spec §5.1 | T7.1 |
+| P7.1.b | Done | `veil detail <vault> <file>` table output: name, folder, exact byte size, `Modified` (source mtime), `Added` — identity argument matches `save-copy`/`replace`/`delete` | FR-28, Spec §5.2, Design §8.9 | T7.1 |
+| P7.1.c | Done | `--format json` output for `detail`, same fields, exact byte integer | FR-28, Design §3.4 | T7.2 |
+| P7.1.d | Done | No content hash in either output — the same decision Design §8.9 makes for the GUI panel, held here too so the two peers agree | FR-28, Design §8.9 | T7.1, T7.2 |
+| P7.1.e | Done | `NotFound` (exit 13) when the folder-and-name identity matches nothing, reusing `Vault::find` (Spec §5.1) rather than a new lookup path | FR-28, FR-2, HC-3 | T7.3 |
 
 ---
 

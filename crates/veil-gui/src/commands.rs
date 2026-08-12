@@ -46,6 +46,10 @@ pub struct EntryInfo {
     pub folder: String,
     /// Plaintext length in bytes.
     pub size: u64,
+    /// The source file's own modification time, from before it was added,
+    /// as a Unix timestamp in seconds. Shown by the details panel (FR-28,
+    /// P7.1.a) as "Modified", distinct from `added_at`.
+    pub source_mtime: u64,
     /// When it was added (or last replaced, P6.16.d), as a Unix timestamp
     /// in seconds.
     pub added_at: u64,
@@ -62,6 +66,7 @@ impl EntryInfo {
             name: entry.name.clone(),
             folder: entry.folder.clone(),
             size: entry.size,
+            source_mtime: entry.source_mtime,
             added_at: entry.added_at,
             unreadable,
         }

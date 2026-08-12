@@ -39,6 +39,7 @@ pub fn dispatch(cli: &Cli) -> Run<()> {
             *group,
             cli.format,
         ),
+        Command::Detail { vault, file } => detail(vault, file, cli),
         Command::SaveCopy {
             vault,
             file,
@@ -152,6 +153,17 @@ fn add(dir: &Path, sources: &[PathBuf], folder: Option<&str>, cli: &Cli) -> Run<
     }
 
     report::added(&added, &skipped, sources, cli.format)
+}
+
+/// Everything recorded about one file (FR-28) — a superset of what `list`
+/// shows, read from the same resident entries and requiring no content read.
+fn detail(dir: &Path, file: &str, cli: &Cli) -> Run<()> {
+    let vault = open(dir, cli)?;
+    let (folder, name) = split(file);
+    let entry = vault
+        .find(folder, name)
+        .ok_or_else(|| Failure::NoSuchFile(no_such(file)))?;
+    report::detail(entry, cli.format)
 }
 
 fn save_copy(dir: &Path, file: &str, to: &Path, force: bool, cli: &Cli) -> Run<()> {
