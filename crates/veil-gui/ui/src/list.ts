@@ -21,6 +21,16 @@ export class EntryList {
   private rows: ListRow[] = [];
   private readonly pool = new Map<number, HTMLDivElement>();
   private readonly onActivate: (entry: EntryInfo) => void;
+  // P8.3: held here, not just applied as a one-off DOM mutation from the
+  // click handler that selected a row — `renderRow` reads it on every call,
+  // including the ones a scroll or a resize triggers for a pooled element
+  // that already existed. Before this, a row's "selected" class only ever
+  // came from main.ts touching that element directly at click time; the
+  // very next `renderVisible()` (any scroll, at all) overwrote `className`
+  // wholesale and silently dropped it. Multi-select made that worth fixing
+  // rather than working around, since it is far more visible with several
+  // rows selected than it ever was with one.
+  private selected = new Set<number>();
 
   constructor(
     private readonly scrollEl: HTMLElement,
@@ -42,6 +52,25 @@ export class EntryList {
 
   setRows(rows: ListRow[]): void {
     this.rows = rows;
+    this.renderVisible();
+  }
+
+  // The ids of every entry row in the current rows, in the current visual
+  // order — a collapsed group's entries are absent from `rows` already, so
+  // they are absent here too (P8.3's shift-range only ever spans what is
+  // actually visible).
+  entryIds(): number[] {
+    const ids: number[] = [];
+    for (const row of this.rows) {
+      if (row.kind === "entry") {
+        ids.push(row.entry.id);
+      }
+    }
+    return ids;
+  }
+
+  setSelection(ids: Set<number>): void {
+    this.selected = ids;
     this.renderVisible();
   }
 
@@ -107,6 +136,9 @@ export class EntryList {
     }
     const entry = row.entry;
     el.className = entry.unreadable ? "entry-row unreadable" : "entry-row";
+    if (this.selected.has(entry.id)) {
+      el.classList.add("selected");
+    }
     el.dataset.id = String(entry.id);
     el.innerHTML =
       `<span class="col-name">${escapeHtml(entry.name)}</span>` +

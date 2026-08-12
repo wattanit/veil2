@@ -8,6 +8,7 @@ import * as api from "./api";
 import type { EntryInfo } from "./api";
 import { extensionOf } from "./extension";
 import { EntryList, type ListRow } from "./list";
+import { nextSelection, type ClickKind } from "./selection";
 import { sortEntries, type SortColumn, type SortDirection } from "./sort";
 
 const MIN_PASSWORD_LENGTH = 12; // C-4, mirrored client-side; veil-core is the authority.
@@ -52,7 +53,15 @@ function vaultNameFromPath(path: string): string {
 let currentPath = "";
 let currentSummary: api.VaultSummary | null = null;
 let allEntries: EntryInfo[] = [];
-let selectedId: number | null = null;
+
+// P8.3: click selects one row and clears the rest, shift-click extends a
+// contiguous range, Cmd-click toggles one row (Design §3.2) — replaces the
+// single `selectedId` of Phase 6. `lastClickedId` is the shift-range
+// anchor, not just "the most recently selected row": a Cmd-click that
+// removes a row from the selection still becomes the anchor for the next
+// shift-click.
+let selectedIds = new Set<number>();
+let lastClickedId: number | null = null;
 let searchTerm = "";
 
 // P8.1: one choice among none, by folder, and by extension (Design §3.2,
@@ -654,9 +663,21 @@ function closeModal(): void {
 // ------------------------------------------------------------- selection -
 
 function clearSelection(): void {
-  selectedId = null;
-  el<HTMLButtonElement>("replace-selected-button").disabled = true;
-  el<HTMLButtonElement>("delete-selected-button").disabled = true;
+  selectedIds = new Set();
+  lastClickedId = null;
+  list.setSelection(selectedIds);
+  updateSelectionButtons();
+}
+
+// P8.3.d: Replace… only ever means one file's content, so it stays
+// available only for exactly one selected row.
+function updateSelectionButtons(): void {
+  el<HTMLButtonElement>("replace-selected-button").disabled = selectedIds.size !== 1;
+  el<HTMLButtonElement>("delete-selected-button").disabled = selectedIds.size === 0;
+}
+
+function selectedEntries(): EntryInfo[] {
+  return allEntries.filter((e) => selectedIds.has(e.id));
 }
 
 function setupSelection(): void {
@@ -675,18 +696,28 @@ function setupSelection(): void {
     }
     const row = target.closest<HTMLElement>(".entry-row");
     const id = row?.dataset.id;
-    selectedId = id === undefined ? null : Number(id);
-    for (const rowEl of el<HTMLElement>("list-spacer").querySelectorAll(".entry-row")) {
-      rowEl.classList.toggle("selected", rowEl === row);
+    if (id === undefined) {
+      selectedIds = new Set();
+      lastClickedId = null;
+    } else {
+      const kind: ClickKind = event.shiftKey ? "shift" : event.metaKey ? "cmd" : "plain";
+      const next = nextSelection(
+        { selectedIds, lastClickedId },
+        list.entryIds(),
+        Number(id),
+        kind,
+      );
+      selectedIds = next.selectedIds;
+      lastClickedId = next.lastClickedId;
     }
-    el<HTMLButtonElement>("replace-selected-button").disabled = selectedId === null;
-    el<HTMLButtonElement>("delete-selected-button").disabled = selectedId === null;
+    list.setSelection(selectedIds);
+    updateSelectionButtons();
   });
   window.addEventListener("keydown", (event) => {
-    if ((event.key === "Delete" || event.key === "Backspace") && selectedId !== null) {
-      const entry = allEntries.find((e) => e.id === selectedId);
-      if (entry) {
-        confirmDelete([entry]);
+    if (event.key === "Delete" || event.key === "Backspace") {
+      const entries = selectedEntries();
+      if (entries.length > 0) {
+        confirmDelete(entries);
       }
     }
   });
@@ -694,9 +725,9 @@ function setupSelection(): void {
     void replaceSelected();
   });
   el<HTMLButtonElement>("delete-selected-button").addEventListener("click", () => {
-    const entry = allEntries.find((e) => e.id === selectedId);
-    if (entry) {
-      confirmDelete([entry]);
+    const entries = selectedEntries();
+    if (entries.length > 0) {
+      confirmDelete(entries);
     }
   });
 }
@@ -738,7 +769,8 @@ async function runDelete(entries: EntryInfo[]): Promise<void> {
 // identity-matched replace in `runAdd`, this does not require the new
 // file to share the old one's name.
 async function replaceSelected(): Promise<void> {
-  const entry = allEntries.find((e) => e.id === selectedId);
+  const entries = selectedEntries();
+  const entry = entries.length === 1 ? entries[0] : undefined;
   if (!entry) {
     return;
   }

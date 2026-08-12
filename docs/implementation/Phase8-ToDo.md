@@ -64,10 +64,10 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.3.a | Not yet built | `selectedId: number \| null` replaced by `selectedIds: Set<number>` plus `lastClickedId` (the shift-range anchor); pure selection-transition logic extracted into a new module, `ui/src/selection.ts`, given the current visually-ordered id list and a click kind (`plain` / `shift` / `cmd`) | Design §3.2 | T8.7 |
-| P8.3.b | Not yet built | Wired into `setupSelection()`: a plain click selects one row and clears the rest; shift-click extends a contiguous range from the anchor to the clicked row, in the current sorted/grouped visual order; Cmd-click toggles one row into or out of the selection without disturbing the rest | Design §3.2 | T8.7 |
-| P8.3.c | Not yet built | Delete acts on the full selection — `runDelete()` already loops an array (Phase 6), so this is the UI enabling it for more than one row, not a new deletion path | Design §3.2, §4.1 | T8.8 |
-| P8.3.d | Not yet built | Replace… stays available only when exactly one row is selected — absent or disabled otherwise, since it has no meaning for more than one file | Design §3.2, §8.7 | T8.9 |
+| P8.3.a | Done | `selectedId: number \| null` replaced by `selectedIds: Set<number>` plus `lastClickedId` (the shift-range anchor); pure selection-transition logic extracted into a new module, `ui/src/selection.ts`, given the current visually-ordered id list (`EntryList.entryIds()`, new) and a click kind (`plain` / `shift` / `cmd`) | Design §3.2 | T8.7 |
+| P8.3.b | Done | Wired into `setupSelection()`: a plain click selects one row and clears the rest; shift-click extends a contiguous range from the anchor to the clicked row, in the current sorted/grouped visual order; Cmd-click toggles one row into or out of the selection without disturbing the rest, and becomes the new anchor. **Found and fixed along the way:** `EntryList` never tracked selection itself — the "selected" class was only ever a one-off DOM mutation from the click handler, which the very next scroll-triggered `renderVisible()` silently erased by resetting `className` wholesale. Gave `EntryList` its own `setSelection()` and had `renderRow` apply it on every render, the same way it already applies `unreadable` — latent since Phase 6's single-select, but multi-select made it worth fixing rather than working around | Design §3.2 | T8.7 |
+| P8.3.c | Done | Delete acts on the full selection via a new `selectedEntries()` helper — `runDelete()` already looped an array (Phase 6), so this is the UI enabling it for more than one row, not a new deletion path | Design §3.2, §4.1 | T8.8 |
+| P8.3.d | Done | Replace… stays available only when exactly one row is selected (`updateSelectionButtons()`) — absent or disabled otherwise, since it has no meaning for more than one file | Design §3.2, §8.7 | T8.9 |
 
 ---
 
