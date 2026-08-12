@@ -116,8 +116,8 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.7.a | Not yet built | No error, `Debug` output, or log line from any `preview_entry` path (success, refusal, or failure) contains previewed file content | HC-2, Spec §6 | T7.15 |
-| P7.7.b | Not yet built | `tracing` output for `preview_entry` names the operation only — no entry name, folder, or content, the same discipline every other command already holds to | HC-1, Spec §6 | T7.15 |
+| P7.7.a | Done | No error or `Debug` output from any `preview_entry` refusal or failure path (unsupported, over-cap, damaged) contains the previewed file's content or name — checked with both markers embedded, the file's stored bytes ruined first so a wrong result would prove the read happened anyway. Success is out of scope for this item: its payload legitimately *is* the content (T7.8 already checks it's exactly the original bytes) | HC-2, Spec §6 | T7.15 |
+| P7.7.b | Done | **Read literally, this crate has no "discipline" to hold to — it calls no `tracing` macro anywhere and does not depend on the crate.** Proved by construction rather than by capturing output: a source-and-manifest scan (the same class of check `tests/structure.rs`'s T5.6 already makes for persistent storage APIs) asserting no `tracing` reference exists in `veil-gui/Cargo.toml` or `veil-gui/src`. If a future phase instruments this crate, that scan starts failing and this item's proof has to be redone as a real capture, the way `veil-core`'s own logging guard works | HC-1, Spec §6 | T7.15 |
 
 ---
 
@@ -139,4 +139,8 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 ## Open Questions
 
-- **Whether a base64 `Image` payload stays comfortable at C-5's 50 MiB cap.** Not blocking; observed directly when T7.8 runs against an image near the cap. Resolver: the Plan's own open item, revisited if the measurement is uncomfortable.
+- **Whether a base64 `Image` payload stays comfortable at C-5's 50 MiB cap — genuinely still open.** T7.8 exercises the `Image` path with a 200-byte fixture, for correctness; T7.10's near-cap fixture is a `.txt` file refused before any read, so it never produces a payload at all. No test in this phase has actually built and passed a base64 payload anywhere near 50 MiB. Not blocking Phase 7's exit, since C-5's cap is a Requirements value independent of how comfortable it turns out to be — but a real measurement (a large fixture image, once one exists) belongs to Phase 8, when a frontend is actually receiving these payloads over IPC. Resolver: the Plan's own open item.
+
+## Phase 7 exit
+
+**Met.** P7.1 through P7.7 are done; every gate (`cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test` across all three crates, `cargo deny check`, `cargo audit`) passes, and no new dependency was added on either side. Two corrections surfaced along the way rather than being caught in review afterward: a live vocabulary-audit failure in the `GroupBy` enum's own `--help` text (P7.3), and a pre-existing gap in `tests/vocabulary.rs` that never scanned `veil-gui/src` at all, which caught one unrelated leftover violation in `commands.rs` once closed (P7.4). Phase 8 — the browsing screen itself — can now build against a capability surface that has already been proved to hold its own guarantees, per the Plan's own reason for sequencing it this way.

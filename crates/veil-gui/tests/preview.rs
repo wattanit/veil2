@@ -1,7 +1,8 @@
-//! Phase 7 test cases T7.8–T7.14 — the preview command (FR-30, C-5),
-//! driven directly through Tauri's mock runtime the same way Phase 5's
-//! T5.2/T5.3 and Phase 6's `conditions.rs` drive the rest of the command
-//! layer.
+//! Phase 7 test cases T7.8–T7.15 — the preview command (FR-30, C-5, HC-1,
+//! HC-2), driven directly through Tauri's mock runtime the same way Phase
+//! 5's T5.2/T5.3 and Phase 6's `conditions.rs` drive the rest of the
+//! command layer. T7.15's other half — that this crate logs nothing at all
+//! — is a structural check in `tests/structure.rs`, not a runtime one.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -430,6 +431,81 @@ fn t7_14_a_refused_or_failed_preview_touches_no_file() {
             assert_eq!(
                 before, after,
                 "case {label:?}: a refused or failed preview changed something in the vault directory"
+            );
+        }
+    });
+}
+
+/// T7.15 (P7.7.a) — a refused or failed preview discloses neither the
+/// file's content nor its name in the returned error.
+///
+/// A successful preview is not part of this case: its payload legitimately
+/// *is* the content — that is the feature, not a leak — and T7.8 already
+/// checks it returns exactly the original bytes, no more. What matters
+/// here is the three paths where nothing but a generic refusal should ever
+/// come back.
+#[test]
+fn t7_15_a_refused_or_failed_preview_discloses_nothing() {
+    tauri::async_runtime::block_on(async {
+        const CONTENT_MARKER: &str = "SALARY-ROW-MARKER-9c1f";
+        const NAME_MARKER: &str = "exec-compensation-2024-marker";
+
+        for (label, name, size) in [
+            ("unsupported", format!("{NAME_MARKER}.exe"), 64_usize),
+            (
+                "too-large",
+                format!("{NAME_MARKER}.txt"),
+                (MAX_PREVIEW_BYTES + 1) as usize,
+            ),
+            ("damaged", format!("{NAME_MARKER}.txt"), 64),
+        ] {
+            let scratch = Scratch::new(&format!("disclosure-{label}"));
+            let dir = scratch.vault_dir();
+            let mut content = CONTENT_MARKER.as_bytes().to_vec();
+            content.extend(pattern(size.saturating_sub(content.len())));
+
+            let entry_id = {
+                let mut vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+                vault
+                    .add(
+                        &name,
+                        "",
+                        &mut content.as_slice(),
+                        &mut NoProgress,
+                        &Cancel::new(),
+                    )
+                    .unwrap()
+                    .get()
+            };
+            // Every case here fails one way or another; ruining the stored
+            // file first is what proves the unsupported/too-large refusals
+            // never got far enough to read it, and is exactly the damage
+            // the "damaged" case needs anyway.
+            ruin(&veil_core::store::entry_path(
+                &dir,
+                veil_core::EntryId::new(entry_id),
+            ));
+
+            let app = mock_app();
+            let handle = app.handle().clone();
+            veil_gui_lib::commands::open_vault(
+                handle.clone(),
+                dir.to_string_lossy().into_owned(),
+                PASSWORD.to_owned(),
+            )
+            .await
+            .unwrap();
+
+            let result = preview::preview_entry(handle, entry_id).await;
+            assert!(result.is_err(), "case {label:?} was expected to fail");
+            let rendered = format!("{result:?}");
+            assert!(
+                !rendered.contains(CONTENT_MARKER),
+                "case {label:?}: the content marker reached the error: {rendered}"
+            );
+            assert!(
+                !rendered.contains(NAME_MARKER),
+                "case {label:?}: the name marker reached the error: {rendered}"
             );
         }
     });
