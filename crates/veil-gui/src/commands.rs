@@ -165,8 +165,9 @@ impl<R: Runtime> Progress for EventProgress<R> {
 
 /// Runs `f` on a worker thread and flattens the join result into the same
 /// error type every command already returns, so each command site does not
-/// repeat that plumbing.
-async fn run_blocking<T, F>(f: F) -> Result<T, ErrorInfo>
+/// repeat that plumbing. `pub(crate)` so `preview` (P7.4) can reuse it rather
+/// than duplicate it.
+pub(crate) async fn run_blocking<T, F>(f: F) -> Result<T, ErrorInfo>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, ErrorInfo> + Send + 'static,
@@ -483,7 +484,7 @@ pub async fn replace_entry<R: Runtime>(
                 .iter()
                 .find(|e| e.id == id)
                 .map(|e| EntryInfo::from_entry(e, false))
-                .ok_or_else(|| internal("replaced entry not found in its own vault"))
+                .ok_or_else(|| internal("replaced file not found in its own vault"))
         })
     })
     .await

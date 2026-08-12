@@ -238,6 +238,14 @@ fn t6_31_the_vocabulary_audit_is_clean_in_both_applications() {
     let cli_src = manifest_dir().parent().unwrap().join("veil-cli/src");
     check_dir(&cli_src, "rs", &mut violations);
 
+    // Added for P7.4: `preview.rs` is the first place in this crate's own
+    // Rust source that authors user-facing prose directly, rather than
+    // relaying `veil_core::Error`'s own `Display` text — and that text
+    // reaches the frontend unescaped in more than one fallback path (see
+    // `main.ts`'s `describeForStatus` and `unlockOutcomeHtml`), so it is
+    // within Design §7's scope the same as anything in `ui/src`.
+    check_dir(&manifest_dir().join("src"), "rs", &mut violations);
+
     assert!(
         violations.is_empty(),
         "the vocabulary audit found {} violation(s):\n  {}",

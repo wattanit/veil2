@@ -77,11 +77,13 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.4.a | Not yet built | `preview_entry(id)` checks the entry's recorded `size` against C-5 before any read | FR-30, C-5 | T7.10 |
-| P7.4.b | Not yet built | Extension checked against the supported list before decryption is attempted | FR-30 | T7.9 |
-| P7.4.c | Not yet built | `Vault::extract` called with `dst` a `Cursor<Vec<u8>>` — no new core method, per Spec §5.1 | FR-30, FR-17, FR-18 | T7.8, T7.12 |
-| P7.4.d | Not yet built | `PreviewPayload` (`Image { mime, base64 }` / `Text { content }`) per Spec §5.3's definition | FR-30 | T7.8 |
-| P7.4.e | Not yet built | A text-listed extension whose decrypted bytes are not valid UTF-8 is refused, not returned lossily | FR-30 | T7.11 |
+| P7.4.a | Done | `preview_entry(id)` (`crates/veil-gui/src/preview.rs`) checks the entry's recorded `size` against C-5 (`MAX_PREVIEW_BYTES`) before any read | FR-30, C-5 | T7.10 |
+| P7.4.b | Done | Extension checked against the supported list (`classify`, a third small implementation of FR-29's rule, for the reason recorded in the module doc — a closed eleven-entry lookup, not general grouping) before decryption is attempted | FR-30 | T7.9 |
+| P7.4.c | Done | `Vault::extract` called with `dst` a `Cursor<Vec<u8>>` — no new core method, per Spec §5.1 | FR-30, FR-17, FR-18 | T7.8, T7.12 |
+| P7.4.d | Done | `PreviewPayload` (`Image { mime, base64 }` / `Text { content }`) per Spec §5.3's definition. Base64 is hand-written (RFC 4648, checked against its own test vectors) rather than a new dependency | FR-30 | T7.8 |
+| P7.4.e | Done | A text-listed extension whose decrypted bytes are not valid UTF-8 is refused (`PreviewNotText`), not returned lossily | FR-30 | T7.11 |
+
+**Also done here, ahead of P7.7:** `tests/vocabulary.rs`'s audit (T6.31) never scanned `veil-gui/src` itself — only `ui/src` and `veil-cli/src` — even though `ErrorInfo.message` text reaches the frontend unescaped in more than one fallback path. `preview.rs` is the first place in this crate's own Rust source to author user-facing prose directly rather than relay `veil_core::Error`'s `Display` text, so the gap became load-bearing; extended the audit to cover `veil-gui/src`, which caught one pre-existing violation in `commands.rs` (`replace_entry`'s internal-bug message said "entry", now "file") — fixed rather than left for later.
 
 ---
 

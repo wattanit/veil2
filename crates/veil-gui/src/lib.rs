@@ -10,6 +10,7 @@ pub mod commands;
 pub mod errors;
 #[cfg(debug_assertions)]
 pub mod fixture;
+pub mod preview;
 pub mod state;
 
 /// Creates the main window with non-persistent storage (P5.2.a, Spec §5.3,
@@ -57,6 +58,7 @@ pub fn run() {
             commands::replace_entry,
             commands::change_password,
             commands::check_vault,
+            preview::preview_entry,
         ]);
 
     #[cfg(not(debug_assertions))]
@@ -79,6 +81,7 @@ pub fn run() {
             commands::replace_entry,
             commands::change_password,
             commands::check_vault,
+            preview::preview_entry,
         ]);
 
     if let Err(error) = builder.run(tauri::generate_context!()) {
