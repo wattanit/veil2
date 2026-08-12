@@ -1,11 +1,11 @@
 # Veil2 — Requirements Document
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
-**Date:** 2026-08-09
+**Date:** 2026-08-12
 **Owner:** wattanit
 **Companion documents:**
-- Design Guideline v1.0 — downstream
+- Design Guideline v1.3 — downstream
 - Technical Specification v1.0 — downstream
 
 Legacy reference only, not a companion document: the original Veil project (`github.com/wattanit/veil`, 2025) and its `Requirements.md`. This document supersedes it entirely. Veil2 changes the central design decision (Veil stored its file index in plaintext) and the product form. No identifiers from that document carry into this one.
@@ -86,7 +86,7 @@ Requirement numbers are continuous across subsections. Subsection headings are f
 
 **FR-2.** Open a vault by password. A wrong password and a damaged vault are reported as distinct conditions. The original Veil reported both identically as a cryptography error, which misdirects users to the wrong remedy.
 
-**FR-3.** Lock a vault on user instruction and on application exit. Locking releases derived key material from memory and releases the lock described in FR-23. The vault is not locked automatically on inactivity, sleep, or screen lock. This exposure is disclosed in §7 and must be disclosed in the product.
+**FR-3.** Lock a vault on user instruction and on application exit. Locking releases derived key material from memory, clears any preview content held in memory (FR-30), and releases the lock described in FR-23. The vault is not locked automatically on inactivity, sleep, or screen lock. This exposure is disclosed in §7 and must be disclosed in the product.
 
 **FR-4.** Change a vault's password. Completion time is independent of vault size; stored content is not re-encrypted.
 
@@ -99,6 +99,14 @@ Requirement numbers are continuous across subsections. Subsection headings are f
 **FR-7.** On open, present the complete index: name, relative path, size, and timestamps for every entry, without decrypting any file's content. Open time is proportional to entry count, independent of total vault size.
 
 **FR-8.** Group and filter the index by each entry's recorded relative path. Storage is flat; path is metadata, not structure. Operations implying a real directory tree — renaming a folder, creating an empty one — are not supported.
+
+**FR-28.** On request, present an entry's complete recorded metadata — name, folder, size, source modification time, and added time — beyond what the list columns (FR-7) show. Nothing here requires decrypting content.
+
+**FR-29.** Group and filter the index by each entry's file extension: the substring of `name` following its last `.`, excluded when that `.` is the first character of the name — so `.gitignore` has no extension, and `archive.tar.gz` groups under `gz`, not `tar.gz`. An entry with no extension groups under one reserved bucket. Comparison is case-insensitive. This is a second flat view control alongside FR-8's folder grouping, under the same restriction: no rename, create, or drag is implied by a group, extension or folder.
+
+**FR-30.** For a single selected entry whose extension is on the supported preview list (images: `jpg`, `jpeg`, `png`, `gif`, `webp`, `bmp`; text: `txt`, `md`, `log`, `csv`, `json`) and no larger than C-5, decrypt its content to memory only — never to a temporary file — and display it. Markdown and other text types are shown as plain text, not rendered: the interface's Content-Security-Policy (Technical Specification §5.3) forbids network requests at runtime, and rendering vault content as HTML would put untrusted bytes in a position to attempt one anyway. FR-18's verification runs before anything is displayed; a failed check shows the same failure extraction shows, and nothing is displayed. Preview content is cleared — not merely dereferenced — no later than when the preview closes, the vault locks (FR-3), or the application exits.
+
+This introduces no new extraction path: it is FR-17 and FR-18's existing guarantee with the destination held in memory and displayed rather than written to a chosen file. No CLI equivalent is owed under A-4 — a terminal has no display surface to preview onto, and the underlying capability (save a copy) already has one there. Preview is a narrower carve-out from the "not a file manager" anti-goal (Design Guideline §1.2), which the Design Guideline must state explicitly rather than leave in silent contradiction; rename-in-place, folder creation, and move-between-folders remain excluded, since those still imply a directory tree the storage format does not have.
 
 ### 4.3 Ingest
 
@@ -189,6 +197,8 @@ Values below are initial; tune with use.
 **C-3.** Key-derivation cost parameters are stored per vault (HC-5), chosen so that opening a vault takes approximately one second on contemporary desktop hardware.
 
 **C-4.** Minimum password length: 12 characters. (The original Veil required 8.)
+
+**C-5.** Maximum size of an entry eligible for in-app preview (FR-30): 50 MiB. Decrypting a preview into memory costs nothing at this size; entries above it remain retrievable via FR-17, just not previewed inline.
 
 ### 6.2 Stability and quality
 

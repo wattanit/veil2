@@ -1,11 +1,11 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.2
+**Version:** 1.3
 **Status:** approved
-**Date:** 2026-08-10
+**Date:** 2026-08-12
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.0 — upstream
+- Requirements Document v1.1 — upstream
 - Technical Specification v1.0 — downstream
 
 This document specifies how Veil2 looks, feels, and communicates: identity and anti-goals, visual language, layout, interaction and response policy, the wording of every honesty clause FR-27 requires, and the moments that determine whether the product is trusted. It defers what the product must do to the Requirements Document, and how it is built to the Technical Specification. Working values below — colors, sizes, thresholds — are initial and tunable; they are specified so that tuning is a value change rather than a redesign.
@@ -26,7 +26,9 @@ Each of the following is prohibited, with its reason.
 
 **No security theater.** No padlock iconography, shields, keyholes, dark-and-green "hacker" color schemes, or language such as "military-grade encryption" or "unbreakable." Requirements §7 states that Veil2 does not defend against a compromised host; visual claims of impregnability would overstate this protection. Confidence is communicated through precise language, not through visual signaling of strength.
 
-**Not a file manager.** Veil2 does not provide rename-in-place, folder creation, move-between-folders, or in-app preview. Storage is flat (FR-8); a UI implying a directory tree would imply operations the format does not support. Grouping the list by recorded folder path (§3.2) is not an exception to this: it is a flat view control with no create, rename, or drag, and no nesting.
+**Not a file manager.** Veil2 does not provide rename-in-place, folder creation, or move-between-folders. Storage is flat (FR-8); a UI implying a directory tree would imply operations the format does not support. Grouping the list by recorded folder path or by file extension (§3.2; FR-8, FR-29) is not an exception to this: both are flat view controls with no create, rename, or drag, and no nesting.
+
+**In-app preview (FR-30) is a narrower, deliberate exception, added in v1.3.** It displays a file's own content, not a directory structure, and carries no create, rename, or move affordance of its own — the anti-goal above is about implying a filesystem the format doesn't have, and preview implies nothing about structure. It does not make Veil2 a general file manager: there is still no editing, no in-place save, and no association with external applications for opening previewed content (opening in another application would write plaintext to a location this product does not control, which HC-2 forbids).
 
 **Not a sync client.** No operation runs in the background. Verification is user-initiated, not automatic (FR-26). Any operation in progress was started by the user and can be canceled by the user.
 
@@ -109,9 +111,15 @@ One panel shows vault contents. There is no second panel for the local filesyste
 
 **Statistics line** — entry count and total stored size, always visible (FR-7). Displaying this immediately at open has no performance cost, since open time does not scale with vault size (S-2).
 
-**Controls** — search, the grouping toggle, and add. Grouping by recorded folder path is a *view* control, not a directory tree (FR-8). Groups can be collapsed and expanded; they cannot be renamed, created, or dragged, since folder path is metadata rather than structure.
+**Controls** — search, a grouping choice, and add. Grouping is one choice among **none**, **by folder**, and **by extension** (FR-8, FR-29) — never both dimensions at once, and never a directory tree. Nesting one grouping inside the other was considered and rejected: a flat list grouped by two metadata dimensions at once starts to look like the directory tree §1.2 refuses to imply, for a case a second search term already serves. Groups can be collapsed and expanded; they cannot be renamed, created, or dragged, since folder path and extension are both metadata rather than structure. A collapsed group's header still shows its row count, since collapsing must not make a group's size unknowable. Collapsing is per group and lasts for the session; changing the grouping choice, or locking and reopening the vault, returns every group to expanded.
+
+Extension-grouped headers are labeled by the extension itself (`jpg`, `pdf`, and so on, lowercased regardless of how any individual file's name is cased) rather than an icon — text already communicates the grouping key exactly, and §2.1's decoration test rules out adding an icon set only to repeat it.
 
 **Content list** — virtualized, sortable by any column, multi-select. Columns are **name, folder, size, added**, in that order; §3.4 specifies the same order for the command-line output. This order places name first (the primary search target), folder second (disambiguates same-named files), then size and date (comparison values, formatted per the tabular-numeral rule in §2.3).
+
+Sorting is reached by clicking a column header: the first click sorts ascending by that column, a second click on the same header reverses to descending, and a small arrow beside the header label shows the active column and direction. There is no separate sort control in the controls bar — the header row already names every sortable column, and a second set of controls for the same choice would be redundant chrome (§2.1). Sorting and grouping compose: in the grouped view, sort order applies within each group, not across the whole list, since the group itself — a folder path, an extension — is the arrangement the user chose first.
+
+Multi-select follows platform convention: clicking a row selects it and clears any other selection, shift-click extends a contiguous range, and Cmd-click toggles one row into or out of the selection. Every action that names a count elsewhere in this document (§4.1, §8.4) applies to the full selection, not only the most recently clicked row.
 
 **Operation bar** — present only while an operation is running. Shows what is happening, actual progress, throughput, and a cancel control. One operation is visible at a time; queued work is stated as a count.
 
@@ -130,6 +138,19 @@ The CLI is a peer application, not a debug tool (A-4). Requirements:
 - Progress is written to standard error, results to standard output.
 - Progress rendering degrades to periodic lines when not attached to a terminal, rather than emitting control characters into a log.
 - The CLI does not prompt when a non-interactive invocation is detected; it fails with a message naming the missing input.
+- Grouping by extension (FR-29) and viewing an entry's full recorded metadata (FR-28) are available from the command line as well as the GUI, per A-4. Exact flag and subcommand names are a Technical Specification decision, not this document's. Preview (FR-30) has no CLI equivalent, and this is not a parity gap: a terminal has no display surface to preview onto, and the underlying guarantee it presents (FR-17/FR-18) already has one, in `save-copy`.
+
+### 3.5 Context menu
+
+Added in v1.3. Right-clicking a selected row, or the current multi-selection, opens a menu of actions on that selection. Nothing here is exclusive to the menu — every item is also reachable through the controls bar's existing buttons (Replace…, Delete) — except the two items that had no control before it:
+
+- **Save as…** — FR-17, the same destination-choosing extraction the row's double-click and the toolbar already perform.
+- **Show details** — FR-28, §8.9. Present for exactly one selected row; a multi-row selection has no single set of metadata to show.
+- **Preview** — FR-30, §8.10. Present only when exactly one row is selected and its extension is on the supported list. Absent, not disabled, for an unsupported type or a multi-row selection: a menu item that is usually greyed out trains the user to stop reading it before deciding whether it applies.
+- **Replace…** — present only for a single selection, mirrors the existing toolbar button (§8.7).
+- **Delete** — present for any selection, mirrors the existing toolbar button, styled `caution` per §2.2, and carries the same confirmation (§4.1, §8.4) regardless of which control started it.
+
+The menu never offers rename, move to folder, or open with an external application. The first two are directory-tree operations this format does not support (§1.2); the third would write plaintext to a location this product does not control, which HC-2 forbids — Save as… already exists for a user who wants the file in another application, and it makes that hand-off, and the fact that the copy is now unprotected, explicit rather than incidental.
 
 ---
 
@@ -337,6 +358,22 @@ Requires the vault's current password even though it is already unlocked: `veil-
 
 No strength claim, for the same reason §8.2 makes none.
 
+### 8.9 Viewing details
+
+Added in v1.3. Opens from the context menu (§3.5) as a lightweight panel or popover the user dismisses freely — not a modal, since inspecting metadata is not an irreversible action and does not need §4.1's confirmation treatment.
+
+Shows every field FR-28 covers, labeled in the same words the list columns use — name, folder, size, added — plus one the list has no room for: the file's own modification date from before it was added, labeled **Modified** to distinguish it from **Added**. No content hash is shown: it names no risk a user can act on by looking at it, and a 64-character hex string beside plain-language labels is exactly the internal detail §7 keeps off the screen. Size is shown as exact bytes here, not the rounded form the list uses — §7's "exact bytes on hover" rule, promoted to the default in a panel whose only purpose is precision.
+
+### 8.10 Preview
+
+Added in v1.3 — the narrow exception to §1.2 that FR-30 defines and §1.2 above states. Reached from the context menu (§3.5); a supported single selection is the only condition under which the item appears at all.
+
+The preview opens as an overlay above the list, not a separate window and not a replacement for it — closing it returns to exactly the selection and scroll position it was opened from. Its header names the file (never a generic "Preview" title, per §7's naming-the-object rule) and carries a close control; its body shows only the content.
+
+Text content — including `.md`, shown unrendered per FR-30 — is displayed in the body font, not monospace (§2.3 fixes this even here, since a preview is still part of the interface, not a code editor). An entry over C-5's cap does not offer preview at all; the context menu offers **Save as…** in its place, worded exactly as extraction is worded elsewhere, so the option that appears is not a mystery.
+
+A failed integrity check on opening a preview is worded exactly as an extraction failure (§6): only the one entry is implicated, the rest of the vault is unaffected, and the advice is the same — restore from a backup if one exists. Closing the preview, locking the vault (§8.5), and quitting the application all clear the decrypted content from memory (FR-3, FR-30); none of this is a visible action of its own, since decrypted bytes outliving the preview that showed them would be a defect, not a state worth surfacing to the user.
+
 ---
 
 ## 9. Open Questions
@@ -347,3 +384,5 @@ No strength claim, for the same reason §8.2 makes none.
 - **Palette values in §2.2 against real content.** Chosen for contrast on paper, not yet checked against dense lists of long filenames in both themes. Resolver: tune with use.
 - **Application icon and installer identity.** Not yet designed; §1.2 excludes padlocks and shields, which rules out most conventional icons for this category. Resolver: Design Guideline, next version.
 - **Whether search covers folder metadata as well as filenames**, and whether it is literal or fuzzy. Resolver: Design Guideline, next version, informed by entry counts in real vaults.
+- **Whether preview (§8.10) should also open on a keyboard shortcut** — Space, matching the platform's own Quick Look convention — in addition to the context menu. Resolver: Design Guideline, next version, once the context-menu version has real use behind it.
+- **Exact visual treatment of a collapsed group's header** — disclosure-triangle placement, and how the row-count badge introduced in §3.2 sits next to the group label. Resolver: tune with use, once grouping and collapsing are both implemented.

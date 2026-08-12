@@ -1,12 +1,12 @@
 # Veil2 — Technical Specification
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** approved
-**Date:** 2026-08-09
+**Date:** 2026-08-12
 **Owner:** wattanit
 **Companion documents:**
-- Requirements Document v1.0 — upstream
-- Design Guideline v1.0 — upstream
+- Requirements Document v1.1 — upstream
+- Design Guideline v1.3 — upstream
 
 This document owns how Veil2 is built: system structure, execution model, data formats, the cryptographic construction, dependencies, build and release, testing, and milestones. It defers what the product must do to the Requirements Document and how it presents itself to the Design Guideline. Every choice that satisfies an upstream requirement cites that requirement's identifier. Values given as defaults are initial and tunable unless a requirement fixes them.
 
@@ -293,6 +293,8 @@ Vault::verify(&self, &mut dyn Progress, &Cancel) -> Result<VerifyReport>  // FR-
 
 The whole index is resident once opened, so browsing is memory-speed (FR-7) and statistics cost nothing beyond summing what is already resident.
 
+**FR-28, FR-29, and FR-30 add no core surface.** Per-entry detail (FR-28) is fields `entries()` already returns — `source_mtime` alongside the rest, not previously surfaced past this layer. Extension grouping (FR-29) is a derivation over `name`, computed where each frontend already holds the full entry list, the same way a frontend computes its own display formatting today (`formatSize`, `formatAdded` in the GUI; the table renderer in the CLI) with no core equivalent. Preview (FR-30) is `extract` (§4.7) with `dst` a memory buffer instead of a file — the signature above already takes `&mut impl Write`, and a `Cursor<Vec<u8>>` satisfies that trait without a new method. No format version bump accompanies any of the three: nothing changes about what is stored, only about what an already-resident field or an already-existing read path is used for.
+
 ### 5.2 Command-line application
 
 `clap` for parsing. Output follows Design Guideline §3.4: human-readable table by default with the GUI's column order, machine-readable on request, progress to standard error and results to standard output so pipelines stay clean, and progress degrading to periodic lines when not attached to a terminal.
@@ -322,6 +324,13 @@ The codes are fixed here rather than in the application, because the moment a ba
 
 Verification may be run from a scheduled script: it only reads the vault and modifies nothing, so automating it carries none of the risk automatic writes would.
 
+**Two additions to the command surface for v2.1, held to the same compatibility rule as the exit codes above:**
+
+- **`veil detail <vault> <file>`** (FR-28) — prints one entry's complete recorded metadata: name, folder, size, the source's own modification time (labelled `Modified`, matching Design Guideline §8.9), and when it was added. `file` is folder and name together, the same identity argument `save-copy`, `replace`, and `delete` already take. `NotFound` (13) if nothing matches.
+- **`--group` on `list` takes an optional value** (FR-29). Today it is a bare boolean flag; changing it to require a value would break every script that passes it bare. Instead: omitted, the listing is flat, exactly as before this change; given bare (`--group`), it groups by folder — the flag's existing behavior, unchanged; given `--group=extension`, it groups by the rule FR-29 defines (the substring of `name` after its last `.`, a leading dot not counting as one). No script that already passes `--group` observes any difference.
+
+Preview (FR-30) has no CLI form, for the reason Design Guideline §3.4 gives: there is no terminal surface to preview onto, and the capability it presents a view of — extraction — already has one in `save-copy`.
+
 ### 5.3 Graphical application
 
 **Tauri v2.** Rust backend linking `veil-core` directly, web frontend in the system webview.
@@ -333,6 +342,23 @@ Vault operations run on a worker thread and report progress to the UI thread thr
 **Webview persistence.** A system webview may cache data to disk by default, including rendered filenames — which HC-1 requires stay undisclosed without the password. The webview is configured for ephemeral storage (on macOS, `WKWebView` with a non-persistent `WKWebsiteDataStore`), and the frontend uses no `localStorage`, `sessionStorage`, or IndexedDB; Content-Security-Policy is restricted to the bundled origin, and developer tools are compiled out of release builds. This is ordinary configuration, not a gated feature: the worst a lapse here leaks is filenames, not content, and it carries no dedicated release gate or mandatory per-platform verification.
 
 **Accepted cost.** Tauri brings a JavaScript toolchain and its dependency tree into a security product's supply chain, which egui would not have. It is bounded by the same policy as §7: pinned versions, audited by the same gates, and no frontend dependency permitted to make network requests at runtime.
+
+**Detail, grouping, sorting, and multi-select (FR-28, FR-29) are frontend state over data the list already holds.** `EntryInfo` gains one field, `source_mtime`, alongside the ones it already serializes — everything FR-28's detail panel needs. Extension grouping, column sort, and multi-select touch no Tauri command at all: `list_entries` already returns the complete list once per open vault (§5.1), and rearranging, grouping, or selecting within it is the frontend's own array manipulation, the same standing as the search filter that already works this way. No dependency is added on either side for any of this — no markdown parser, because Requirements FR-30 shows Markdown as plain text; no client-side state library, because the existing module-level state in `main.ts` already holds everything a few more `let` bindings (sort column, sort direction, grouping mode, a `Set` of selected ids in place of the single `selectedId`) can extend.
+
+**`preview_entry(id) -> PreviewPayload`, the one new command, for FR-30.** Checks the entry's recorded `size` against C-5 before touching any ciphertext — a refusal for an oversized entry costs nothing and reads nothing. For an entry within the cap, calls the existing `Vault::extract` (§5.1) with `dst` a `Cursor<Vec<u8>>` rather than a file, so FR-18's verification runs exactly as it does for a save-copy; a failed check returns the same error variant a failed extraction would, and nothing is buffered past that failure.
+
+```rust
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum PreviewPayload {
+    Image { mime: &'static str, base64: String },   // jpg, jpeg, png, gif, webp, bmp
+    Text { content: String },                        // txt, md, log, csv, json — shown unrendered
+}
+```
+
+An extension outside FR-30's supported list, or content that is not valid UTF-8 for a text-listed extension, is refused before decryption is attempted — the same "absent, not disabled" rule the context menu item follows (Design Guideline §3.5) applies here one layer down, as a typed refusal rather than a generic failure. A `Text` variant carries the decoded string directly rather than base64, since the frontend displays it as-is; `Image` carries base64 because Tauri's IPC channel serializes command results as JSON, which has no binary type of its own — at C-5's 50 MiB cap the base64 overhead (roughly a third larger) is not a measured concern.
+
+**Clearing preview content (FR-30, extending FR-3) is honoured to the extent each layer can honour it.** On the Rust side, the buffer passed to `extract` and the payload built from it are ordinary owned values with no `ZeroizeOnDrop` — that annotation exists for *key* material (§3.1), and decrypted file content was never a secret Veil2 tries to keep from its own process. They are simply dropped once the command's response is sent; nothing here retains a second copy. On the frontend, closing the preview, locking the vault, and quitting the application each release every reference to the previewed content — including revoking any object URL created to display an image — so nothing outlives its own visible use. What this does not claim: JavaScript offers no way to force the engine to overwrite freed memory immediately, so "cleared" here means *dereferenced promptly, in every path that ends a preview*, not zeroised on a timeline the application controls. Requirements §7 already declines to defend against memory inspection of a running, unlocked vault; this is the same limit, restated for the one new place decrypted content now transiently lives.
 
 ---
 
@@ -403,6 +429,8 @@ The frontend toolchain is pinned and lockfile-committed like the Rust dependenci
 
 The original Veil's `sled` is not carried forward: it has been unmaintained since 2021, and §4.3 and §4.4 do the job in a few hundred lines with a durability story that fits in a paragraph.
 
+**Nothing is added to this table for v2.1.** §5.1 and §5.3 above account for why: FR-28 and FR-29 are derivations over data and dependencies already present, and FR-30 reuses `extract` and the standard library's own `Cursor`, deliberately kept out of Markdown rendering (a dependency and a risk both) by Requirements FR-30's plain-text decision. A feature round that stayed inside the existing dependency set was not the goal going in; it fell out of reusing `extract` for preview rather than inventing a second read path.
+
 ---
 
 ## 8. Build and Release
@@ -459,6 +487,13 @@ The original Veil had fourteen unit tests, no integration tests, and logic that 
 
 **Scale tests**, marked `#[ignore]` and run on request, since a multi-gigabyte fixture costs minutes and disk: a multi-gigabyte entry, and a vault at C-1's entry limit, asserting S-1 (peak memory does not scale with file size) and S-2 (open time does not scale with vault size).
 
+**Added for v2.1:**
+
+- **Extension derivation**, against one fixture list of name/expected-extension pairs covering `archive.tar.gz` → `gz`, `.gitignore` → none, `README` → none, and ordinary cases — run against both the CLI's Rust implementation and the GUI's TypeScript one, so the two are checked against the same cases even though neither calls the other's code (§5.1's note on why this is duplicated rather than shared).
+- **`preview_entry` never touches disk.** An integration test snapshots the vault directory's contents before and after a preview call and asserts they are identical — the direct check for FR-30's "memory only, never a temporary file," in the same spirit as the adversarial suite's direct regression tests above.
+- **`preview_entry` refuses above C-5** without reading the entry's stored ciphertext at all — asserted by pairing the refusal with a corrupted entry that would fail FR-18's check if it were ever read, and confirming the corruption is never reported.
+- **`detail` and `--group=extension`** get the same CLI test treatment (`assert_cmd`) as every other subcommand (§9 above), including that a bare `--group` still behaves exactly as it did before this section existed.
+
 ---
 
 ## 10. Milestones
@@ -477,7 +512,9 @@ High-level; the Implementation Plan expands each into phases and tasks. Each sta
 
 **M6 — GUI v1, and 2.0.0 for macOS.** The Design Guideline realised, packaged per §8.2. *Proves the product.*
 
-M1 through M4 touch no GUI code, so the interface work blocks nothing and is blocked by nothing until M5.
+**M7 — Browsing screen additions, and 2.1.0.** The context menu, per-entry detail, extension grouping, column sort, multi-select, and preview (FR-28–FR-30) over the M6 GUI and its CLI peer. *Proves that the browsing screen can grow real capability — a second read path (preview) included — without a format version bump, a new core dependency, or a break in an existing script's use of `--group`.*
+
+M1 through M4 touch no GUI code, so the interface work blocks nothing and is blocked by nothing until M5. M7 touches no format or crypto code at all — every check in §9's adversarial and crash suites from M1 and M4 still covers the whole of what a vault is on disk, unchanged.
 
 ---
 
@@ -487,3 +524,5 @@ M1 through M4 touch no GUI code, so the interface work blocks nothing and is blo
 - **Whether the platform's `fsync` reaches the platter.** The write ordering is proved by crash-injection (M4): no index generation names bytes the code had not yet synced. Whether the underlying platform honours `fsync` all the way to the medium is unverified — that needs whole-machine power loss, and there is no rig for it. Stated as an acknowledged gap rather than closed by pretending otherwise.
 - **Fuzzing the header and index parsers.** `cargo-fuzz` would be the right tool; declined because it needs a nightly toolchain and a tool on the development machine. Seeded, deterministic randomised testing covers the same two entry points at lower depth and runs with the ordinary suite (§9).
 - **Format-version support is not withdrawn while Requirements §2.2's migration path remains unbuilt.** A release may not refuse a vault it can still technically read; there would be no other route by which that vault's data could be recovered.
+- **Whether extension derivation should move into `veil-core` if a third consumer ever needs it.** Declined for now (§5.1): two consumers each implementing one written rule, checked against a shared fixture list (§9), was judged cheaper than a shared crate for a one-line string operation. The same tension is already open in Design Guideline §9 for shared vocabulary strings; this is the same question in a different place, not a new one. Resolver: revisit if a third frontend appears.
+- **Whether a base64 `Image` payload stays comfortable at C-5's 50 MiB cap**, or whether `preview_entry` should move to a dedicated byte-stream response if IPC overhead proves noticeable in practice. Resolver: measured once M7 is built, the same way the KDF cost parameters above were measured rather than assumed.
