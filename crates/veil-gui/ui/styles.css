@@ -688,3 +688,44 @@ button.primary.working::after {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ------------------------------------------------------------ context menu */
+
+/* Design §3.5: a right-click's own menu — above the modal layer's z-index
+   so it is never trapped beneath a dialog, though the two are never open at
+   once today. Not a modal itself: no backdrop, dismisses on an outside
+   click or Escape. */
+.context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px color-mix(in srgb, black 30%, transparent);
+}
+
+.context-menu[hidden] {
+  display: none;
+}
+
+.context-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.context-menu button:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* §2.2: `caution` on Delete, matching the toolbar button it mirrors. */
+.context-menu button.caution {
+  color: var(--caution);
+}

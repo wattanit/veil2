@@ -162,6 +162,12 @@
           <div id="modal-actions"></div>
         </div>
       </div>
+
+      <!-- The row context menu (Design §3.5): populated per right-click,
+           positioned at the click point. Not a modal — it dismisses on an
+           outside click or Escape, without blocking the rest of the
+           screen. -->
+      <div id="context-menu" class="context-menu" role="menu" hidden></div>
     </main>
     <script type="module" src="./main.js"></script>
   </body>

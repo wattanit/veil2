@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Foundation and plan versions this list is built against:**
 - Requirements Document v1.1 — upstream
-- Design Guideline v1.3 — upstream
+- Design Guideline v1.4 — upstream
 - Technical Specification v1.1 — upstream
 - Implementation Plan v1.0 — upstream; this list expands Plan tasks P8.1–P8.10
 
@@ -26,7 +26,7 @@ This document owns the step-level breakdown of Phase 8. It defers what to build 
 
 ## What Phase 8 is for
 
-Phase 7 proved `preview_entry`, `detail`'s CLI twin, and extension derivation hold their own guarantees, off a webview, before anything was built on top of them (Spec M7, Plan's own sequencing note). Phase 8 is that webview work: the browsing screen itself carries the second grouping dimension, sort, multi-select, the context menu, the details panel, and preview, per Design Guideline v1.3. Per Spec §5.3, almost none of this touches a Tauri command — grouping, sorting, and selection are frontend state over the list `list_entries` already returns in full; `preview_entry` is the one command this phase's UI calls, and it already exists. This phase's own new surface is therefore concentrated in `crates/veil-gui/ui/src/main.ts` (currently a plain TypeScript/DOM app, no framework, no client-side state library — confirmed by Spec §5.3's explicit statement that none is being added) and `index.html`/`styles.css`, plus one addition to `api.ts`'s `EntryInfo` interface and one new wrapper for `preview_entry`.
+Phase 7 proved `preview_entry`, `detail`'s CLI twin, and extension derivation hold their own guarantees, off a webview, before anything was built on top of them (Spec M7, Plan's own sequencing note). Phase 8 is that webview work: the browsing screen itself carries the second grouping dimension, sort, multi-select, the context menu, the details panel, and preview, per Design Guideline v1.4. Per Spec §5.3, almost none of this touches a Tauri command — grouping, sorting, and selection are frontend state over the list `list_entries` already returns in full; `preview_entry` is the one command this phase's UI calls, and it already exists. This phase's own new surface is therefore concentrated in `crates/veil-gui/ui/src/main.ts` (currently a plain TypeScript/DOM app, no framework, no client-side state library — confirmed by Spec §5.3's explicit statement that none is being added) and `index.html`/`styles.css`, plus one addition to `api.ts`'s `EntryInfo` interface and one new wrapper for `preview_entry`.
 
 Nothing here changes the storage format, the cryptographic construction, or any Tauri command's guarantees — those are Phase 7's closed record. A defect found here that turns out to live in `preview_entry` or `detail` reopens Phase 7's record, not this one.
 
@@ -77,12 +77,12 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.4.a | Not yet built | Right-clicking a row not already part of the current selection replaces the selection with that row alone before the menu opens; right-clicking a row already inside a multi-selection opens the menu on the existing selection unchanged (platform convention) | Design §3.5 | T8.10 |
-| P8.4.b | Not yet built | **Save as…** (FR-17) and **Delete** appear for any selection size; Delete is styled `caution` and reuses the exact confirmation dialog the toolbar's Delete button already opens — no second dialog | FR-17, Design §3.5, §4.1 | T8.11 |
-| P8.4.c | Not yet built | **Show details** (FR-28) appears only when exactly one row is selected — a multi-row selection has no single set of metadata to show, so the item is absent, not disabled | FR-28, Design §3.5, §8.9 | T8.12 |
-| P8.4.d | Not yet built | **Preview** (FR-30) appears only when exactly one row is selected and its extension is on the supported list (checked client-side against the same eleven-entry list `preview.rs`'s `classify` uses, mirrored here as a small constant — not `extensionOf`, since that answers a different question); absent, not disabled, for an unsupported type, an over-cap entry, or a multi-row selection | FR-30, Design §3.5, §8.10 | T8.13 |
-| P8.4.e | Not yet built | **Replace…** appears only when exactly one row is selected, mirroring the toolbar button (P8.3.d) | Design §3.5, §8.7 | T8.14 |
-| P8.4.f | Not yet built | The menu offers no rename, move-to-folder, or open-with-external-application item, anywhere, ever | Design §3.5, §1.2, HC-2 | T8.15 |
+| P8.4.a | Done | `setupContextMenu()`'s `contextmenu` listener on `#list-spacer`: right-clicking a row not already part of the current selection replaces the selection with that row alone before the menu opens; right-clicking a row already inside a multi-selection opens the menu on the existing selection unchanged (platform convention) | Design §3.5 | T8.10 |
+| P8.4.b | Done | **Save as…** (FR-17) and **Delete** appear for any selection size; Delete is styled `caution` and reuses the exact confirmation dialog the toolbar's Delete button already opens — no second dialog. **Scope decision, recorded in Design Guideline v1.4:** a multi-row Save as… runs the existing single-file `extract()` save dialog once per file in sequence rather than a new destination-folder picker — found while implementing that Design §3.5 credited "the toolbar" with an extraction control that has never existed (only the double-click has), and that a folder-picker would need its own overwrite-collision check with no existing mechanism to build it from. Corrected the Design Guideline's wording and opened a new §9 item on the folder-picker question rather than building it unasked | FR-17, Design §3.5, §4.1 | T8.11 |
+| P8.4.c | Done | **Show details** (FR-28) appears only when exactly one row is selected — a multi-row selection has no single set of metadata to show, so the item is absent, not disabled. Its click handler is a stub (`showDetails()`) until P8.5 builds the real panel | FR-28, Design §3.5, §8.9 | T8.12 |
+| P8.4.d | Done | **Preview** (FR-30) appears only when exactly one row is selected and it passes the new `isPreviewable()` (`ui/src/previewable.ts`) — the same eleven-extension list and C-5 cap `preview.rs`'s `classify` and size check use, a fourth deliberately-separate implementation of the lookup rather than a call to `extensionOf`, for the same reason `classify` gives; absent, not disabled, for an unsupported type, an over-cap entry, or a multi-row selection. Its click handler is a stub (`openPreview()`) until P8.6 builds the real overlay | FR-30, Design §3.5, §8.10 | T8.13 |
+| P8.4.e | Done | **Replace…** appears only when exactly one row is selected, mirroring the toolbar button (P8.3.d) | Design §3.5, §8.7 | T8.14 |
+| P8.4.f | Done | The menu offers no rename, move-to-folder, or open-with-external-application item — confirmed by the five-item list `openContextMenu()` builds and nothing else | Design §3.5, §1.2, HC-2 | T8.15 |
 
 ---
 

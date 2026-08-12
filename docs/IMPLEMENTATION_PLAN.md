@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Foundation versions this plan is built against:**
 - Requirements Document v1.1 — upstream
-- Design Guideline v1.3 — upstream
+- Design Guideline v1.4 — upstream
 - Technical Specification v1.1 — upstream
 
 This document owns the **sequencing** of the work: ordered phases expanding the Technical Specification's M7 (Spec §10), each with entry and exit conditions, and each task citing the foundation item that put it there. It defers what to build to the Requirements, how it presents to the Design Guideline, and how it is built to the Specification. No task below restates a format, an algorithm, or a layout — each cites the Spec section that defines it. If implementation finds the Spec wrong or underspecified, that is a Specification version bump, not a correction recorded here.
@@ -34,7 +34,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 
 *Proves the new capabilities exist and hold their own guarantees — no ciphertext read for a refused preview, no byte written to the vault directory for any of it — before anything is built on top of them in a webview, where the same proof is far more expensive to obtain.*
 
-**Entry:** Phase 6 exit met (2.0.0 shipped). Foundation suite at Requirements v1.1, Design Guideline v1.3, Technical Specification v1.1.
+**Entry:** Phase 6 exit met (2.0.0 shipped). Foundation suite at Requirements v1.1, Design Guideline v1.4, Technical Specification v1.1.
 
 | Task | Status | Work | Cites |
 |---|---|---|---|
@@ -56,7 +56,7 @@ This document owns the **sequencing** of the work: ordered phases expanding the 
 
 ## Phase 8 — Browsing Screen (Spec M7, part 2)
 
-*Proves the product's browsing screen carries the new capabilities the way Design Guideline v1.3 specifies them — the context menu, the second grouping dimension, sort, multi-select, and preview — and ships as 2.1.0.*
+*Proves the product's browsing screen carries the new capabilities the way Design Guideline v1.4 specifies them — the context menu, the second grouping dimension, sort, multi-select, and preview — and ships as 2.1.0.*
 
 **Entry:** Phase 7 exit met.
 

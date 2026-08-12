@@ -8,6 +8,7 @@ import * as api from "./api";
 import type { EntryInfo } from "./api";
 import { extensionOf } from "./extension";
 import { EntryList, type ListRow } from "./list";
+import { isPreviewable } from "./previewable";
 import { nextSelection, type ClickKind } from "./selection";
 import { sortEntries, type SortColumn, type SortDirection } from "./sort";
 
@@ -254,6 +255,10 @@ async function lock(): Promise<void> {
   currentSummary = null;
   allEntries = [];
   clearSelection();
+  // The context menu is a sibling of the screens, not inside #screen-vault
+  // — left open, it would float over the locked screen bound to entries
+  // that no longer exist.
+  closeContextMenu();
   showScreen("locked");
 }
 
@@ -505,6 +510,24 @@ function folderOf(path: string): string {
   const parts = path.split(/[/\\]/);
   parts.pop();
   return parts.pop() ?? path;
+}
+
+// Save as… (Design §3.5) for a whole selection — one native save dialog per
+// file, exactly `extract()` as double-click already invokes it, run in
+// sequence. Design §3.5 describes this as "the same destination-choosing
+// extraction the row's double-click... already perform[s]", which is a
+// single-file operation; there is no destination-folder picker anywhere in
+// this codebase to extend it into one native "choose a folder, write every
+// file there" flow, and building one would also need its own overwrite
+// check (Design §4.1/FR-19), since a folder-picker carries none of the
+// per-file confirmation a save dialog gives for free. N sequential dialogs
+// is the honest, zero-new-surface reading for a first cut; a batch
+// destination is left open (Phase8-ToDo.md's own note) rather than
+// invented here.
+async function extractSelection(entries: EntryInfo[]): Promise<void> {
+  for (const entry of entries) {
+    await extract(entry);
+  }
 }
 
 // ------------------------------------------------------------------ add --
@@ -762,6 +785,98 @@ async function runDelete(entries: EntryInfo[]): Promise<void> {
   await refreshList();
 }
 
+// ------------------------------------------------------------------ context menu -
+
+// Design §3.5: the same five actions the controls bar and double-click
+// already reach, reached instead from a right-click on the selection.
+function openContextMenu(x: number, y: number, entries: EntryInfo[]): void {
+  if (entries.length === 0) {
+    return;
+  }
+  const only = entries.length === 1 ? entries[0] : undefined;
+  const items: Array<{ label: string; caution?: boolean; run: () => void }> = [
+    { label: "Save as…", run: () => void extractSelection(entries) },
+  ];
+  if (only) {
+    items.push({ label: "Show details", run: () => showDetails(only) });
+  }
+  // Preview is absent, not disabled, for an unsupported type, an over-cap
+  // entry, or a multi-row selection — a greyed-out item trains a person to
+  // stop reading before deciding whether it applies (Design §3.5).
+  if (only && isPreviewable(only)) {
+    items.push({ label: "Preview", run: () => openPreview(only) });
+  }
+  if (only) {
+    items.push({ label: "Replace…", run: () => void replaceSelected() });
+  }
+  items.push({ label: "Delete", caution: true, run: () => confirmDelete(entries) });
+
+  const menu = el<HTMLElement>("context-menu");
+  menu.innerHTML = "";
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    if (item.caution) {
+      button.classList.add("caution");
+    }
+    button.addEventListener("click", () => {
+      closeContextMenu();
+      item.run();
+    });
+    menu.appendChild(button);
+  }
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.hidden = false;
+}
+
+function closeContextMenu(): void {
+  el<HTMLElement>("context-menu").hidden = true;
+}
+
+function setupContextMenu(): void {
+  el<HTMLElement>("list-spacer").addEventListener("contextmenu", (event) => {
+    const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
+    if (!row) {
+      return;
+    }
+    event.preventDefault();
+    const id = Number(row.dataset.id);
+    // P8.4.a: right-clicking a row already inside the selection opens the
+    // menu on that selection unchanged; right-clicking outside it replaces
+    // the selection with just the clicked row first.
+    if (!selectedIds.has(id)) {
+      selectedIds = new Set([id]);
+      lastClickedId = id;
+      list.setSelection(selectedIds);
+      updateSelectionButtons();
+    }
+    openContextMenu(event.clientX, event.clientY, selectedEntries());
+  });
+  document.addEventListener("mousedown", (event) => {
+    const menu = el<HTMLElement>("context-menu");
+    if (!menu.hidden && !menu.contains(event.target as Node)) {
+      closeContextMenu();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !el<HTMLElement>("context-menu").hidden) {
+      closeContextMenu();
+    }
+  });
+}
+
+// P8.5 replaces this stub with the real details panel (Design §8.9).
+function showDetails(entry: EntryInfo): void {
+  void entry;
+}
+
+// P8.6 replaces this stub with the real preview overlay (Design §8.10).
+function openPreview(entry: EntryInfo): void {
+  void entry;
+}
+
 // ------------------------------------------------------------ replace ---
 
 // The explicit path (Design §8.7): select an entry, choose *any* file as
@@ -885,6 +1000,7 @@ async function submitChangePassword(): Promise<void> {
 
 setupDropTarget();
 setupSelection();
+setupContextMenu();
 showScreen("firstRun");
 
 // First run (Design §8.1) shows exactly two choices and nothing else — no

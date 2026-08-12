@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Foundation and plan versions these cases are built against:**
 - Requirements Document v1.1 — upstream
-- Design Guideline v1.3 — upstream
+- Design Guideline v1.4 — upstream
 - Technical Specification v1.1 — upstream
 - Implementation Plan v1.0 — upstream
 - [Phase8-ToDo.md](Phase8-ToDo.md) v1.0 — companion; each case names the item it covers

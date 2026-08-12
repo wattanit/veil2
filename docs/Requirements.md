@@ -5,7 +5,7 @@
 **Date:** 2026-08-12
 **Owner:** wattanit
 **Companion documents:**
-- Design Guideline v1.3 — downstream
+- Design Guideline v1.4 — downstream
 - Technical Specification v1.0 — downstream
 
 Legacy reference only, not a companion document: the original Veil project (`github.com/wattanit/veil`, 2025) and its `Requirements.md`. This document supersedes it entirely. Veil2 changes the central design decision (Veil stored its file index in plaintext) and the product form. No identifiers from that document carry into this one.

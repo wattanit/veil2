@@ -1,12 +1,12 @@
 # Veil2 — Design Guideline
 
-**Version:** 1.3
+**Version:** 1.4
 **Status:** approved
 **Date:** 2026-08-12
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.1 — upstream
-- Technical Specification v1.0 — downstream
+- Technical Specification v1.1 — downstream
 
 This document specifies how Veil2 looks, feels, and communicates: identity and anti-goals, visual language, layout, interaction and response policy, the wording of every honesty clause FR-27 requires, and the moments that determine whether the product is trusted. It defers what the product must do to the Requirements Document, and how it is built to the Technical Specification. Working values below — colors, sizes, thresholds — are initial and tunable; they are specified so that tuning is a value change rather than a redesign.
 
@@ -144,7 +144,7 @@ The CLI is a peer application, not a debug tool (A-4). Requirements:
 
 Added in v1.3. Right-clicking a selected row, or the current multi-selection, opens a menu of actions on that selection. Nothing here is exclusive to the menu — every item is also reachable through the controls bar's existing buttons (Replace…, Delete) — except the two items that had no control before it:
 
-- **Save as…** — FR-17, the same destination-choosing extraction the row's double-click and the toolbar already perform.
+- **Save as…** — FR-17, the same destination-choosing extraction the row's double-click already performs. Corrected in v1.4: an earlier draft of this line also credited "the toolbar" with the same capability, but no toolbar control has ever done this — there is no extraction button in the controls bar, only the double-click. For a multi-row selection this item runs that same single-file save dialog once per file in sequence, rather than a destination-folder picker: building the latter would need its own overwrite-collision check (§4.1's naming rule), since a folder picker carries none of a save dialog's own per-file overwrite prompt, and no such picker exists in this product yet. §9 keeps this open as a P8.4-era placeholder, not a final answer.
 - **Show details** — FR-28, §8.9. Present for exactly one selected row; a multi-row selection has no single set of metadata to show.
 - **Preview** — FR-30, §8.10. Present only when exactly one row is selected and its extension is on the supported list. Absent, not disabled, for an unsupported type or a multi-row selection: a menu item that is usually greyed out trains the user to stop reading it before deciding whether it applies.
 - **Replace…** — present only for a single selection, mirrors the existing toolbar button (§8.7).
@@ -386,3 +386,4 @@ A failed integrity check on opening a preview is worded exactly as an extraction
 - **Whether search covers folder metadata as well as filenames**, and whether it is literal or fuzzy. Resolver: Design Guideline, next version, informed by entry counts in real vaults.
 - **Whether preview (§8.10) should also open on a keyboard shortcut** — Space, matching the platform's own Quick Look convention — in addition to the context menu. Resolver: Design Guideline, next version, once the context-menu version has real use behind it.
 - **Exact visual treatment of a collapsed group's header** — disclosure-triangle placement, and how the row-count badge introduced in §3.2 sits next to the group label. Resolver: tune with use, once grouping and collapsing are both implemented.
+- **Whether a multi-row Save as… should gain a single destination-folder picker** instead of one save dialog per file (§3.5, added v1.4). The per-file dialogs are correct today — no overwrite silently skipped, no new command — but are N native dialogs for N files. Resolver: Design Guideline, next version, informed by how often a multi-file Save as… actually gets used.
