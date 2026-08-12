@@ -87,6 +87,8 @@ The app-specific password is generated at **appleid.apple.com** → *Sign-In and
 veil create MyVault.veil
 veil add MyVault.veil ~/Documents/report.pdf --folder work
 veil list MyVault.veil
+veil list MyVault.veil --group=extension
+veil detail MyVault.veil work/report.pdf
 veil save-copy MyVault.veil work/report.pdf --to ~/Desktop/report.pdf
 veil replace MyVault.veil work/report.pdf --from ~/Documents/report-v2.pdf
 veil delete MyVault.veil work/report.pdf
