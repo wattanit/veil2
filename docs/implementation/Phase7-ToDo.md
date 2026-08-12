@@ -93,8 +93,8 @@ Nothing here touches the format, the crypto construction, or anything Phase 0 th
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P7.5.a | Not yet built | Directory-snapshot test: the vault directory's contents, taken before and after a `preview_entry` call, are byte-for-byte identical | FR-30, HC-2 | T7.13, T7.14 |
-| P7.5.b | Not yet built | Refusal paired with a corrupted stand-in entry — over C-5, and on an unsupported extension — asserting the corruption is never surfaced, proving the read never happened | FR-30, C-5, HC-3 | T7.9, T7.10 |
+| P7.5.a | Done | Directory-snapshot test (`snapshot_all`, a recursive path→bytes map — stronger than comparing names or sizes): the vault directory's contents, taken before and after a `preview_entry` call, are byte-for-byte identical, for a successful call (T7.13) and for each refusal/failure case (T7.14) | FR-30, HC-2 | T7.13, T7.14 |
+| P7.5.b | Done | Already satisfied by P7.4's own T7.9/T7.10: each pairs its refusal with a corrupted stand-in entry, so a wrong refusal order would surface as `Corrupt` instead of the expected kind | FR-30, C-5, HC-3 | T7.9, T7.10 |
 
 ---
 

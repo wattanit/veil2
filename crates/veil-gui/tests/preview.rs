@@ -1,10 +1,11 @@
-//! Phase 7 test cases T7.8–T7.12 — the preview command (FR-30, C-5),
+//! Phase 7 test cases T7.8–T7.14 — the preview command (FR-30, C-5),
 //! driven directly through Tauri's mock runtime the same way Phase 5's
 //! T5.2/T5.3 and Phase 6's `conditions.rs` drive the rest of the command
 //! layer.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use tauri::test::{mock_builder, mock_context, noop_assets};
@@ -61,6 +62,27 @@ fn ruin(path: &Path) {
         *byte ^= 0xFF;
     }
     std::fs::write(path, bytes).unwrap();
+}
+
+/// Every file under `dir`, recursively, by path relative to `dir` and its
+/// exact bytes — P7.5.a's direct check that `preview_entry` writes nothing.
+/// Stronger than comparing names or sizes: a file rewritten with the same
+/// length would pass those and fail this.
+fn snapshot_all(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in std::fs::read_dir(&current).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let relative = path.strip_prefix(dir).unwrap().to_path_buf();
+                out.insert(relative, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    out
 }
 
 /// T7.8 — a supported, in-cap entry previews correctly, image and text
@@ -298,6 +320,118 @@ fn t7_12_a_failed_integrity_check_is_reported_not_passed_through() {
             Some("Corrupt"),
             "a damaged, otherwise-supported entry must fail the same way a damaged extraction does"
         );
+    });
+}
+
+/// T7.13 — a successful preview touches no file in the vault directory.
+#[test]
+fn t7_13_a_successful_preview_touches_no_file() {
+    tauri::async_runtime::block_on(async {
+        let scratch = Scratch::new("snapshot-ok");
+        let dir = scratch.vault_dir();
+        let entry_id = {
+            let mut vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+            vault
+                .add(
+                    "notes.txt",
+                    "",
+                    &mut "hello, this is a note".as_bytes(),
+                    &mut NoProgress,
+                    &Cancel::new(),
+                )
+                .unwrap()
+                .get()
+        };
+
+        let app = mock_app();
+        let handle = app.handle().clone();
+        veil_gui_lib::commands::open_vault(
+            handle.clone(),
+            dir.to_string_lossy().into_owned(),
+            PASSWORD.to_owned(),
+        )
+        .await
+        .unwrap();
+
+        let before = snapshot_all(&dir);
+        preview::preview_entry(handle, entry_id).await.unwrap();
+        let after = snapshot_all(&dir);
+        assert_eq!(
+            before, after,
+            "a successful preview changed something in the vault directory"
+        );
+    });
+}
+
+/// T7.14 — a refused or failed preview touches no file either. Repeats
+/// T7.13's snapshot around T7.9's (unsupported extension), T7.10's
+/// (over the cap), and T7.12's (failed integrity check) scenarios.
+#[test]
+fn t7_14_a_refused_or_failed_preview_touches_no_file() {
+    tauri::async_runtime::block_on(async {
+        for (label, name, size, ruin_first, expected_kind) in [
+            (
+                "unsupported",
+                "program.exe",
+                64_usize,
+                true,
+                "PreviewUnsupported",
+            ),
+            (
+                "too-large",
+                "big.txt",
+                (MAX_PREVIEW_BYTES + 1) as usize,
+                true,
+                "PreviewTooLarge",
+            ),
+            ("damaged", "notes.txt", 64, true, "Corrupt"),
+        ] {
+            let scratch = Scratch::new(&format!("snapshot-refused-{label}"));
+            let dir = scratch.vault_dir();
+            let entry_id = {
+                let mut vault = Vault::create(&dir, &password(), KdfParams::for_tests()).unwrap();
+                vault
+                    .add(
+                        name,
+                        "",
+                        &mut pattern(size).as_slice(),
+                        &mut NoProgress,
+                        &Cancel::new(),
+                    )
+                    .unwrap()
+                    .get()
+            };
+            if ruin_first {
+                ruin(&veil_core::store::entry_path(
+                    &dir,
+                    veil_core::EntryId::new(entry_id),
+                ));
+            }
+
+            let app = mock_app();
+            let handle = app.handle().clone();
+            veil_gui_lib::commands::open_vault(
+                handle.clone(),
+                dir.to_string_lossy().into_owned(),
+                PASSWORD.to_owned(),
+            )
+            .await
+            .unwrap();
+
+            let before = snapshot_all(&dir);
+            let result = preview::preview_entry(handle, entry_id).await;
+            let after = snapshot_all(&dir);
+
+            assert_eq!(
+                result.err().map(|e| e.kind),
+                Some(expected_kind),
+                "case {label:?} did not fail the way it was set up to"
+            );
+            assert_eq!(
+                before, after,
+                "case {label:?}: a refused or failed preview changed something in the vault directory"
+            );
+        }
     });
 }
 
