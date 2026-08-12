@@ -210,8 +210,8 @@ Run `cargo test -p veil-gui` (extended `tests/vocabulary.rs` scan, which already
 ### T8.25 — Version and build succeed at 2.1.0
 *Covers P8.10.a, P8.10.b · Verifies Requirements §8, Spec §8*
 
-After the version bump, inspect the workspace `Cargo.toml`, `crates/veil-gui/ui/package.json`, and `crates/veil-gui/tauri.conf.json`; run `cargo build --workspace` and the frontend's `npm run build`.
-**Verdict:** all three files read `2.1.0`; both builds succeed.
+After the version bump, inspect the workspace `Cargo.toml` and `crates/veil-gui/tauri.conf.json` (`crates/veil-gui/ui/package.json` carries no `version` field to inspect); run `cargo build --workspace` and the frontend's `npm run build`.
+**Verdict:** both manifests read `2.1.0`; both builds succeed.
 
 ---
 

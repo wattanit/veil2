@@ -142,8 +142,8 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.9.a | Not yet built | Every new user-facing string this phase introduces — menu item labels, details-panel labels, preview chrome, the grouping control's three option labels — checked against `tests/vocabulary.rs`'s existing fixed-vocabulary scan of `ui/src`. The scanner already walks the whole tree (Phase 7 extended it to `veil-gui/src` too), so this item is confirming new strings pass it, not extending what it scans, unless a violation surfaces | Design §7 | T8.24 |
-| P8.9.b | Not yet built | Details panel's field labels (`name`, `folder`, `size`, `Modified`, `Added`) checked against `detail`'s CLI output (P7.1.b) for the same words, since Design §3.4 asks the two peers not to drift | Design §3.4, §8.9 | T8.24 |
+| P8.9.a | Done | Every new user-facing string this phase introduced — "Don't group"/"By folder"/"By extension" (P8.1), "Save as…"/"Show details"/"Preview"/"Replace…"/"Delete" (P8.4), the details panel's field labels (P8.5), and `damagedFileMessage`'s wording (P8.8) — reviewed by hand against Design §7's table and confirmed by `cargo test -p veil-gui --test vocabulary`, clean since the moment each was written (every commit this phase ran it green) and still clean now. One real violation surfaced and was fixed along the way, not here: `preview_entry`'s own command-name string (P8.6.a) | Design §7 | T8.24 |
+| P8.9.b | Done | Details panel's field labels — `Name`, `Folder`, `Size`, `Modified`, `Added` — checked character-for-character against `detail`'s CLI table headings (`report.rs`'s `detail()`, P7.1.b): identical words, both sides | Design §3.4, §8.9 | T8.24 |
 
 ---
 
@@ -153,8 +153,8 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 | Item | Status | Work | Cites | Tests |
 |---|---|---|---|---|
-| P8.10.a | Not yet built | Workspace `Cargo.toml` (`version` and the `veil-core` pin), `crates/veil-gui/ui/package.json`, and `crates/veil-gui/tauri.conf.json` bumped together, `2.0.1` → `2.1.0` — the three cannot drift, per the workspace manifest's own comment | Requirements §8, Spec §8 | T8.25 |
-| P8.10.b | Not yet built | `cargo build --workspace` and the frontend's `npm run build` both succeed post-bump; no tag or push performed as part of this item — that is a separate, explicit request | Spec §8 | T8.25 |
+| P8.10.a | Done | Workspace `Cargo.toml` (`version` and the `veil-core` pin) and `crates/veil-gui/tauri.conf.json` bumped `2.0.1` → `2.1.0`. **Corrected while doing this:** `crates/veil-gui/ui/package.json` carries no `version` field at all — an earlier assumption to the contrary (this task's own P8.10.a description) turned out wrong on inspection, not something to bump. `README.md`'s own "Version 2.0.1" status line, which the 2.0.1 release itself updated (`02f1c06`), is bumped alongside the two manifests it actually tracks | Requirements §8, Spec §8 | T8.25 |
+| P8.10.b | Done | `cargo build --workspace` and the frontend's `npm run build` both succeed post-bump, all three crates reporting `v2.1.0`; no tag or push performed as part of this item — that is a separate, explicit request | Spec §8 | T8.25 |
 
 ---
 
@@ -172,7 +172,7 @@ Nothing here changes the storage format, the cryptographic construction, or any 
 
 ## Exit
 
-The grouping control offers none/folder/extension and groups collapse and expand per the session; every column sorts ascending then descending on repeated clicks and composes correctly with grouping; multi-select follows platform convention for click/shift-click/Cmd-click and every selection-wide action (Delete, Save as…) honours the full selection; the context menu offers exactly the five items Design §3.5 lists, each present under exactly the condition it specifies, and nothing else; the details panel and preview overlay show what Design §8.9/§8.10 specify and nothing more; preview and details content is cleared on close, lock, and exit with no visible announcement of the fact; a failed preview integrity check reads identically to a failed extraction; the vocabulary audit is clean; and the release is tagged 2.1.0.
+The grouping control offers none/folder/extension and groups collapse and expand per the session; every column sorts ascending then descending on repeated clicks and composes correctly with grouping; multi-select follows platform convention for click/shift-click/Cmd-click and every selection-wide action (Delete, Save as…) honours the full selection; the context menu offers exactly the five items Design §3.5 lists, each present under exactly the condition it specifies, and nothing else; the details panel and preview overlay show what Design §8.9/§8.10 specify and nothing more; preview and details content is cleared on close, lock, and exit with no visible announcement of the fact; a failed preview integrity check reads identically to a failed extraction; the vocabulary audit is clean; and the release is versioned 2.1.0 (tagging and pushing are their own, separate, explicit request — not part of this item).
 
 ---
 

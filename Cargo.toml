@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/veil-core", "crates/veil-cli", "crates/veil-gui"]
 
 [workspace.package]
-version = "2.0.1"
+version = "2.1.0"
 edition = "2024"
 publish = false
 
@@ -11,7 +11,7 @@ publish = false
 # crates cannot drift to different versions of a cryptographic dependency
 # (Phase 0 to-do P0.1.a). Additions here require a Specification bump (P0.5.b).
 [workspace.dependencies]
-veil-core = { path = "crates/veil-core", version = "2.0.1" }
+veil-core = { path = "crates/veil-core", version = "2.1.0" }
 
 [workspace.lints.rust]
 # Denied rather than forbidden at the workspace level so a measurement harness
