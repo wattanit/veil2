@@ -117,10 +117,11 @@
         <div id="statistics-line"></div>
         <div id="controls-bar">
           <input type="search" id="search-input" placeholder="Search" />
-          <label>
-            <input type="checkbox" id="group-toggle" />
-            Group by folder
-          </label>
+          <select id="group-select" aria-label="Group">
+            <option value="none">Don't group</option>
+            <option value="folder">By folder</option>
+            <option value="extension">By extension</option>
+          </select>
           <button type="button" id="replace-selected-button" disabled>
             Replace…
           </button>
@@ -133,13 +134,32 @@
         <div id="status" role="status"></div>
         <div id="list-viewport">
           <div id="list-header" role="row">
-            <span class="col-name">Name</span>
-            <span class="col-folder">Folder</span>
-            <span class="col-size">Size</span>
-            <span class="col-added">Added</span>
+            <span class="col-name" data-column="name">Name<span class="sort-arrow" aria-hidden="true"></span></span>
+            <span class="col-folder" data-column="folder">Folder<span class="sort-arrow" aria-hidden="true"></span></span>
+            <span class="col-size" data-column="size">Size<span class="sort-arrow" aria-hidden="true"></span></span>
+            <span class="col-added" data-column="added">Added<span class="sort-arrow" aria-hidden="true"></span></span>
           </div>
           <div id="list-scroll">
             <div id="list-spacer"></div>
+          </div>
+
+          <!-- Details (Design §8.9): a lightweight, non-modal popover
+               opened from the context menu's "Show details". -->
+          <div id="details-panel" role="dialog" hidden>
+            <button type="button" id="details-close" class="icon-button" aria-label="Close">✕</button>
+            <dl id="details-body"></dl>
+          </div>
+
+          <!-- Preview (Design §8.10): an overlay above the list, not a
+               separate window and not a replacement for it — closing it
+               returns to exactly the selection and scroll position it was
+               opened from. -->
+          <div id="preview-overlay" role="dialog" hidden>
+            <div id="preview-header">
+              <span id="preview-name"></span>
+              <button type="button" id="preview-close">Close</button>
+            </div>
+            <div id="preview-body"></div>
           </div>
         </div>
         <div id="operation-bar" hidden>
@@ -161,6 +181,12 @@
           <div id="modal-actions"></div>
         </div>
       </div>
+
+      <!-- The row context menu (Design §3.5): populated per right-click,
+           positioned at the click point. Not a modal — it dismisses on an
+           outside click or Escape, without blocking the rest of the
+           screen. -->
+      <div id="context-menu" class="context-menu" role="menu" hidden></div>
     </main>
     <script type="module" src="./main.js"></script>
   </body>

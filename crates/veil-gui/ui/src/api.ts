@@ -19,9 +19,22 @@ export interface EntryInfo {
   name: string;
   folder: string;
   size: number;
+  // The source file's own modification time, from before it was added
+  // (FR-28) — distinct from `addedAt`. Carried by the Rust `EntryInfo`
+  // since Phase 7 (P7.1.a); nothing on the frontend read it until now
+  // (P8.5).
+  sourceMtime: number;
   addedAt: number;
   unreadable: boolean;
 }
+
+// What `preview_entry` hands back (Tech Spec §5.3) — matches
+// `veil-gui/src/preview.rs`'s `PreviewPayload`, `#[serde(tag = "kind")]`
+// with `rename_all = "camelCase"`, so the variant names come through
+// lowercased.
+export type PreviewPayload =
+  | { kind: "image"; mime: string; base64: string }
+  | { kind: "text"; content: string };
 
 export interface Collision {
   path: string;
@@ -106,6 +119,9 @@ export const changePassword = (current: string, next: string): Promise<void> =>
   invoke("change_password", { current, new: next });
 
 export const checkVault = (): Promise<CheckReport> => invoke("check_vault");
+
+export const previewEntry = (id: number): Promise<PreviewPayload> =>
+  invoke("preview_entry", { id });
 
 // Debug-only (absent from a release build's command set entirely — Phase
 // 5's fixture bypass, kept for exercising the list/rendering screens

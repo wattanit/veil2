@@ -6,7 +6,12 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as api from "./api";
 import type { EntryInfo } from "./api";
-import { EntryList, type ListRow } from "./list";
+import { damagedFileMessage } from "./damage";
+import { extensionOf } from "./extension";
+import { EntryList, formatDate, type ListRow } from "./list";
+import { isPreviewable } from "./previewable";
+import { nextSelection, type ClickKind } from "./selection";
+import { sortEntries, type SortColumn, type SortDirection } from "./sort";
 
 const MIN_PASSWORD_LENGTH = 12; // C-4, mirrored client-side; veil-core is the authority.
 
@@ -50,9 +55,33 @@ function vaultNameFromPath(path: string): string {
 let currentPath = "";
 let currentSummary: api.VaultSummary | null = null;
 let allEntries: EntryInfo[] = [];
-let selectedId: number | null = null;
+
+// P8.3: click selects one row and clears the rest, shift-click extends a
+// contiguous range, Cmd-click toggles one row (Design §3.2) — replaces the
+// single `selectedId` of Phase 6. `lastClickedId` is the shift-range
+// anchor, not just "the most recently selected row": a Cmd-click that
+// removes a row from the selection still becomes the anchor for the next
+// shift-click.
+let selectedIds = new Set<number>();
+let lastClickedId: number | null = null;
 let searchTerm = "";
-let grouped = false;
+
+// P8.1: one choice among none, by folder, and by extension (Design §3.2,
+// FR-8, FR-29) — never both dimensions at once.
+type Grouping = "none" | "folder" | "extension";
+let grouping: Grouping = "none";
+
+// Which groups are collapsed, by group key. Cleared whenever the grouping
+// choice changes or the vault is locked and reopened (Design §3.2) — never
+// otherwise, so a collapse survives an unrelated search or refresh.
+let collapsedGroups = new Set<string>();
+
+// P8.2: no sort until a header is clicked once — `null` means "whatever
+// order list_entries returned", the same order the list showed before this
+// phase. There is no separate sort control (Design §3.2); a header click is
+// the only way to reach either field.
+let sortColumn: SortColumn | null = null;
+let sortDirection: SortDirection = "asc";
 
 // ------------------------------------------------------- first run (§8.1) -
 
@@ -227,6 +256,18 @@ async function lock(): Promise<void> {
   currentSummary = null;
   allEntries = [];
   clearSelection();
+  // The context menu is a sibling of the screens, not inside #screen-vault
+  // — left open, it would float over the locked screen bound to entries
+  // that no longer exist. Details and preview are nested inside
+  // #screen-vault, so hiding that screen already hides them visually, but
+  // closing them here still matters: it revokes preview's object URL and
+  // drops both panels' content rather than leaving it sitting invisibly
+  // in the DOM. This is FR-3's clearing extended to preview content
+  // (Design §8.10) — P8.7 is where that guarantee gets proved, not just
+  // done here.
+  closeContextMenu();
+  closeDetails();
+  closePreview();
   showScreen("locked");
 }
 
@@ -248,6 +289,7 @@ async function enterVault(summary: api.VaultSummary): Promise<void> {
   clearSelection();
   searchTerm = "";
   el<HTMLInputElement>("search-input").value = "";
+  collapsedGroups.clear();
   el<HTMLElement>("identity-name").textContent = vaultNameFromPath(currentPath);
   const readonlyNote = el<HTMLElement>("identity-readonly-note");
   readonlyNote.hidden = summary.access !== "readOnly";
@@ -298,26 +340,59 @@ function visibleEntries(): EntryInfo[] {
   );
 }
 
-// P6.5.b: a flat grouping view, not a tree — one level, no create/rename/drag.
+// P6.5.b, P8.1: a flat grouping view, not a tree — one level, no
+// create/rename/drag, only collapse/expand (Design §3.2).
+function groupKey(entry: EntryInfo): string {
+  return grouping === "extension" ? extensionOf(entry.name) ?? "" : entry.folder;
+}
+
+// Never empty — an empty key gets the grouping mode's own reserved label
+// (Design §3.2), the same word the CLI's peer output uses for the same
+// case (`output::label` in `veil-cli`) where a shared word exists.
+function groupLabel(key: string): string {
+  if (key !== "") {
+    return key;
+  }
+  return grouping === "extension" ? "(no extension)" : "(root)";
+}
+
+// P8.2.c: applied before grouping, not after — a `Map`'s buckets fill in
+// the order entries are pushed into them, so sorting the flat list first
+// leaves each group's own bucket in that same sorted order, with no second
+// sort pass needed per group.
+function applySort(entries: EntryInfo[]): EntryInfo[] {
+  return sortColumn === null ? entries : sortEntries(entries, sortColumn, sortDirection);
+}
+
 function renderList(): void {
-  const entries = visibleEntries();
-  if (!grouped) {
+  const entries = applySort(visibleEntries());
+  if (grouping === "none") {
     list.setRows(entries.map((entry): ListRow => ({ kind: "entry", entry })));
     return;
   }
-  const byFolder = new Map<string, EntryInfo[]>();
+  const byGroup = new Map<string, EntryInfo[]>();
   for (const entry of entries) {
-    const bucket = byFolder.get(entry.folder) ?? [];
+    const key = groupKey(entry);
+    const bucket = byGroup.get(key) ?? [];
     bucket.push(entry);
-    byFolder.set(entry.folder, bucket);
+    byGroup.set(key, bucket);
   }
   const rows: ListRow[] = [];
-  for (const [folder, entriesInFolder] of [...byFolder.entries()].sort(([a], [b]) =>
+  for (const [key, entriesInGroup] of [...byGroup.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    rows.push({ kind: "group", label: folder });
-    for (const entry of entriesInFolder) {
-      rows.push({ kind: "entry", entry });
+    const collapsed = collapsedGroups.has(key);
+    rows.push({
+      kind: "group",
+      key,
+      label: groupLabel(key),
+      count: entriesInGroup.length,
+      collapsed,
+    });
+    if (!collapsed) {
+      for (const entry of entriesInGroup) {
+        rows.push({ kind: "entry", entry });
+      }
     }
   }
   list.setRows(rows);
@@ -327,8 +402,44 @@ el<HTMLInputElement>("search-input").addEventListener("input", (event) => {
   searchTerm = (event.target as HTMLInputElement).value;
   renderList();
 });
-el<HTMLInputElement>("group-toggle").addEventListener("change", (event) => {
-  grouped = (event.target as HTMLInputElement).checked;
+el<HTMLSelectElement>("group-select").addEventListener("change", (event) => {
+  grouping = (event.target as HTMLSelectElement).value as Grouping;
+  // Design §3.2: changing the grouping choice returns every group to
+  // expanded — the previous mode's collapsed keys have no meaning under
+  // the new one anyway (a folder path is not an extension).
+  collapsedGroups.clear();
+  renderList();
+});
+
+// P8.2.a, P8.2.b: a click on a header sorts ascending by it; a second click
+// on the same header reverses to descending; a click on a different header
+// starts that column over at ascending.
+function updateSortArrows(): void {
+  for (const header of el<HTMLElement>("list-header").querySelectorAll<HTMLElement>(
+    "[data-column]",
+  )) {
+    const arrow = header.querySelector<HTMLElement>(".sort-arrow");
+    if (!arrow) {
+      continue;
+    }
+    arrow.textContent =
+      header.dataset.column === sortColumn ? (sortDirection === "asc" ? " ▲" : " ▼") : "";
+  }
+}
+
+el<HTMLElement>("list-header").addEventListener("click", (event) => {
+  const header = (event.target as HTMLElement).closest<HTMLElement>("[data-column]");
+  const column = header?.dataset.column as SortColumn | undefined;
+  if (!column) {
+    return;
+  }
+  if (sortColumn === column) {
+    sortDirection = sortDirection === "asc" ? "desc" : "asc";
+  } else {
+    sortColumn = column;
+    sortDirection = "asc";
+  }
+  updateSortArrows();
   renderList();
 });
 
@@ -400,7 +511,15 @@ async function extract(entry: EntryInfo): Promise<void> {
     setStatus(`Saved to ${folderOf(destination)}. This copy is not protected.`);
   } catch (raw) {
     hideOperation();
-    setStatus(describeForStatus(`Couldn't save a copy of ${entry.name}`, api.describeError(raw)));
+    const error = api.describeError(raw);
+    // Design §6: a verification failure gets its own three-part message
+    // (damaged, copy removed, other files fine) rather than the generic
+    // fallback below, which never names any of that.
+    setStatus(
+      error.kind === "Corrupt"
+        ? damagedFileMessage(entry.name, true)
+        : describeForStatus(`Couldn't save a copy of ${entry.name}`, error),
+    );
   }
 }
 
@@ -408,6 +527,24 @@ function folderOf(path: string): string {
   const parts = path.split(/[/\\]/);
   parts.pop();
   return parts.pop() ?? path;
+}
+
+// Save as… (Design §3.5) for a whole selection — one native save dialog per
+// file, exactly `extract()` as double-click already invokes it, run in
+// sequence. Design §3.5 describes this as "the same destination-choosing
+// extraction the row's double-click... already perform[s]", which is a
+// single-file operation; there is no destination-folder picker anywhere in
+// this codebase to extend it into one native "choose a folder, write every
+// file there" flow, and building one would also need its own overwrite
+// check (Design §4.1/FR-19), since a folder-picker carries none of the
+// per-file confirmation a save dialog gives for free. N sequential dialogs
+// is the honest, zero-new-surface reading for a first cut; a batch
+// destination is left open (Phase8-ToDo.md's own note) rather than
+// invented here.
+async function extractSelection(entries: EntryInfo[]): Promise<void> {
+  for (const entry of entries) {
+    await extract(entry);
+  }
 }
 
 // ------------------------------------------------------------------ add --
@@ -566,27 +703,61 @@ function closeModal(): void {
 // ------------------------------------------------------------- selection -
 
 function clearSelection(): void {
-  selectedId = null;
-  el<HTMLButtonElement>("replace-selected-button").disabled = true;
-  el<HTMLButtonElement>("delete-selected-button").disabled = true;
+  selectedIds = new Set();
+  lastClickedId = null;
+  list.setSelection(selectedIds);
+  updateSelectionButtons();
+}
+
+// P8.3.d: Replace… only ever means one file's content, so it stays
+// available only for exactly one selected row.
+function updateSelectionButtons(): void {
+  el<HTMLButtonElement>("replace-selected-button").disabled = selectedIds.size !== 1;
+  el<HTMLButtonElement>("delete-selected-button").disabled = selectedIds.size === 0;
+}
+
+function selectedEntries(): EntryInfo[] {
+  return allEntries.filter((e) => selectedIds.has(e.id));
 }
 
 function setupSelection(): void {
   el<HTMLElement>("list-spacer").addEventListener("click", (event) => {
-    const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
-    const id = row?.dataset.id;
-    selectedId = id === undefined ? null : Number(id);
-    for (const rowEl of el<HTMLElement>("list-spacer").querySelectorAll(".entry-row")) {
-      rowEl.classList.toggle("selected", rowEl === row);
+    const target = event.target as HTMLElement;
+    const groupHeader = target.closest<HTMLElement>(".group-header");
+    if (groupHeader) {
+      const key = groupHeader.dataset.key ?? "";
+      if (collapsedGroups.has(key)) {
+        collapsedGroups.delete(key);
+      } else {
+        collapsedGroups.add(key);
+      }
+      renderList();
+      return;
     }
-    el<HTMLButtonElement>("replace-selected-button").disabled = selectedId === null;
-    el<HTMLButtonElement>("delete-selected-button").disabled = selectedId === null;
+    const row = target.closest<HTMLElement>(".entry-row");
+    const id = row?.dataset.id;
+    if (id === undefined) {
+      selectedIds = new Set();
+      lastClickedId = null;
+    } else {
+      const kind: ClickKind = event.shiftKey ? "shift" : event.metaKey ? "cmd" : "plain";
+      const next = nextSelection(
+        { selectedIds, lastClickedId },
+        list.entryIds(),
+        Number(id),
+        kind,
+      );
+      selectedIds = next.selectedIds;
+      lastClickedId = next.lastClickedId;
+    }
+    list.setSelection(selectedIds);
+    updateSelectionButtons();
   });
   window.addEventListener("keydown", (event) => {
-    if ((event.key === "Delete" || event.key === "Backspace") && selectedId !== null) {
-      const entry = allEntries.find((e) => e.id === selectedId);
-      if (entry) {
-        confirmDelete([entry]);
+    if (event.key === "Delete" || event.key === "Backspace") {
+      const entries = selectedEntries();
+      if (entries.length > 0) {
+        confirmDelete(entries);
       }
     }
   });
@@ -594,9 +765,9 @@ function setupSelection(): void {
     void replaceSelected();
   });
   el<HTMLButtonElement>("delete-selected-button").addEventListener("click", () => {
-    const entry = allEntries.find((e) => e.id === selectedId);
-    if (entry) {
-      confirmDelete([entry]);
+    const entries = selectedEntries();
+    if (entries.length > 0) {
+      confirmDelete(entries);
     }
   });
 }
@@ -631,6 +802,222 @@ async function runDelete(entries: EntryInfo[]): Promise<void> {
   await refreshList();
 }
 
+// ------------------------------------------------------------------ context menu -
+
+// Design §3.5: the same five actions the controls bar and double-click
+// already reach, reached instead from a right-click on the selection.
+function openContextMenu(x: number, y: number, entries: EntryInfo[]): void {
+  if (entries.length === 0) {
+    return;
+  }
+  const only = entries.length === 1 ? entries[0] : undefined;
+  const items: Array<{ label: string; caution?: boolean; run: () => void }> = [
+    { label: "Save as…", run: () => void extractSelection(entries) },
+  ];
+  if (only) {
+    items.push({ label: "Show details", run: () => showDetails(only) });
+  }
+  // Preview is absent, not disabled, for an unsupported type, an over-cap
+  // entry, or a multi-row selection — a greyed-out item trains a person to
+  // stop reading before deciding whether it applies (Design §3.5).
+  if (only && isPreviewable(only)) {
+    items.push({ label: "Preview", run: () => openPreview(only) });
+  }
+  if (only) {
+    items.push({ label: "Replace…", run: () => void replaceSelected() });
+  }
+  items.push({ label: "Delete", caution: true, run: () => confirmDelete(entries) });
+
+  const menu = el<HTMLElement>("context-menu");
+  menu.innerHTML = "";
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    if (item.caution) {
+      button.classList.add("caution");
+    }
+    button.addEventListener("click", () => {
+      closeContextMenu();
+      item.run();
+    });
+    menu.appendChild(button);
+  }
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.hidden = false;
+}
+
+function closeContextMenu(): void {
+  el<HTMLElement>("context-menu").hidden = true;
+}
+
+// Right-click, the details popover, and the preview overlay are all
+// non-modal — none of them blocks the rest of the screen, so all three
+// dismiss the same two ways: an outside click, or Escape.
+function setupOverlays(): void {
+  el<HTMLElement>("list-spacer").addEventListener("contextmenu", (event) => {
+    const row = (event.target as HTMLElement).closest<HTMLElement>(".entry-row");
+    if (!row) {
+      return;
+    }
+    event.preventDefault();
+    const id = Number(row.dataset.id);
+    // P8.4.a: right-clicking a row already inside the selection opens the
+    // menu on that selection unchanged; right-clicking outside it replaces
+    // the selection with just the clicked row first.
+    if (!selectedIds.has(id)) {
+      selectedIds = new Set([id]);
+      lastClickedId = id;
+      list.setSelection(selectedIds);
+      updateSelectionButtons();
+    }
+    openContextMenu(event.clientX, event.clientY, selectedEntries());
+  });
+  document.addEventListener("mousedown", (event) => {
+    const target = event.target as Node;
+    const menu = el<HTMLElement>("context-menu");
+    if (!menu.hidden && !menu.contains(target)) {
+      closeContextMenu();
+    }
+    const details = el<HTMLElement>("details-panel");
+    if (!details.hidden && !details.contains(target)) {
+      closeDetails();
+    }
+    const preview = el<HTMLElement>("preview-overlay");
+    if (!preview.hidden && !preview.contains(target)) {
+      closePreview();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    if (!el<HTMLElement>("context-menu").hidden) {
+      closeContextMenu();
+    }
+    if (!el<HTMLElement>("details-panel").hidden) {
+      closeDetails();
+    }
+    if (!el<HTMLElement>("preview-overlay").hidden) {
+      closePreview();
+    }
+  });
+  el<HTMLButtonElement>("details-close").addEventListener("click", closeDetails);
+  el<HTMLButtonElement>("preview-close").addEventListener("click", closePreview);
+
+  // P8.7.c: quitting the application is the third path Spec §5.3's
+  // honesty clause names alongside closing and locking — the same
+  // clearing calls `lock()` makes, not a second implementation written
+  // for this event. `beforeunload` is the one signal a webview gives
+  // before its document goes away, however the window came to close.
+  window.addEventListener("beforeunload", () => {
+    closeContextMenu();
+    closeDetails();
+    closePreview();
+  });
+}
+
+// ------------------------------------------------------------ details ---
+
+function closeDetails(): void {
+  el<HTMLElement>("details-panel").hidden = true;
+}
+
+// Design §8.9: FR-28's fields, labelled the same words the list columns
+// use, plus Modified — which the list has no room for — and no content
+// hash, the same decision `detail`'s CLI output already made (P7.1.d).
+function showDetails(entry: EntryInfo): void {
+  const body = el<HTMLElement>("details-body");
+  body.innerHTML = "";
+  const rows: Array<[string, string]> = [
+    ["Name", entry.name],
+    ["Folder", entry.folder],
+    // Exact bytes here, not the rounded form the list uses (Design §8.9).
+    ["Size", `${entry.size.toLocaleString()} bytes`],
+    ["Modified", formatDate(entry.sourceMtime)],
+    ["Added", formatDate(entry.addedAt)],
+  ];
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    body.append(dt, dd);
+  }
+  el<HTMLElement>("details-panel").hidden = false;
+}
+
+// ------------------------------------------------------------ preview ---
+
+// Holds the one object URL a successful image preview creates, so closing
+// it (here, on lock, or on exit — Design §8.10, FR-3, FR-30) always has
+// something concrete to revoke rather than trusting the DOM alone to drop
+// it (Spec §5.3's honesty clause: dereferenced promptly on every path that
+// ends a preview, not zeroised on a timeline this layer controls).
+let previewObjectUrl: string | null = null;
+
+function closePreview(): void {
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  el<HTMLElement>("preview-body").innerHTML = "";
+  el<HTMLElement>("preview-overlay").hidden = true;
+}
+
+// RFC 4648 decoding is `atob`'s job here — unlike `preview.rs`'s own
+// encoder, there is no "avoid a new dependency" reason to write this out:
+// the platform already provides it.
+function base64ToBlob(base64: string, mime: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+// Design §8.10: opens above the list; an image renders from its payload,
+// text (including `.md`, unrendered per FR-30) shows in the body font. A
+// failed integrity check is reported here rather than silently — P8.8
+// matches its exact wording to the extraction-failure path elsewhere;
+// this shows whatever `describeError` already gives in the meantime.
+async function openPreview(entry: EntryInfo): Promise<void> {
+  el<HTMLElement>("preview-name").textContent = entry.name;
+  const body = el<HTMLElement>("preview-body");
+  body.innerHTML = "";
+  el<HTMLElement>("preview-overlay").hidden = false;
+  try {
+    const payload = await api.previewEntry(entry.id);
+    if (payload.kind === "image") {
+      const blob = base64ToBlob(payload.base64, payload.mime);
+      previewObjectUrl = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.src = previewObjectUrl;
+      img.alt = entry.name;
+      body.appendChild(img);
+    } else {
+      const pre = document.createElement("pre");
+      pre.textContent = payload.content;
+      body.appendChild(pre);
+    }
+  } catch (raw) {
+    const error = api.describeError(raw);
+    const message = document.createElement("p");
+    // Design §8.10: a failed integrity check is worded exactly as an
+    // extraction failure (§6) — the same `damagedFileMessage` `extract()`
+    // calls, not a preview-specific rewrite of it. Preview never writes
+    // anywhere to remove (T7.13, T7.14), so its own call omits that
+    // clause rather than claiming one. Any other refusal kind
+    // (PreviewTooLarge, PreviewUnsupported, PreviewNotText, NotFound) was
+    // already worded completely by `preview.rs` itself — shown as-is.
+    message.textContent =
+      error.kind === "Corrupt" ? damagedFileMessage(entry.name, false) : error.message;
+    body.appendChild(message);
+  }
+}
+
 // ------------------------------------------------------------ replace ---
 
 // The explicit path (Design §8.7): select an entry, choose *any* file as
@@ -638,7 +1025,8 @@ async function runDelete(entries: EntryInfo[]): Promise<void> {
 // identity-matched replace in `runAdd`, this does not require the new
 // file to share the old one's name.
 async function replaceSelected(): Promise<void> {
-  const entry = allEntries.find((e) => e.id === selectedId);
+  const entries = selectedEntries();
+  const entry = entries.length === 1 ? entries[0] : undefined;
   if (!entry) {
     return;
   }
@@ -753,6 +1141,7 @@ async function submitChangePassword(): Promise<void> {
 
 setupDropTarget();
 setupSelection();
+setupOverlays();
 showScreen("firstRun");
 
 // First run (Design §8.1) shows exactly two choices and nothing else — no

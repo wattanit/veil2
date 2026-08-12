@@ -53,6 +53,7 @@ const ALLOWLIST_EXACT: &[&str] = &[
     "extract_entry",        // Tauri command name
     "delete_entry",         // Tauri command name
     "replace_entry",        // Tauri command name
+    "preview_entry",        // Tauri command name
 ];
 
 fn manifest_dir() -> &'static Path {

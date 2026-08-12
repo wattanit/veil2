@@ -17,7 +17,7 @@ Veil2 is not a mounted encrypted volume. A vault is a `.veil` bundle you create,
 
 ## Status
 
-Version 2.0.1. Builds for, ships on, and makes claims about **macOS only** — Windows and Linux are not built and not scheduled. One shared core library drives both a command-line application and a graphical application.
+Version 2.1.0. Builds for, ships on, and makes claims about **macOS only** — Windows and Linux are not built and not scheduled. One shared core library drives both a command-line application and a graphical application.
 
 ## Repository layout
 
@@ -87,6 +87,8 @@ The app-specific password is generated at **appleid.apple.com** → *Sign-In and
 veil create MyVault.veil
 veil add MyVault.veil ~/Documents/report.pdf --folder work
 veil list MyVault.veil
+veil list MyVault.veil --group=extension
+veil detail MyVault.veil work/report.pdf
 veil save-copy MyVault.veil work/report.pdf --to ~/Desktop/report.pdf
 veil replace MyVault.veil work/report.pdf --from ~/Documents/report-v2.pdf
 veil delete MyVault.veil work/report.pdf

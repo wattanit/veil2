@@ -6,7 +6,7 @@
 **Owner:** wattanit
 **Companion documents:**
 - Requirements Document v1.1 — upstream
-- Design Guideline v1.3 — upstream
+- Design Guideline v1.4 — upstream
 
 This document owns how Veil2 is built: system structure, execution model, data formats, the cryptographic construction, dependencies, build and release, testing, and milestones. It defers what the product must do to the Requirements Document and how it presents itself to the Design Guideline. Every choice that satisfies an upstream requirement cites that requirement's identifier. Values given as defaults are initial and tunable unless a requirement fixes them.
 
