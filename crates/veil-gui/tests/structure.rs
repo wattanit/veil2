@@ -14,6 +14,15 @@ fn manifest_dir() -> &'static Path {
 
 /// T5.5 — the Content-Security-Policy admits no remote origin (P5.3.a,
 /// Spec §5.3, §7).
+///
+/// `blob:` was added to `img-src` in P8.6's fix for a release-build defect:
+/// preview's image renders from `URL.createObjectURL`, which a release
+/// build's stricter CSP enforcement was blocking outright (silently — no
+/// thrown error, just no image), while a `cargo tauri dev` run let it
+/// through. `blob:` is not a remote origin — it names an ephemeral,
+/// webview-local reference to an in-memory `Blob`, the same class of thing
+/// `data:` already is here — so admitting it does not weaken what this
+/// case actually checks.
 #[test]
 fn t5_5_the_csp_admits_no_remote_origin() {
     let conf = std::fs::read_to_string(manifest_dir().join("tauri.conf.json")).unwrap();
@@ -31,12 +40,13 @@ fn t5_5_the_csp_admits_no_remote_origin() {
             let allowed = source == "'self'"
                 || source == "'unsafe-inline'"
                 || source == "data:"
+                || source == "blob:"
                 || source == "ipc:"
                 || source == "http://ipc.localhost";
             assert!(
                 allowed,
                 "CSP directive {directive:?} names a source ({source}) that is \
-                 neither the bundle nor Tauri's own IPC channel"
+                 neither the bundle, a local in-memory reference, nor Tauri's own IPC channel"
             );
         }
     }
